@@ -32,7 +32,7 @@ green above 75, yellow, orange, red with a flash on every beat, blue over 100 fo
 overshield, and three dark seconds on a drop to zero before the search for a pulse. A
 profile ticks **Health mode** (with the reader beside it), so the window rules put it on
 the game's windows and its own picture returns when the tick comes off; a
-mod or script feeds it one line at a time (a Deep Rock Galactic mod is in `contrib/`,
+mod or script feeds it one line at a time (Deep Rock Galactic, Doom, Source engine and ULTRAKILL feeders are in `contrib/`,
 Counter-Strike 2 posts straight to the watcher). `g13map health demo` runs the states
 on your own panel. See [the health meter](docs/health-meter.md) and, for adding a game,
 [AGENTS.md](AGENTS.md).
@@ -82,7 +82,7 @@ root; it does not activate services. Prefer an OS package over installing onto a
 system by hand: CMake's installation copies configuration files and does not merge them.
 See [installation](docs/installation.md) and [migration](docs/migration.md) first.
 
-For a local Arch package, export a committed source tree as `g13pad-0.2.34.tar.gz`, put it
+For a local Arch package, export a committed source tree as `g13pad-0.2.35.tar.gz`, put it
 beside `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local
 archive with a placeholder checksum; a public release must supply a verified checksum.
 An Arch package preserves changed startup bindings/calibration through pacman's backup

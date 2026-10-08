@@ -316,15 +316,18 @@ fn health(args: &[&str]) -> Result<String, String> {
             None => Err(format!("a game's kind is sp or mp, not '{kind}'")),
         },
         ["source-res"] => Ok(meter::SOURCE_RES.to_string()),
-        [value] | [value, "shield", _] => {
+        [value, ..] => {
             let line = args.join(" ");
             let now = std::time::SystemTime::now();
             match meter::parse(&line, now, now) {
                 Some(state) => feed(Some(state)),
-                None => Err(format!("invalid health '{value}': VALUE or VALUE/MAX, 0 or more")),
+                None => Err(format!(
+                    "invalid health line '{value} ...': VALUE[/MAX] [shield S[/MAX]] [helmet on|off] \
+                     [cap C] [rank R] [style S] [time SECS] [dash D] [rail R] [ttl S]"
+                )),
             }
         }
-        _ => Err("usage: g13map health VALUE[/MAX] [shield S[/MAX]] | wait | off | demo | cs2 [PORT] | cs2-config [PORT] | source DIR [sp|mp|remove] | source-res".into()),
+        _ => Err("usage: g13map health VALUE[/MAX] [WORD VALUE...] | wait | off | demo | cs2 [PORT] | cs2-config [PORT] | source DIR [sp|mp|remove] | source-res".into()),
     }
 }
 

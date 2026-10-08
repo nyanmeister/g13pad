@@ -40,10 +40,48 @@ use std::{
 pub enum State {
     /// Connected, no health yet.
     Wait,
-    /// Health and shield, both in percent (health may exceed 100), and whether the head
-    /// is covered too (CS2's helmet; asked 2026-10-08): the shield bar is solid then.
-    Health { pct: u32, shield: u32, helmet: bool },
+    /// Health and shield, both in percent (health may exceed 100), whether the head
+    /// is covered too (CS2's helmet; asked 2026-10-08): the shield bar is solid then,
+    /// and whatever else the game has to show.
+    Health {
+        pct: u32,
+        shield: u32,
+        helmet: bool,
+        extra: Extra,
+    },
 }
+
+/// What a game may add to the feed line; each word draws its own element and nothing
+/// is drawn for a word that is absent (asked 2026-10-08, for ULTRAKILL's V1).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Extra {
+    /// `cap C`: the health the bar is capped at, percent (hard damage).
+    pub cap: Option<u32>,
+    /// `rank R`: a style rank, an index into `RANKS`.
+    pub rank: Option<u8>,
+    /// `style S`: the rank's own meter, percent.
+    pub style: Option<u8>,
+    /// `time S`: the level timer, whole seconds.
+    pub time: Option<u32>,
+    /// `dash D`: dashes in tenths (`dash 2.5` is 25; three dashes is 30).
+    pub dash: Option<u8>,
+    /// `rail R`: a weapon charge, percent.
+    pub rail: Option<u8>,
+}
+
+impl Extra {
+    pub const NONE: Extra = Extra {
+        cap: None,
+        rank: None,
+        style: None,
+        time: None,
+        dash: None,
+        rail: None,
+    };
+}
+
+/// The style ranks a feed may name, lowest first (ULTRAKILL's).
+pub const RANKS: [&str; 8] = ["D", "C", "B", "A", "S", "SS", "SSS", "U"];
 
 impl State {
     pub fn health(pct: u32) -> State {
@@ -51,6 +89,7 @@ impl State {
             pct,
             shield: 0,
             helmet: false,
+            extra: Extra::NONE,
         }
     }
     /// The health, if there is one to show.
@@ -177,6 +216,7 @@ pub fn preview(name: &str) -> Option<Bitmap> {
         pct: 87,
         shield: 60,
         helmet: false,
+        extra: Extra::NONE,
     };
     let mut bm = Bitmap::blank();
     for _ in 0..12 {
@@ -207,6 +247,8 @@ pub struct Tuning {
     /// panel is 160 by 43).
     pub heart: [i32; 2],
     pub readout: [i32; 2],
+    /// What beats in the corner: the heart, or V1 for ULTRAKILL (asked 2026-10-08).
+    pub sprite: Sprite,
     /// The loopback port the Counter-Strike 2 listener takes.
     pub cs2_port: u16,
     /// The console log a `health log` profile follows; the newest file whose name
@@ -225,20 +267,47 @@ impl Default for Tuning {
             flash: Flash::Panel,
             heart: [6, 5],
             readout: [157, 2],
+            sprite: Sprite::Heart,
             cs2_port: CS2_PORT,
             log_file: crate::state_dir().join("game.log"),
         }
     }
 }
 
+/// The sprite in the corner.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Sprite {
+    Heart,
+    V1,
+}
+
 impl Tuning {
     pub fn path() -> PathBuf {
         crate::config_dir().join("meter")
+    }
+    /// A profile's own lines, layered over the file: `~/.config/g13map/meter.d/NAME`
+    /// (asked 2026-10-08: a look per game).
+    pub fn profile_path(profile: &str) -> PathBuf {
+        crate::config_dir().join("meter.d").join(profile)
     }
     pub fn load() -> Tuning {
         fs::read_to_string(Self::path())
             .map(|t| Self::parse(&t))
             .unwrap_or_default()
+    }
+    /// The file, then the profile's lines after it, so they win.
+    pub fn load_for(profile: &str) -> Tuning {
+        let mut text = fs::read_to_string(Self::path()).unwrap_or_default();
+        if let Ok(more) = fs::read_to_string(Self::profile_path(profile)) {
+            text.push('\n');
+            text.push_str(&more);
+        }
+        Self::parse(&text)
+    }
+    /// When either file last changed, for the watcher's re-read.
+    pub fn stamp(profile: &str) -> (Option<SystemTime>, Option<SystemTime>) {
+        let m = |p: PathBuf| fs::metadata(p).ok()?.modified().ok();
+        (m(Self::path()), m(Self::profile_path(profile)))
     }
     pub fn parse(text: &str) -> Tuning {
         let mut t = Tuning::default();
@@ -277,8 +346,8 @@ impl Tuning {
                 }
                 "heart" => {
                     if let Some([x, y]) = ints(&values).as_deref() {
-                        // Room for the big heart and three rings around it.
-                        t.heart = [(*x).clamp(6, W as i32 - 13), (*y).clamp(5, H as i32 - 11)];
+                        // On the panel; rings may run off its edge, the file's choice.
+                        t.heart = [(*x).clamp(0, W as i32 - 16), (*y).clamp(0, H as i32 - 14)];
                     }
                 }
                 "readout" => {
@@ -312,6 +381,13 @@ impl Tuning {
                         Some(&"trace") => Flash::Trace,
                         Some(&"off") => Flash::Off,
                         _ => t.flash,
+                    }
+                }
+                "sprite" => {
+                    t.sprite = match values.first() {
+                        Some(&"heart") => Sprite::Heart,
+                        Some(&"v1") => Sprite::V1,
+                        _ => t.sprite,
                     }
                 }
                 "cs2_port" => {
@@ -364,6 +440,8 @@ impl Tuning {
              # What the alarm band's beats flash: panel, trace (the trace and the heart) or off.\nflash {}\n\
              # The heart's top-left corner, in pixels of the 160x43 panel.\nheart {} {}\n\
              # The readout's right edge and top.\nreadout {} {}\n\
+             # What beats in the corner: heart, or v1 (ULTRAKILL).\nsprite {}\n\
+             # A profile's own lines go in meter.d/PROFILE, read after this file.\n\
              # The loopback port for a profile with `health cs2` (the game's cfg must match).\ncs2_port {}\n\
              # The console log a profile with `health log` follows (newest file starting with it).\nlog_file {}\n",
             self.hold,
@@ -379,6 +457,10 @@ impl Tuning {
             self.heart[1],
             self.readout[0],
             self.readout[1],
+            match self.sprite {
+                Sprite::Heart => "heart",
+                Sprite::V1 => "v1",
+            },
             self.cs2_port,
             self.log_file.display()
         ));
@@ -453,11 +535,20 @@ pub fn paths() -> Vec<PathBuf> {
 /// the tuning file with its defaults, commented, if there is none yet.
 pub fn prepare() {
     let _ = fs::create_dir_all(crate::state_dir());
+    let _ = fs::create_dir_all(crate::config_dir().join("meter.d"));
     let p = Tuning::path();
     if !p.exists() {
-        let _ = fs::create_dir_all(crate::config_dir());
         let _ = fs::write(p, Tuning::default().to_text());
     }
+}
+
+/// `VALUE` as a whole number of tenths, 0–`max` (for `dash 2.5`).
+fn tenths(text: &str, max: f64) -> Option<u8> {
+    let v = text.parse::<f64>().ok()?;
+    if !v.is_finite() || v < 0.0 {
+        return None;
+    }
+    Some((v * 10.0).round().min(max * 10.0) as u8)
 }
 
 /// The percentage of `text` as `VALUE` or `VALUE/MAX`, rounded, 0–999.
@@ -493,6 +584,25 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 (State::Health { helmet, .. }, "off") => *helmet = false,
                 _ => return None,
             },
+            "cap" | "rank" | "style" | "time" | "dash" | "rail" => {
+                let State::Health { extra, .. } = &mut state else {
+                    return None;
+                };
+                match key {
+                    "cap" => extra.cap = Some(percent(value)?),
+                    "rank" => extra.rank = Some(RANKS.iter().position(|r| *r == value)? as u8),
+                    "style" => extra.style = Some(percent(value)?.min(100) as u8),
+                    "time" => {
+                        let s = value
+                            .parse::<f64>()
+                            .ok()
+                            .filter(|s| s.is_finite() && *s >= 0.0)?;
+                        extra.time = Some(s.min(359_999.0) as u32);
+                    }
+                    "dash" => extra.dash = Some(tenths(value, 3.0)?),
+                    _ => extra.rail = Some(percent(value)?.min(100) as u8),
+                }
+            }
             "ttl" => {
                 let ttl = value.parse::<f64>().ok().filter(|s| *s > 0.0)?;
                 if now.duration_since(written).unwrap_or_default() > Duration::from_secs_f64(ttl) {
@@ -539,10 +649,32 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
             pct,
             shield,
             helmet,
-        } => format!(
-            "{pct} shield {shield}{}",
-            if helmet { " helmet on" } else { "" }
-        ),
+            extra,
+        } => {
+            let mut s = format!(
+                "{pct} shield {shield}{}",
+                if helmet { " helmet on" } else { "" }
+            );
+            if let Some(c) = extra.cap {
+                s.push_str(&format!(" cap {c}"));
+            }
+            if let Some(r) = extra.rank {
+                s.push_str(&format!(" rank {}", RANKS[r as usize % RANKS.len()]));
+            }
+            if let Some(v) = extra.style {
+                s.push_str(&format!(" style {v}"));
+            }
+            if let Some(t) = extra.time {
+                s.push_str(&format!(" time {t}"));
+            }
+            if let Some(d) = extra.dash {
+                s.push_str(&format!(" dash {}.{}", d / 10, d % 10));
+            }
+            if let Some(r) = extra.rail {
+                s.push_str(&format!(" rail {r}"));
+            }
+            s
+        }
     };
     if let Some(ttl) = ttl {
         line.push_str(&format!(" ttl {}", ttl.as_secs().max(1)));
@@ -581,6 +713,111 @@ const HEART_OUTLINE: &[&str] = &[
     ".##.##.", "#..#..#", "#.....#", ".#...#.", "..#.#..", "...#...",
 ];
 
+/// V1, ULTRAKILL's machine, 15 by 13: the fins, the visor, the jaw. Blinks on the beat.
+#[rustfmt::skip]
+const V1: &[&str] = &[
+    "#.....###.....#",
+    "##...#####...##",
+    "###.#######.###",
+    "####.#####.####",
+    ".#####...#####.",
+    "..###########..",
+    "..#.........#..",
+    "..#..#####..#..",
+    "..#.........#..",
+    "...#########...",
+    "....#.....#....",
+    "....##...##....",
+    ".....#####.....",
+];
+#[rustfmt::skip]
+const V1_BLINK: &[&str] = &[
+    "#.....###.....#",
+    "##...#####...##",
+    "###.#######.###",
+    "####.#####.####",
+    ".#####...#####.",
+    "..###########..",
+    "..#.........#..",
+    "..#.........#..",
+    "..#.........#..",
+    "...#########...",
+    "....#.....#....",
+    "....##...##....",
+    ".....#####.....",
+];
+#[rustfmt::skip]
+const V1_OUTLINE: &[&str] = &[
+    "#.....###.....#",
+    "##...#...#...##",
+    "#.#.#.....#.#.#",
+    "#..#.......#..#",
+    ".#...........#.",
+    "..#.........#..",
+    "..#.........#..",
+    "..#.........#..",
+    "..#.........#..",
+    "...#.......#...",
+    "....#.....#....",
+    "....#.....#....",
+    ".....#####.....",
+];
+
+/// Letters the feed may put on the panel: the style ranks.
+#[rustfmt::skip]
+const LETTERS: [(char, [&str; 7]); 8] = [
+    ('A', [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
+    ('B', ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]),
+    ('C', [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."]),
+    ('D', ["####.", "#...#", "#...#", "#...#", "#...#", "#...#", "####."]),
+    ('S', [".####", "#....", "#....", ".###.", "....#", "....#", "####."]),
+    ('U', ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."]),
+    (':', [".....", "..#..", "..#..", ".....", "..#..", "..#..", "....."]),
+    ('.', [".....", ".....", ".....", ".....", ".....", "..#..", "..#.."]),
+];
+
+/// The 5x7 glyph for `c`: a digit, a letter from `LETTERS`, or the dash.
+fn glyph(c: char) -> &'static [&'static str; 7] {
+    if let Some(d) = c.to_digit(10) {
+        return &GLYPHS[d as usize];
+    }
+    LETTERS
+        .iter()
+        .find(|(k, _)| *k == c)
+        .map_or(&GLYPHS[10], |(_, g)| g)
+}
+
+/// `text` in 5x7 glyphs at `scale`, top-left at `x, y`; returns the width drawn.
+fn text(bm: &mut Bitmap, x: i32, y: i32, text: &str, scale: i32) -> i32 {
+    for (i, c) in text.chars().enumerate() {
+        for (r, row) in glyph(c).iter().enumerate() {
+            for (k, cell) in row.bytes().enumerate() {
+                if cell == b'#' {
+                    for dy in 0..scale {
+                        for dx in 0..scale {
+                            bm.plot(
+                                x + (i as i32 * 6 + k as i32) * scale + dx,
+                                y + r as i32 * scale + dy,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (text.len() as i32 * 6 - 1) * scale
+}
+
+/// The level timer as `m:ss`, or `h:mm:ss` past an hour (a hard boss can take three).
+fn clock(secs: u32) -> String {
+    let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
+    if h > 0 {
+        format!("{h}:{m:02}:{s:02}")
+    } else {
+        format!("{m}:{s:02}")
+    }
+}
+
 /// 5x7 digits and a dash, drawn at twice the size for the readout.
 #[rustfmt::skip]
 const GLYPHS: [[&str; 7]; 11] = [
@@ -602,21 +839,20 @@ fn readout(bm: &mut Bitmap, text: &str, right: i32, y: i32) {
     let w = text.len() as i32 * 12 - 2;
     let x0 = right - w;
     bm.halo(x0, y, w, 14);
-    for (i, c) in text.chars().enumerate() {
-        let g = match c {
-            '0'..='9' => &GLYPHS[c as usize - '0' as usize],
-            _ => &GLYPHS[10],
-        };
-        for (r, row) in g.iter().enumerate() {
-            for (k, cell) in row.bytes().enumerate() {
-                if cell == b'#' {
-                    let (x, y) = (x0 + i as i32 * 12 + k as i32 * 2, y + r as i32 * 2);
-                    bm.plot(x, y);
-                    bm.plot(x + 1, y);
-                    bm.plot(x, y + 1);
-                    bm.plot(x + 1, y + 1);
-                }
-            }
+    self::text(bm, x0, y, text, 2);
+}
+
+/// A small gauge: a box `w` by `h` with `fill` (0–100) of its inside lit.
+fn gauge(bm: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, fill: u32) {
+    bm.halo(x, y, w, h);
+    bm.line(x, y, x + w - 1, y);
+    bm.line(x, y + h - 1, x + w - 1, y + h - 1);
+    bm.line(x, y, x, y + h - 1);
+    bm.line(x + w - 1, y, x + w - 1, y + h - 1);
+    let f = ((w - 4) * fill.min(100) as i32 + 50) / 100;
+    for xx in x + 2..x + 2 + f {
+        for yy in y + 2..y + h - 2 {
+            bm.plot(xx, yy);
         }
     }
 }
@@ -627,9 +863,15 @@ const BAR_W: i32 = 152;
 /// The shield bar's top row; its second hundred adds a row above and below.
 const SHIELD_TOP: i32 = 30;
 
-/// The ring around the heart at `hx, hy`, `out` pixels further out than the first.
-fn ring(bm: &mut Bitmap, hx: i32, hy: i32, out: i32) {
-    let (l, t, r, b) = (hx - 4 - out, hy - 3 - out, hx + 10 + out, hy + 8 + out);
+/// The ring around a sprite `w` by `h` at `hx, hy`, `out` pixels further out than the
+/// first, with its corners cut.
+fn ring(bm: &mut Bitmap, hx: i32, hy: i32, w: i32, h: i32, out: i32) {
+    let (l, t, r, b) = (
+        hx - 4 - out,
+        hy - 3 - out,
+        hx + w + 3 + out,
+        hy + h + 2 + out,
+    );
     bm.line(l + 1, t, r - 1, t);
     bm.line(l + 1, b, r - 1, b);
     bm.line(l, t + 1, l, b - 1);
@@ -639,7 +881,17 @@ fn ring(bm: &mut Bitmap, hx: i32, hy: i32, out: i32) {
 /// The health bar along the bottom with notches at the band edges, and the shield bar
 /// above it when there is any shield: hatched, or solid when the head is covered too.
 /// `shield` may run to twice the bar: the second hundred thickens it from the left.
-fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool, notches: &[i32]) {
+/// `cap` hatches the bar from there to full: health the game has taken away for now.
+fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool, notches: &[i32], cap: Option<i32>) {
+    if let Some(cap) = cap {
+        for x in BAR_X + cap.clamp(0, BAR_W)..BAR_X + BAR_W {
+            for y in 36..=40 {
+                if (x + y) % 2 == 0 {
+                    bm.plot(x, y);
+                }
+            }
+        }
+    }
     for x in 2..=157 {
         bm.plot(x, 34);
         bm.plot(x, 42);
@@ -716,16 +968,34 @@ impl Meter {
             0
         };
         match state {
-            _ if self.holding() => self.alive(&mut bm, 0, 0, false),
+            _ if self.holding() => self.alive(&mut bm, 0, 0, false, Extra::NONE),
             State::Wait => self.waiting(&mut bm),
             State::Health { pct: 0, .. } => self.waiting(&mut bm),
             State::Health {
                 pct,
                 shield,
                 helmet,
-            } => self.alive(&mut bm, pct, shield, helmet),
+                extra,
+            } => self.alive(&mut bm, pct, shield, helmet, extra),
         }
         bm
+    }
+
+    /// The corner sprite and its size: the heart, or V1.
+    fn sprite(&self, pct: u32) -> (&'static [&'static str], i32, i32, i32, i32) {
+        let swell = self.beat_age.is_some_and(|a| a < self.tuning.swell_ticks());
+        match self.tuning.sprite {
+            Sprite::Heart => match (pct, swell) {
+                (0, _) => (HEART_OUTLINE, 7, 6, 0, 0),
+                (_, true) => (HEART_BIG, 7, 6, -1, -1),
+                _ => (HEART, 7, 6, 0, 0),
+            },
+            Sprite::V1 => match (pct, swell) {
+                (0, _) => (V1_OUTLINE, 15, 13, 0, 0),
+                (_, true) => (V1_BLINK, 15, 13, 0, 0),
+                _ => (V1, 15, 13, 0, 0),
+            },
+        }
     }
 
     /// Inside the dark seconds after a drop to zero.
@@ -777,32 +1047,66 @@ impl Meter {
         }
     }
 
-    fn alive(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, helmet: bool) {
+    fn alive(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, helmet: bool, extra: Extra) {
         self.scroll(pct);
         self.trace(bm);
         let [hx, hy] = self.tuning.heart;
-        if pct == 0 {
-            bm.sprite(hx, hy, HEART_OUTLINE);
-        } else if self.beat_age.is_some_and(|a| a < self.tuning.swell_ticks()) {
-            bm.sprite(hx - 1, hy - 1, HEART_BIG);
-        } else {
-            bm.sprite(hx, hy, HEART);
+        let (sprite, w, h, dx, dy) = self.sprite(pct);
+        if self.tuning.sprite == Sprite::V1 {
+            bm.halo(hx, hy, w, h);
         }
+        bm.sprite(hx + dx, hy + dy, sprite);
         if shield > 0 {
             // Rings around the heart, the shield's own mark: one per hundred, up to three
             // (Doom's blue armour is 200 and mods go past it; asked 2026-10-08).
             for out in 0..shield.div_ceil(100).min(3) {
-                ring(bm, hx, hy, out as i32);
+                ring(bm, hx, hy, w, h, out as i32);
             }
         }
+        // Under the sprite: the dashes as pips, a charge as a small gauge.
+        let under = hy + h + 2;
+        if let Some(d) = extra.dash {
+            bm.halo(hx - 3, under, 16, 4);
+            for i in 0..3u8 {
+                let x = hx - 3 + i as i32 * 6;
+                let rows = match d.saturating_sub(i * 10) {
+                    10.. => 4,
+                    1..=9 => 2,
+                    0 => 1,
+                };
+                for y in under..under + rows {
+                    bm.line(x, y, x + 3, y);
+                }
+            }
+        }
+        if let Some(r) = extra.rail {
+            gauge(bm, hx + 16, under - 1, 20, 6, r as u32);
+        }
+        // The style rank, its letters big at the top centre with its own meter beneath.
         let [rx, ry] = self.tuning.readout;
+        if let Some(rank) = extra.rank {
+            let letters = RANKS[rank as usize % RANKS.len()];
+            let w = (letters.len() as i32 * 6 - 1) * 2;
+            bm.halo(64, ry, w, 14);
+            text(bm, 64, ry, letters, 2);
+            if let Some(fill) = extra.style {
+                gauge(bm, 64, ry + 15, w.max(20), 5, fill as u32);
+            }
+        }
         readout(bm, &pct.min(999).to_string(), rx, ry);
+        if let Some(t) = extra.time {
+            let s = clock(t);
+            let w = s.len() as i32 * 6 - 1;
+            bm.halo(rx - w, ry + 16, w, 7);
+            text(bm, rx - w, ry + 16, &s, 1);
+        }
         bars(
             bm,
             (BAR_W * pct.min(100) as i32 + 50) / 100,
             (BAR_W * shield.min(200) as i32 + 50) / 100,
             helmet,
             &self.tuning.notches(),
+            extra.cap.map(|c| (BAR_W * c.min(100) as i32 + 50) / 100),
         );
         // In the alarm band every beat flashes: the panel, or the trace alone.
         if self.beat_age == Some(0) && self.tuning.is_alarm(pct) {
@@ -833,14 +1137,17 @@ impl Meter {
         }
         bm.line(cursor, BASE - 2, cursor, BASE + 2);
         let [hx, hy] = self.tuning.heart;
-        if t % 20 < 3 {
-            bm.sprite(hx, hy, HEART);
-        } else {
-            bm.sprite(hx, hy, HEART_OUTLINE);
+        let full = t % 20 < 3;
+        match self.tuning.sprite {
+            Sprite::Heart => bm.sprite(hx, hy, if full { HEART } else { HEART_OUTLINE }),
+            Sprite::V1 => {
+                bm.halo(hx, hy, 15, 13);
+                bm.sprite(hx, hy, if full { V1 } else { V1_OUTLINE });
+            }
         }
         let [rx, ry] = self.tuning.readout;
         readout(bm, "--", rx, ry);
-        bars(bm, 0, 0, false, &self.tuning.notches());
+        bars(bm, 0, 0, false, &self.tuning.notches(), None);
         let x = BAR_X + tri(t * 2, BAR_W - 6);
         for dx in 0..6 {
             for y in 36..=40 {
@@ -877,8 +1184,8 @@ pub struct Live {
 impl Live {
     /// Starts the frames (yielding to an open editor, like a kept animation) and, for
     /// `Reader::Cs2`, the game-state listener.
-    pub fn start(state: State, rest: [u8; 3], reader: Reader) -> Live {
-        let tuning = Tuning::load();
+    pub fn start(state: State, rest: [u8; 3], reader: Reader, profile: &str) -> Live {
+        let tuning = Tuning::load_for(profile);
         let listener = match reader {
             Reader::Feed => None,
             Reader::Cs2 => Some(Listener::start(tuning.cs2_port)),
@@ -1019,6 +1326,7 @@ pub fn demo() -> Result<String, String> {
                 pct: 100,
                 shield: 50,
                 helmet: false,
+                extra: Extra::NONE,
             }),
             3000,
         ),
@@ -1028,6 +1336,7 @@ pub fn demo() -> Result<String, String> {
                 pct: 90,
                 shield: 20,
                 helmet: false,
+                extra: Extra::NONE,
             }),
             1500,
         ),
@@ -1050,6 +1359,7 @@ pub fn demo() -> Result<String, String> {
                 pct: 125,
                 shield: 100,
                 helmet: false,
+                extra: Extra::NONE,
             }),
             4000,
         ),
@@ -1059,6 +1369,7 @@ pub fn demo() -> Result<String, String> {
                 pct: 150,
                 shield: 200,
                 helmet: false,
+                extra: Extra::NONE,
             }),
             2000,
         ),
@@ -1119,6 +1430,7 @@ pub fn cs2_state(body: &str) -> State {
             pct: h.min(999) as u32,
             shield: player["state"]["armor"].as_u64().unwrap_or(0).min(100) as u32,
             helmet: player["state"]["helmet"].as_bool().unwrap_or(false),
+            extra: Extra::NONE,
         },
         None => State::health(100),
     }
@@ -1344,7 +1656,7 @@ mod tests {
         assert_eq!(t.rgb_at(10), d.rgb_at(10));
         assert_eq!(t.hold, 1.5);
         assert_eq!(t.flash, Flash::Off);
-        assert_eq!((t.heart, t.readout), ([147, 5], [34, 2]));
+        assert_eq!((t.heart, t.readout), ([144, 0], [34, 2]));
         assert_eq!(
             Tuning::parse("flash trace\nheart 20 10\n").flash,
             Flash::Trace
@@ -1388,7 +1700,8 @@ mod tests {
             Some(State::Health {
                 pct: 80,
                 shield: 50,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         assert_eq!(
@@ -1396,7 +1709,8 @@ mod tests {
             Some(State::Health {
                 pct: 80,
                 shield: 50,
-                helmet: true
+                helmet: true,
+                extra: Extra::NONE,
             })
         );
         assert_eq!(
@@ -1404,11 +1718,36 @@ mod tests {
             Some(State::Health {
                 pct: 80,
                 shield: 50,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         assert_eq!(p("80 helmet yes"), None);
         assert_eq!(p("wait helmet on"), None);
+        // A game's extras, each its own word; the line written back reads the same.
+        let v1 = p("72/100 cap 85 rank SS style 40 time 11561.7 dash 2.5 rail 80 ttl 3");
+        assert_eq!(
+            v1,
+            Some(State::Health {
+                pct: 72,
+                shield: 0,
+                helmet: false,
+                extra: Extra {
+                    cap: Some(85),
+                    rank: Some(5),
+                    style: Some(40),
+                    time: Some(11561),
+                    dash: Some(25),
+                    rail: Some(80),
+                },
+            })
+        );
+        assert_eq!(p("72 rank X"), None);
+        assert_eq!(p("wait rank S"), None);
+        assert_eq!(p("72 dash 9"), p("72 dash 3"));
+        assert_eq!(clock(11561), "3:12:41");
+        assert_eq!(clock(161), "2:41");
+        assert_eq!(clock(0), "0:00");
         assert_eq!(p("wait"), Some(State::Wait));
         assert_eq!(p("wait ttl 30"), Some(State::Wait));
         for bad in [
@@ -1444,6 +1783,7 @@ mod tests {
                 pct: 42,
                 shield: 7,
                 helmet: false,
+                extra: Extra::NONE,
             }),
             None,
         )
@@ -1453,7 +1793,8 @@ mod tests {
             Some(State::Health {
                 pct: 42,
                 shield: 7,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         write(Some(State::Wait), Some(Duration::from_secs(30))).unwrap();
@@ -1473,7 +1814,8 @@ mod tests {
             Some(State::Health {
                 pct: 60,
                 shield: 10,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         thread::sleep(Duration::from_millis(20));
@@ -1482,6 +1824,23 @@ mod tests {
         write(None, None).unwrap();
         assert!(!state.exists());
         assert_eq!(read(), None);
+    }
+
+    /// V1 at `pct` with every extra word a game can send.
+    pub(super) fn v1_state(pct: u32) -> State {
+        State::Health {
+            pct,
+            shield: 0,
+            helmet: false,
+            extra: Extra {
+                cap: Some(85),
+                rank: Some(5),
+                style: Some(40),
+                time: Some(11561),
+                dash: Some(25),
+                rail: Some(80),
+            },
+        }
     }
 
     fn lit_in(bm: &Bitmap, x0: usize, y0: usize, x1: usize, y1: usize) -> usize {
@@ -1505,6 +1864,7 @@ mod tests {
                 pct: 101,
                 shield: 100,
                 helmet: false,
+                extra: Extra::NONE,
             },
             State::health(150),
             State::health(999),
@@ -1535,7 +1895,8 @@ mod tests {
             shield(State::Health {
                 pct: 100,
                 shield: 100,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             }) > 200
         );
         // A helmet makes the shield bar solid: every pixel of its three rows.
@@ -1543,7 +1904,8 @@ mod tests {
             shield(State::Health {
                 pct: 100,
                 shield: 100,
-                helmet: true
+                helmet: true,
+                extra: Extra::NONE,
             }),
             152 * 3
         );
@@ -1553,6 +1915,7 @@ mod tests {
             pct: 100,
             shield: s,
             helmet: true,
+            extra: Extra::NONE,
         };
         let rim = |s: State| {
             let f = Meter::default().frame(s);
@@ -1581,6 +1944,32 @@ mod tests {
         // A flatline never beats and holds still, dark, for three seconds; then the
         // search for a pulse begins under red, and any health ends the count.
         let mut m = Meter::default();
+        // A game's extras draw their own elements: the rank at the top centre with its
+        // meter, the timer under the readout, the pips and the charge under the sprite,
+        // the hard-damage hatch at the end of the bar; none of them without the words.
+        let plain = Meter::default().frame(State::health(72));
+        let v1 = Meter::default().frame(v1_state(72));
+        assert_eq!(lit_in(&plain, 64, 2, 100, 21), 0);
+        assert!(lit_in(&v1, 64, 2, 100, 16) > 20, "rank letters");
+        assert!(lit_in(&v1, 64, 17, 100, 22) > 10, "style meter");
+        assert!(lit_in(&v1, 120, 18, 158, 25) > 15, "timer");
+        assert_eq!(lit_in(&plain, 4, 36, 156, 41), 109 * 5);
+        assert!(
+            lit_in(&v1, 4, 36, 156, 41) > 109 * 5 + 40,
+            "hard-damage hatch"
+        );
+        assert!(lit_in(&v1, 3, 13, 42, 19) > 10, "dash pips and the charge");
+        // V1 in the heart's place, from a profile's own lines over the file.
+        let mut v = Meter {
+            tuning: Tuning::parse(&format!(
+                "{}\nsprite v1\nheart 2 1\n",
+                Tuning::default().to_text()
+            )),
+            ..Default::default()
+        };
+        assert_eq!((v.tuning.sprite, v.tuning.heart), (Sprite::V1, [2, 1]));
+        let f = v.frame(v1_state(72));
+        assert!(lit_in(&f, 2, 1, 17, 14) > 40, "V1 is drawn");
         let dead: Vec<Bitmap> = (0..40).map(|_| m.frame(State::health(0))).collect();
         assert!(m.beat_age.is_none());
         assert!(dead[..30].windows(2).all(|w| w[0].0 == w[1].0));
@@ -1662,7 +2051,8 @@ mod tests {
             State::Health {
                 pct: 87,
                 shield: 50,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             }
         );
         assert_eq!(
@@ -1679,7 +2069,8 @@ mod tests {
             State::Health {
                 pct: 50,
                 shield: 90,
-                helmet: true
+                helmet: true,
+                extra: Extra::NONE,
             }
         );
         assert_eq!(cs2_state("{}"), State::health(100));
@@ -1738,6 +2129,7 @@ mod dump {
             pct,
             shield,
             helmet,
+            extra: Extra::NONE,
         };
         for (tag, state) in [
             ("wait", State::Wait),
@@ -1750,8 +2142,12 @@ mod dump {
             ("h125", full(125, 100, true)),
             ("a200", full(100, 200, false)),
             ("a300", full(100, 300, true)),
+            ("v1", super::tests::v1_state(72)),
         ] {
             let mut m = Meter::default();
+            if tag == "v1" {
+                m.tuning = Tuning::parse("sprite v1\nheart 2 1\n");
+            }
             for i in 0..40 {
                 pbm(&dir, &format!("{tag}-{i:03}.pbm"), &m.frame(state));
             }
@@ -1805,6 +2201,7 @@ pub fn log_line(line: &str) -> Option<State> {
         // Doom's green armour is 100, blue 200: the bar thickens past 100.
         shield: armor.round().clamp(0.0, 999.0) as u32,
         helmet: false,
+        extra: Extra::NONE,
     })
 }
 
@@ -2228,7 +2625,8 @@ mod log_tests {
             Some(State::Health {
                 pct: 87,
                 shield: 50,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         assert_eq!(
@@ -2236,7 +2634,8 @@ mod log_tests {
             Some(State::Health {
                 pct: 200,
                 shield: 200,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         assert_eq!(log_line("G13HEALTH 0 100 0"), Some(State::health(0)));
@@ -2271,7 +2670,8 @@ mod log_tests {
             Some(State::Health {
                 pct: 80,
                 shield: 20,
-                helmet: false
+                helmet: false,
+                extra: Extra::NONE,
             })
         );
         use std::io::Write;

@@ -112,9 +112,27 @@ only; singleplayer games (Half-Life 2 and its episodes) get one that also hooks 
 client's `Battery` user message for the shield bar, since armour is on no page token.
 The installer picks by the game's `gameinfo.txt`; its README has the details.
 
+## ULTRAKILL
+
+A Unity game, so the feeder is a BepInEx plugin: `contrib/ultrakill-health` writes V1's
+health with its hard-damage cap, the style rank and meter, the level timer, the dashes
+and the rail charge, each as its own word (below), and `sprite v1` in the profile's
+tuning lines puts V1 in the corner. Its README has the install (BepInEx in the game
+folder, a `WINEDLLOVERRIDES` launch option for Proton, the DLL in `BepInEx/plugins/`).
+
 ## Other games
 
-A feeder is anything that learns the health and writes the line. A feeder that rewrites
+A feeder is anything that learns the health and writes the line. Beyond health and
+shield it may add, each optional and drawn only when present:
+
+```
+cap C          health the bar is capped at (hard damage): hatched from there to full
+rank R         a style rank, D C B A S SS SSS U, big at the top centre
+style S        that rank's own meter, percent, under the letters
+time SECONDS   a level timer under the readout, m:ss or h:mm:ss
+dash D         dashes left, 0–3, as pips under the sprite
+rail R         a weapon charge, percent, as a small gauge beside the pips
+``` A feeder that rewrites
 its file in place is fine: the watcher keeps the meter through half a second of empty
 reads. Zandronum and GZDoom can log an ACS script's `Log()`
 output to a console logfile, which a few lines of shell can follow into `g13map health`.
@@ -129,8 +147,10 @@ whose health runs past 200, drop or move the others as you like), `hold` (second
 from beat to beat at full health and on the last point; 2.0 and 0.8 by default, and a
 beat is never shorter than 0.8 s, the width of one complex on the glass), `swell` (seconds
 the heart stays big on each beat, 0.4 by default), `flash panel|trace|off` for the alarm
-band's flash on each beat, and where the heart (`heart X Y`, its top-left corner) and the
-readout (`readout RIGHT TOP`) sit on the 160 by 43 panel. Edit, save, look at the glass.
+band's flash on each beat, where the heart (`heart X Y`, its top-left corner) and the
+readout (`readout RIGHT TOP`) sit on the 160 by 43 panel, and `sprite heart|v1` for what
+beats in the corner. A profile's own lines go in `~/.config/g13map/meter.d/PROFILE`, read
+after the file so they win: a look per game. Edit, save, look at the glass.
 
 For changes to the code itself, `tools/dev-watch.sh` runs `g13map-watch.service` from a
 warm `cargo build --release` of the checkout through a systemd drop-in (about half a

@@ -225,7 +225,7 @@ impl Panel {
                 _ => {
                     self.meter = None; // the old reader goes before the new one binds
                     let state = meter::read().unwrap_or(meter::State::Wait);
-                    self.meter = Some(meter::Live::start(state, rest, reader));
+                    self.meter = Some(meter::Live::start(state, rest, reader, profile));
                     self.misses = 0;
                     eprintln!("health meter: on ('{profile}', {reader:?})");
                 }
@@ -367,7 +367,7 @@ pub fn watch() -> Result<String, String> {
     let mut pending = String::new();
     let mut modes_seen = mtime(&path());
     let mut rules_seen = mtime(&focus::path());
-    let mut tuning_seen = mtime(&meter::Tuning::path());
+    let mut tuning_seen = meter::Tuning::stamp(&name);
     let mut checked = Instant::now();
     meter::prepare();
     eprintln!(
@@ -515,11 +515,11 @@ pub fn watch() -> Result<String, String> {
             if !editor_was {
                 panel.refresh(&name);
             }
-            let tuning_now = mtime(&meter::Tuning::path());
+            let tuning_now = meter::Tuning::stamp(&name);
             if tuning_now != tuning_seen {
                 tuning_seen = tuning_now;
                 if let Some(live) = &mut panel.meter {
-                    live.tune(meter::Tuning::load());
+                    live.tune(meter::Tuning::load_for(&name));
                     eprintln!("health meter: look re-read");
                 }
             }
