@@ -57,6 +57,15 @@ pub fn validate_name(name: &str) -> Result<(), String> {
 
 pub const DAEMON_CONFIG: &str = "/etc/g13/default.bind";
 
+/// The daemon's startup config, the baseline that profile transitions diff against.
+/// `G13MAP_DAEMON_CONFIG` overrides it; the test sandbox points it at the packaged file so
+/// the suite does not depend on an installed driver (found by the first CI run).
+pub fn daemon_config() -> PathBuf {
+    env::var_os("G13MAP_DAEMON_CONFIG")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(DAEMON_CONFIG))
+}
+
 pub fn config_dir() -> PathBuf {
     env::var_os("G13MAP_CONFIG")
         .map(PathBuf::from)
@@ -126,13 +135,14 @@ pub fn save(name: &str, p: &Profile) -> Result<(), String> {
 
 /// The daemon's startup config, the baseline `apply` diffs against.
 pub fn daemon_base() -> Option<Profile> {
-    fs::read_to_string(DAEMON_CONFIG)
+    fs::read_to_string(daemon_config())
         .ok()
         .map(|t| Profile::parse(&t).0)
 }
 
 fn import(file: Option<&str>, name: Option<&str>) -> Result<String, String> {
-    let file = file.unwrap_or(DAEMON_CONFIG);
+    let default = daemon_config();
+    let file = file.unwrap_or_else(|| default.to_str().unwrap_or(DAEMON_CONFIG));
     let name = name.unwrap_or("default");
     validate_name(name)?;
     if profile_path(name).exists() {

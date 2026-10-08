@@ -10,6 +10,40 @@ use std::{
 
 static ENV: Mutex<()> = Mutex::new(());
 
+const DAEMON_DEFAULT: &str = "rgb 31 0 127
+bind G1 KEY_ENTER
+bind G2 KEY_V
+bind G3 KEY_Q
+bind G4 KEY_W
+bind G5 KEY_E
+bind G6 KEY_R
+bind G7 KEY_T
+bind G8 KEY_ESC
+bind G9 KEY_5
+bind G10 KEY_A
+bind G11 KEY_S
+bind G12 KEY_D
+bind G13 KEY_F
+bind G14 KEY_G
+bind G15 KEY_LEFTSHIFT
+bind G16 KEY_Z
+bind G17 KEY_X
+bind G18 KEY_C
+bind G19 KEY_TAB
+bind G20 KEY_LEFTCTRL
+bind G21 KEY_LEFTALT
+bind G22 KEY_SPACE
+bind M1 KEY_1
+bind M2 KEY_2
+bind M3 KEY_3
+bind MR KEY_4
+bind STICK_UP KEY_V
+bind STICK_LEFT KEY_V
+bind STICK_DOWN KEY_V
+bind STICK_RIGHT KEY_V
+bind LEFT KEY_M
+";
+
 pub struct Sandbox {
     pub dir: PathBuf,
     saved: Vec<(&'static str, Option<OsString>)>,
@@ -26,6 +60,11 @@ impl Sandbox {
             saved: vec![],
             _guard: guard,
         };
+        // The daemon's startup config the plans diff against: upstream's example bindings,
+        // with TOP and the stick bound, as a driver installed from the old package has. The
+        // packaged default.bind is neutral, and against a neutral baseline a stick-mode
+        // change is a no-op on the wire, which the profile tests expect to observe.
+        fs::write(s.dir.join("daemon-default.bind"), DAEMON_DEFAULT).unwrap();
         for (key, value) in [
             ("G13MAP_CONFIG", s.dir.join("config")),
             ("G13MAP_PIPE", s.dir.join("pipe")),
@@ -34,6 +73,7 @@ impl Sandbox {
             ("G13MAP_ANALOG", PathBuf::from("1")),
             ("G13MAP_ANALOG_MAP", s.dir.join("analog.map")),
             ("G13MAP_UNIT", PathBuf::from("0")),
+            ("G13MAP_DAEMON_CONFIG", s.dir.join("daemon-default.bind")),
             ("I3SOCK", s.dir.join("absent-i3.sock")),
         ] {
             s.saved.push((key, env::var_os(key)));
