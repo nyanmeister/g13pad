@@ -14,6 +14,10 @@ cleanup() {
 trap cleanup EXIT
 export G13MAP_CONFIG="$fixture/config" G13MAP_PIPE="$fixture/pipe" G13MAP_ANALOG=0 G13MAP_UNIT=0
 export G13MAP_ANALOG_MAP="$fixture/analog.map" XDG_RUNTIME_DIR="$fixture/runtime"
+# The daemon baseline the transitions diff against, with G1 bound as upstream's example
+# config binds it: the saved-unbind contract below needs a key that was live to clear.
+export G13MAP_DAEMON_CONFIG="$fixture/daemon-default.bind"
+printf 'rgb 31 0 127\nbind G1 KEY_ENTER\nbind G2 KEY_V\nbind TOP KEY_7\nbind LEFT KEY_M\n' > "$G13MAP_DAEMON_CONFIG"
 unset DISPLAY WAYLAND_DISPLAY
 mkdir -p "$XDG_RUNTIME_DIR"
 "$binary" --version
