@@ -23,6 +23,19 @@ one with a click:
 
 ![The editor with the Animations window open](docs/images/editor-animations.png)
 
+![The health meter: a heartbeat, a readout, bars for health and shield, the backlight by band](docs/images/health-meter.gif)
+
+The **health meter** turns the panel and the backlight into a live readout of the game in
+front of you: a monitor trace that beats faster as health falls, a bar with notches at
+the band edges, a hatched shield bar (solid with a helmet), and the backlight by band:
+green above 75, yellow, orange, red with a flash on every beat, blue over 100 for an
+overshield, and three dark seconds on a drop to zero before the search for a pulse. A
+profile chooses it as its picture, so the window rules put it on the game's windows; a
+mod or script feeds it one line at a time (a Deep Rock Galactic mod is in `contrib/`,
+Counter-Strike 2 posts straight to the watcher). `g13map health demo` runs the states
+on your own panel. See [the health meter](docs/health-meter.md) and, for adding a game,
+[AGENTS.md](AGENTS.md).
+
 ## Build and check
 
 On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev log4cpp`
@@ -68,7 +81,7 @@ root; it does not activate services. Prefer an OS package over installing onto a
 system by hand: CMake's installation copies configuration files and does not merge them.
 See [installation](docs/installation.md) and [migration](docs/migration.md) first.
 
-For a local Arch package, export a committed source tree as `g13pad-0.2.16.tar.gz`, put it
+For a local Arch package, export a committed source tree as `g13pad-0.2.26.tar.gz`, put it
 beside `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local
 archive with a placeholder checksum; a public release must supply a verified checksum.
 An Arch package preserves changed startup bindings/calibration through pacman's backup
@@ -88,6 +101,7 @@ g13map import FILE NAME             # keep an existing driver's bindings
 g13map apply                        # apply the selected saved profile
 g13map watch                        # profile switching and LCD playback
 g13map marquee 'Message' NAME        # keep reusable LCD text, no hardware write
+g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs2
 g13map --version
 g13map panel xfce                   # XFCE Generic Monitor status and editor button
 g13map panel waybar                 # Waybar custom-module JSON
@@ -105,7 +119,17 @@ background, threshold/dither, inversion and animation. Text supports installed f
 size, multiline wrapping/alignment and scrolling. **Animations…** offers built-in looping
 pixel art drawn in code (a rainy skyline, a starfield, Pong, Life, waves, cubes, digital
 rain, a heartbeat, an aquarium, tesseracts); a click keeps one as a picture. `g13map-anim` lists and
-keeps the same scenes from a terminal. `g13map-apply.service` restores the
+keeps the same scenes from a terminal. The **health meter** (0.2.17) is a live heartbeat
+that follows a game: `g13map health 87` (or `87/125 shield 40/60`) feeds it, the watcher
+draws a monitor trace that beats faster as health falls, a bar, a readout and a shield bar,
+and sets the backlight by band (green above 75, yellow, orange, red from 25 down, blue over
+100 for an overshield, off at 0 with a flatline, then after three seconds the search for a
+pulse under red). `g13map health wait` is a game connected
+without health yet (a lobby); `off` or an expired `ttl` gives the panel back to the
+profile. A profile chooses it as its picture (`g13map profile lcd NAME health`, or `health cs2`
+for the watcher to run the Counter-Strike 2 Game State listener itself), so the window
+rules put it on the game's windows; `g13map health demo` runs through the states
+(see [health meter](docs/health-meter.md)). `g13map-apply.service` restores the
 saved profile at login; `g13map-watch.service` handles automatic switching/animation,
 temporary LCD error recovery, and profile reapplication after a driver reconnect.
 

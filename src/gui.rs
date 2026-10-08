@@ -954,8 +954,11 @@ impl App {
         let mut r = self.lcd_send_profile();
         let shown = name.as_deref().unwrap_or("the daemon's logo");
         let mut msg = format!("LCD: {shown} (live; not saved yet)");
-        // Once the editor closes, an animation needs the watcher to keep it moving.
-        let animated = name.as_deref().is_some_and(|n| lcd::frame_count(n) > 1);
+        // Once the editor closes, an animation needs the watcher to keep it moving; the
+        // health meter is the watcher's altogether.
+        let animated = name
+            .as_deref()
+            .is_some_and(|n| lcd::frame_count(n) > 1 || crate::meter::selects(Some(n)).is_some());
         if r.is_ok() && animated && !self.modes.on && !self.rules.on {
             r = Self::watch_unit(true);
             msg.push_str("; g13map-watch.service enabled to play it after the editor closes");
@@ -1134,6 +1137,37 @@ impl App {
                 .clicked()
             {
                 self.lcd_use(None);
+            }
+            // The health meter as the profile's picture, with its reader.
+            let current = crate::meter::selects(self.profile.lcd.as_deref());
+            let mut picked: Option<&str> = None;
+            egui::ComboBox::from_id_salt("health meter")
+                .selected_text(if current.is_some() {
+                    "Health meter ✓"
+                } else {
+                    "Health meter…"
+                })
+                .show_ui(ui, |ui| {
+                    for (name, reader) in crate::meter::NAMES {
+                        let label = match reader {
+                            crate::meter::Reader::Feed => "Health meter (a mod or script feeds it)",
+                            crate::meter::Reader::Cs2 => "Health meter + Counter-Strike 2 listener",
+                        };
+                        if ui
+                            .selectable_label(current == Some(reader), label)
+                            .clicked()
+                        {
+                            picked = Some(name);
+                        }
+                    }
+                })
+                .response
+                .on_hover_text(
+                    "A live heartbeat and backlight that follow the game's health; \
+                     g13map watch shows it while this profile is active",
+                );
+            if let Some(name) = picked {
+                self.lcd_use(Some(name.to_string()));
             }
         });
         ui.horizontal(|ui| {

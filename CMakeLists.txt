@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.16 LANGUAGES CXX)
+project(g13pad VERSION 0.2.26 LANGUAGES CXX)
 include(GNUInstallDirs)
 include(CTest)
 find_package(Threads REQUIRED)

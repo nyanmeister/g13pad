@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Compare installed/extracted executables using copied profiles and a private display.
 set -eu
-if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-local-comparison 0.2.16'; exit 0; fi
+if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-local-comparison 0.2.26'; exit 0; fi
 [ "$#" -eq 4 ] || { printf '%s\n' 'usage: check-local-comparison.sh OLD_BIN_DIR NEW_BIN_DIR CONFIG_COPY OUTPUT' >&2; exit 2; }
 old=$(realpath "$1") new=$(realpath "$2") config=$(realpath "$3")
 mkdir -p "$4"

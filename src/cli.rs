@@ -18,7 +18,8 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile leds NAME BITS        save M-key LED mask (0–15)
   g13map profile stick NAME MODE       analog, keys or current
   g13map profile controller NAME MAP   e.g. 'right r3 0 0 0' (stick/click/swap/invert-X/Y)
-  g13map profile lcd NAME IMAGE        kept LCD image name, or none
+  g13map profile lcd NAME IMAGE        kept LCD image name, none, or the health meter:
+                                       health (a mod or script feeds it), health cs2
   g13map modes on|off|show             enable/disable/show M-Sum profile switching
   g13map modes set SUM NAME            assign a saved profile to sum 0–7
   g13map modes clear SUM               restore that sum's fallback
@@ -28,6 +29,11 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map panel lxqt|xfce|waybar|text    panel status (no arguments means LXQt)
   g13map import [FILE] [NAME]          import a driver bind file
   g13map marquee TEXT [NAME]           keep LCD text
+  g13map health VALUE[/MAX] [shield S[/MAX]]  feed the health meter (needs the watcher)
+  g13map health wait|off               game connected without health; no game
+  g13map health demo                   a scripted pass through the meter's states
+  g13map health cs2 [PORT]             Counter-Strike 2 Game State Integration feed
+  g13map health cs2-config [PORT]      the cfg file the game needs for that
   g13map layout                       print active X11 layout's physical key labels
   g13map watch                        run the profile/LCD watcher
   g13map detach-pointer               isolate the G13 source pointer under X11
@@ -137,7 +143,7 @@ fn profile(args: &[&str]) -> Result<String, String> {
                 p.lcd = None;
             } else {
                 validate_name(image)?;
-                if !lcd::path(image).is_file() {
+                if !lcd::path(image).is_file() && meter::selects(Some(image)).is_none() {
                     return Err(format!("kept LCD image '{image}' does not exist"));
                 }
                 p.lcd = Some((*image).into());
@@ -266,10 +272,38 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
             validate_name(name)?;
             render_text(text, Some(name))
         }
+        ["health", rest @ ..] => health(rest),
         ["import"] => import(None, None),
         ["import", file] => import(Some(file), None),
         ["import", file, name] => import(Some(file), Some(name)),
         _ => Err("invalid command or arguments; see g13map --help".into()),
+    }
+}
+
+/// `g13map health`: the meter's feed by hand, the demo, and the game adapters.
+fn health(args: &[&str]) -> Result<String, String> {
+    let port = |p: Option<&&str>| -> Result<u16, String> {
+        p.map_or(Ok(meter::CS2_PORT), |p| number(p, "port"))
+    };
+    let feed = |state: Option<meter::State>| {
+        meter::write(state, None)
+            .map(|_| "fed the health meter; g13map-watch.service shows it".into())
+    };
+    match args {
+        ["wait"] => feed(Some(meter::State::Wait)),
+        ["off"] => feed(None),
+        ["demo"] => meter::demo(),
+        ["cs2", p @ ..] if p.len() <= 1 => meter::cs2(port(p.first())?),
+        ["cs2-config", p @ ..] if p.len() <= 1 => Ok(meter::cs2_config(port(p.first())?)),
+        [value] | [value, "shield", _] => {
+            let line = args.join(" ");
+            let now = std::time::SystemTime::now();
+            match meter::parse(&line, now, now) {
+                Some(state) => feed(Some(state)),
+                None => Err(format!("invalid health '{value}': VALUE or VALUE/MAX, 0 or more")),
+            }
+        }
+        _ => Err("usage: g13map health VALUE[/MAX] [shield S[/MAX]] | wait | off | demo | cs2 [PORT] | cs2-config [PORT]".into()),
     }
 }
 

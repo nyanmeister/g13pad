@@ -8,7 +8,7 @@
 //! overrides it, MR clears back to it.
 use crate::focus::{self, Rules};
 use crate::profile::Profile;
-use crate::{active_name, daemon, lcd, load, set_active};
+use crate::{active_name, daemon, daemon_base, lcd, load, meter, set_active};
 use std::{
     env, fs,
     io::Read,
@@ -178,6 +178,11 @@ pub fn switch_to(
 #[derive(Default)]
 struct Panel {
     player: Option<lcd::Player>,
+    /// The health meter while a game feeds it; it owns the panel and the backlight.
+    meter: Option<meter::Live>,
+    /// Feed reads in a row that gave nothing while the meter was on: a feeder rewriting
+    /// its file in place is empty for an instant, which must not drop the meter.
+    misses: u32,
     seen: (
         String,
         Option<String>,
@@ -202,22 +207,78 @@ impl Panel {
         };
         (profile.to_string(), pic.clone(), m("lpbm"), m("anim"))
     }
-    /// Puts the profile's picture up from the start (an animation from its first frame).
+    /// Puts the profile's picture up from the start (an animation from its first frame),
+    /// or, for a profile that chose the health meter, the meter with its reader: it stays
+    /// across a switch between two profiles with the same reader (the switch wrote the
+    /// backlight, so the band's colour goes back up over it) and ends with any other.
     fn show(&mut self, profile: &str) -> Result<(), String> {
         self.seen = Self::state(profile);
         self.player = None; // stops the old frames before the new first one
-        self.player = Some(lcd::show(self.seen.1.as_deref(), true)?);
+        let rest = rest_colour(profile);
+        match meter::selects(self.seen.1.as_deref()) {
+            Some(reader) => match &mut self.meter {
+                Some(live) if live.reader() == reader => live.rest(rest),
+                _ => {
+                    self.meter = None; // the old reader goes before the new one binds
+                    let state = meter::read().unwrap_or(meter::State::Wait);
+                    self.meter = Some(meter::Live::start(state, rest, reader));
+                    self.misses = 0;
+                    eprintln!("health meter: on ('{profile}', {reader:?})");
+                }
+            },
+            None => {
+                if let Some(mut live) = self.meter.take() {
+                    // The meter restores the resting colour as it stops: this profile's,
+                    // not the one it started under.
+                    live.rest(rest);
+                    drop(live);
+                    eprintln!("health meter: off");
+                }
+                self.player = Some(lcd::show(self.seen.1.as_deref(), true)?);
+            }
+        }
         Ok(())
     }
     /// Shows again when the profile's picture changed, or nothing is up (the daemon was away).
     fn refresh(&mut self, profile: &str) {
-        if self.player.is_none() || Self::state(profile) != self.seen {
+        let nothing_up = self.player.is_none() && self.meter.is_none();
+        if nothing_up || Self::state(profile) != self.seen {
             if let Err(e) = self.show(profile) {
                 eprintln!("LCD: {e}");
                 let _ = crate::overlay::notify(&e);
             }
         }
     }
+}
+
+/// Empty feed reads in a row (half a second) before the meter shows the wait: a feeder
+/// rewriting its file in place is empty for an instant.
+const FEED_GRACE: u32 = 5;
+
+/// The feed's state into the meter, while a profile shows one.
+fn feed_meter(panel: &mut Panel, state: Option<meter::State>) {
+    let Some(live) = &mut panel.meter else { return };
+    match state {
+        Some(s) => {
+            panel.misses = 0;
+            live.set(s);
+        }
+        None => {
+            panel.misses = panel.misses.saturating_add(1);
+            if panel.misses >= FEED_GRACE {
+                live.set(meter::State::Wait);
+            }
+        }
+    }
+}
+
+/// The backlight the profile calls for: its own line, else the daemon's startup colour.
+fn rest_colour(profile: &str) -> [u8; 3] {
+    load(profile)
+        .ok()
+        .and_then(|(p, _)| p.rgb)
+        .or_else(|| daemon_base().and_then(|b| b.rgb))
+        .unwrap_or([0, 0, 255])
 }
 
 fn open_out() -> Result<fs::File, String> {
@@ -302,7 +363,9 @@ pub fn watch() -> Result<String, String> {
     let mut pending = String::new();
     let mut modes_seen = mtime(&path());
     let mut rules_seen = mtime(&focus::path());
+    let mut tuning_seen = mtime(&meter::Tuning::path());
     let mut checked = Instant::now();
+    meter::prepare();
     eprintln!(
         "g13map watch: '{name}'; modes {}, window rules {}",
         if modes.on { "on" } else { "off" },
@@ -346,6 +409,7 @@ pub fn watch() -> Result<String, String> {
     let mut panel = Panel::default();
     let mut editor_was = lcd::editor_open();
     let mut editor_checked = Instant::now();
+    let mut meter_checked = Instant::now();
     let mut driver_seen = fs::metadata(daemon::pipe_path())
         .ok()
         .map(|m| (m.dev(), m.ino()));
@@ -424,6 +488,12 @@ pub fn watch() -> Result<String, String> {
         if idle {
             thread::sleep(Duration::from_millis(100));
         }
+        if meter_checked.elapsed() >= meter::TICK {
+            meter_checked = Instant::now();
+            if !editor_was {
+                feed_meter(&mut panel, meter::read());
+            }
+        }
         if editor_checked.elapsed() >= Duration::from_millis(500) {
             editor_checked = Instant::now();
             let now = lcd::editor_open();
@@ -440,6 +510,14 @@ pub fn watch() -> Result<String, String> {
             checked = Instant::now();
             if !editor_was {
                 panel.refresh(&name);
+            }
+            let tuning_now = mtime(&meter::Tuning::path());
+            if tuning_now != tuning_seen {
+                tuning_seen = tuning_now;
+                if let Some(live) = &mut panel.meter {
+                    live.tune(meter::Tuning::load());
+                    eprintln!("health meter: look re-read");
+                }
             }
             let driver_now = fs::metadata(daemon::pipe_path())
                 .ok()

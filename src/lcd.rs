@@ -814,6 +814,12 @@ pub fn names() -> Vec<String> {
 
 pub fn load(name: &str) -> Result<Bitmap, String> {
     let p = path(name);
+    if !p.is_file() {
+        // The health meter's own names have no file: a still of the meter.
+        if let Some(bm) = crate::meter::preview(name) {
+            return Ok(bm);
+        }
+    }
     fs::read(&p)
         .map_err(|e| format!("{}: {e}", p.display()))
         .and_then(|b| Bitmap::from_lpbm(&b))

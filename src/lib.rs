@@ -15,6 +15,7 @@ pub mod art;
 mod board;
 mod cli;
 mod daemon;
+mod draw;
 mod focus;
 #[cfg(feature = "editor")]
 mod fonts;
@@ -26,6 +27,7 @@ pub mod keys;
 pub mod lcd;
 #[cfg(feature = "editor")]
 mod marquee;
+pub mod meter;
 mod modes;
 pub mod overlay;
 mod panel;
@@ -72,6 +74,16 @@ pub fn config_dir() -> PathBuf {
         .or_else(|| env::var_os("XDG_CONFIG_HOME").map(|d| PathBuf::from(d).join("g13map")))
         .unwrap_or_else(|| {
             PathBuf::from(env::var_os("HOME").unwrap_or_default()).join(".config/g13map")
+        })
+}
+
+/// Session state that is not configuration: `$XDG_STATE_HOME/g13map`, else
+/// `~/.local/state/g13map`. The health meter's second feed file lives here.
+pub fn state_dir() -> PathBuf {
+    env::var_os("XDG_STATE_HOME")
+        .map(|d| PathBuf::from(d).join("g13map"))
+        .unwrap_or_else(|| {
+            PathBuf::from(env::var_os("HOME").unwrap_or_default()).join(".local/state/g13map")
         })
 }
 
