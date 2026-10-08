@@ -1,0 +1,9 @@
+[package]
+name = "g13pad-analog"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Logitech G13 analog adapter configuration and service helper"
+
+[dependencies]
+g13pad-core.workspace = true

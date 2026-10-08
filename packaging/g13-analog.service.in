@@ -1,0 +1,21 @@
+[Unit]
+Description=g13pad analog stick as an Xbox-compatible controller
+BindsTo=g13.service
+After=g13.service
+PartOf=g13.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=g13
+Group=g13
+ExecStartPre="@G13PAD_BINDIR@/g13pad-analog" await /dev/input/g13-analog-source
+ExecStartPre="@G13PAD_BINDIR@/g13pad-analog" prepare /run/g13d/g13-0
+ExecStart="@G13PAD_BINDIR@/g13pad-analog" run /etc/g13/analog.conf /dev/input/g13-analog-source /run/g13d/analog.map
+ExecStopPost=-"@G13PAD_BINDIR@/g13pad-analog" release /run/g13d/g13-0
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true

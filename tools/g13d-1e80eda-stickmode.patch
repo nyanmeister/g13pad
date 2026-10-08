@@ -1,0 +1,30 @@
+--- a/g13_device.cpp
++++ b/g13_device.cpp
+@@ -504,17 +504,16 @@
+   commandAdder add_stickmode(
+       _command_table, "stickmode", [this](const char *remainder) {
+         std::string mode = remainder;
+-        // TODO: this could be part of a G13::Constants class I think
+-        const std::set<std::string> modes = {"ABSOLUTE",  "RELATIVE",
+-                                             "KEYS",      "CALCENTER",
+-                                             "CALBOUNDS", "CALNORTH"};
+-        int index = 0;
+-        for (auto &test : modes) {
+-          if (test == mode) {
+-            m_stick.set_mode((G13::stick_mode_t)index);
+-            return;
+-          }
+-          index++;
++        // A sorted container's index is not a stick_mode_t. KEYS used to select
++        // CALNORTH; RELATIVE has no implementation or enum value in this driver.
++        const std::map<std::string, G13::stick_mode_t> modes = {
++            {"ABSOLUTE", STICK_ABSOLUTE}, {"KEYS", STICK_KEYS},
++            {"CALCENTER", STICK_CALCENTER}, {"CALBOUNDS", STICK_CALBOUNDS},
++            {"CALNORTH", STICK_CALNORTH}};
++        auto found = modes.find(mode);
++        if (found != modes.end()) {
++          m_stick.set_mode(found->second);
++          return;
+         }
+         G13_ERR("unknown stick mode : <" << mode << ">");
+       });

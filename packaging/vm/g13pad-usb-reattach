@@ -1,0 +1,44 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Host-side USB reconnect policy for one G13 and Arch-Virtual, never a libvirt hook.
+set -eu
+export LC_ALL=C
+if [ "${1:-}" = --version ]; then
+    printf '%s\n' 'g13pad-usb-reattach 0.2.8'
+    exit 0
+fi
+[ "$#" -eq 1 ] || { echo 'usage: g13pad-usb-reattach USB_KERNEL_NAME' >&2; exit 2; }
+case "$1" in ''|*[!0-9.-]*|.*|-*) echo 'invalid USB kernel name' >&2; exit 2 ;; esac
+# Overrides let isolated fixtures exercise the same policy without managing a real VM.
+device=${G13PAD_USB_SYSFS:-/sys/bus/usb/devices}/$1
+config=${G13PAD_USB_XML:-/etc/libvirt/g13pad-Arch-Virtual.xml}
+lock=${G13PAD_USB_LOCK:-/run/lock/g13pad-Arch-Virtual.lock}
+[ -r "$device/idVendor" ] && [ -r "$device/idProduct" ] || exit 0
+[ "$(cat "$device/idVendor")" = 046d ] && [ "$(cat "$device/idProduct")" = c21c ] || exit 0
+exec 9>"$lock"
+flock -w 20 9
+state=$(virsh -c qemu:///system domstate Arch-Virtual)
+case "$state" in 'shut off'|crashed) exit 0 ;; running|paused|'in shutdown'|'pmsuspended') ;; *) echo "unexpected VM state: $state" >&2; exit 1 ;; esac
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+virsh -c qemu:///system dumpxml Arch-Virtual >"$work/live.xml"
+match="/domain/devices/hostdev[@type='usb'][source/vendor/@id='0x046d' and source/product/@id='0xc21c']"
+count=$(xmllint --xpath "count($match)" "$work/live.xml")
+case "$count" in
+    0) ;;
+    1)
+        bus=$(cat "$device/busnum")
+        address=$(cat "$device/devnum")
+        if [ "$(xmllint --xpath "string($match/source/address/@bus)" "$work/live.xml")" = "$bus" ] &&
+           [ "$(xmllint --xpath "string($match/source/address/@device)" "$work/live.xml")" = "$address" ]; then
+            echo 'G13 already attached at its current USB address'
+            exit 0
+        fi
+        xmllint --xpath "$match" "$work/live.xml" >"$work/stale.xml"
+        virsh -c qemu:///system detach-device Arch-Virtual "$work/stale.xml" --live
+        ;;
+    *) echo 'multiple G13 hostdev entries; refusing ambiguous detach' >&2; exit 1 ;;
+esac
+# Recheck presence after detach; removal during this operation is an ordinary hotplug race.
+[ -r "$device/idVendor" ] || exit 0
+virsh -c qemu:///system attach-device Arch-Virtual "$config" --live

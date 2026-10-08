@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Service
+ServiceTypes=LXQtPanel/Plugin
+Name=G13
+Comment=Logitech G13 key bindings: click for the editor
+Icon=input-gaming

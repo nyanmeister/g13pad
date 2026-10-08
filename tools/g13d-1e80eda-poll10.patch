@@ -1,0 +1,11 @@
+--- a/g13_device.cpp
++++ b/g13_device.cpp
+@@ -185,7 +185,7 @@
+   int size = 0;
+   int error =
+       libusb_interrupt_transfer(handle, LIBUSB_ENDPOINT_IN | G13_KEY_ENDPOINT,
+-                                buffer, G13_REPORT_SIZE, &size, 100);
++                                buffer, G13_REPORT_SIZE, &size, 10);
+ 
+   if (error && error != LIBUSB_ERROR_TIMEOUT) {
+     G13_ERR("Error while reading keys: " << DescribeLibusbErrorCode(error));

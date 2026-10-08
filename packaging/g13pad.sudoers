@@ -1,0 +1,2 @@
+# Members of g13 may only start/stop the root-owned adapter unit.
+%g13 ALL=(root) NOPASSWD: /usr/bin/systemctl start g13-analog.service, /usr/bin/systemctl stop g13-analog.service

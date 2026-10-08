@@ -1,0 +1,20 @@
+[Unit]
+Description=g13pad Logitech G13 driver
+
+[Service]
+Type=simple
+User=g13
+Group=g13
+RuntimeDirectory=g13d
+RuntimeDirectoryMode=0750
+UMask=0007
+ExecStartPre="@G13PAD_BINDIR@/g13pad-analog" init-map /run/g13d/analog.map
+ExecStart="@G13PAD_BINDIR@/g13d" --config /etc/g13/default.bind --pipe_in /run/g13d/g13-0 --pipe_out /run/g13d/g13-0_out
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

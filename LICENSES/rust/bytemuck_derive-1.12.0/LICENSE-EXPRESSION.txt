@@ -1,0 +1,1 @@
+Zlib OR Apache-2.0 OR MIT

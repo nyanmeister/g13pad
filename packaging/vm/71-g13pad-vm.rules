@@ -1,0 +1,2 @@
+# Install on the virtualization HOST only, not in the guest or on a normal G13 desktop.
+ACTION=="add", SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="046d", ATTR{idProduct}=="c21c", TAG+="systemd", ENV{SYSTEMD_WANTS}+="g13pad-usb-reattach@%k.service"

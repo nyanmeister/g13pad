@@ -1,0 +1,11 @@
+# Neutral startup: bindings are supplied by the user's saved profile.
+rgb 0 80 160
+mod 0
+stickmode KEYS
+bind TOP KEY_RESERVED
+bind STICK_UP KEY_RESERVED
+bind STICK_DOWN KEY_RESERVED
+bind STICK_LEFT KEY_RESERVED
+bind STICK_RIGHT KEY_RESERVED
+bind STICK_PAGEUP KEY_RESERVED
+bind STICK_PAGEDOWN KEY_RESERVED

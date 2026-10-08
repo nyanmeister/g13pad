@@ -1,0 +1,14 @@
+[Unit]
+Description=g13pad profile switching, LCD playback and error recovery
+After=g13map-apply.service
+# The watcher handles absent/recreated FIFOs. A path condition would skip startup
+# permanently if login or a simultaneous driver restart precedes FIFO creation.
+
+[Service]
+Type=simple
+ExecStart="@G13PAD_BINDIR@/g13map" watch
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

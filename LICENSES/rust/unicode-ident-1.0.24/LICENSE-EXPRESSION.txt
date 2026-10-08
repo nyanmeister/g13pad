@@ -1,0 +1,1 @@
+(MIT OR Apache-2.0) AND Unicode-3.0

@@ -1,0 +1,237 @@
+diff --git a/g13_action.hpp b/g13_action.hpp
+index 7169da5..96e7690 100644
+--- a/g13_action.hpp
++++ b/g13_action.hpp
+@@ -171,10 +171,12 @@ public:
+ 
+   // void ParseKey(unsigned char* byte, G13_Device* g13);
+   void test(const G13_ZoneCoord &loc);
++  void release();
+   void set_bounds(const G13_ZoneBounds &bounds) { _bounds = bounds; }
+ 
+ protected:
+   bool _active;
++  G13_ActionPtr _pressed_action;
+ 
+   G13_ZoneBounds _bounds;
+ };
+diff --git a/g13_device.cpp b/g13_device.cpp
+index 7b8f2d1..75df977 100644
+--- a/g13_device.cpp
++++ b/g13_device.cpp
+@@ -132,6 +132,19 @@ void G13_Device::SendEvent(int type, int code, int val) {
+   write(m_uinput_fid, &m_event, sizeof(m_event));
+ }
+ 
++void G13_Device::DispatchKey(int key, const G13_ActionPtr &action, bool down) {
++  if (!update(key, down)) return;
++  if (down) {
++    pressed_actions[key] = action;
++    // Keep it alive if an in-daemon command replaces its own binding.
++    auto pressed = pressed_actions[key];
++    if (pressed) pressed->act(*this, true);
++  } else {
++    auto pressed = std::move(pressed_actions[key]);
++    if (pressed) pressed->act(*this, false);
++  }
++}
++
+ void G13_Device::OutputPipeWrite(const std::string &out) const {
+   write(m_output_pipe_fid, out.c_str(), out.size());
+ }
+@@ -237,7 +250,8 @@ void G13_Device::ReadCommandsFromPipe() {
+         960) { // TODO probably image, for now, don't test, just assume image
+       lcd().Image(buf, ret);
+     } else {
+-      std::string buffer = reinterpret_cast<const char *>(buf);
++      if (ret <= 0) return;
++      std::string buffer(reinterpret_cast<const char *>(buf), ret);
+       auto lines = Helper::split<std::vector<std::string>>(
+           buffer, "\n\r", Helper::split::no_empties);
+ 
+@@ -246,7 +260,8 @@ void G13_Device::ReadCommandsFromPipe() {
+             cmd, "#", Helper::split::no_empties);
+ 
+         if (!command_comment.empty() && command_comment[0] != std::string("")) {
+-          while (isspace(command_comment[0].back()))
++          while (!command_comment[0].empty() &&
++                 isspace(static_cast<unsigned char>(command_comment[0].back())))
+             command_comment[0].pop_back();
+           if (command_comment[0] != std::string("")) {
+             G13_OUT("command: " << command_comment[0]);
+diff --git a/g13_device.hpp b/g13_device.hpp
+index 01768a2..7812dd9 100644
+--- a/g13_device.hpp
++++ b/g13_device.hpp
+@@ -77,6 +77,9 @@ public:
+ 
+   bool update(int key, bool v);
+ 
++  // A release must use the action that emitted the press, even after a rebind/profile swap.
++  void DispatchKey(int key, const G13_ActionPtr &action, bool down);
++
+   // used by G13_Manager
+   void Cleanup();
+ 
+@@ -137,6 +140,7 @@ protected:
+   G13_Stick m_stick;
+ 
+   bool keys[G13_NUM_KEYS]{};
++  G13_ActionPtr pressed_actions[G13_NUM_KEYS]{};
+ 
+ private:
+   libusb_device_handle *handle;
+diff --git a/g13_keys.cpp b/g13_keys.cpp
+index fc6e360..8e403bc 100644
+--- a/g13_keys.cpp
++++ b/g13_keys.cpp
+@@ -26,11 +26,7 @@ void G13_Key::dump(std::ostream &o) const {
+ 
+ void G13_Key::ParseKey(const unsigned char *byte, G13_Device *g13) {
+   bool key_is_down = byte[_index.offset] & _index.mask;
+-  auto key_state_changed = g13->update(_index.index, key_is_down);
+-
+-  if (key_state_changed && _action) {
+-    _action->act(*g13, key_is_down);
+-  }
++  g13->DispatchKey(_index.index, _action, key_is_down);
+ }
+ 
+ // *************************************************************************
+diff --git a/g13_lcd.cpp b/g13_lcd.cpp
+index 06c8a63..4b3bb10 100644
+--- a/g13_lcd.cpp
++++ b/g13_lcd.cpp
+@@ -122,10 +122,10 @@ BYTES_PER_ROW * 8; unsigned char mask = 1 << ((row)&7);
+ void G13_LCD::WritePos(int row, int col) {
+   cursor_row = row;
+   cursor_col = col;
+-  if (cursor_col >= G13_LCD_COLUMNS) {
++  if (cursor_col < 0 || cursor_col >= G13_LCD_COLUMNS) {
+     cursor_col = 0;
+   }
+-  if (cursor_row >= G13_LCD_TEXT_ROWS) {
++  if (cursor_row < 0 || cursor_row >= G13_LCD_TEXT_ROWS) {
+     cursor_row = 0;
+   }
+ }
+@@ -142,17 +142,19 @@ void G13_LCD::WriteChar(char c, unsigned int row, unsigned int col) {
+     }
+   }
+ 
++  if (row >= G13_LCD_TEXT_ROWS || col >= G13_LCD_COLUMNS) return;
+   unsigned offset =
+       image_byte_offset(row * G13_LCD_TEXT_CHEIGHT,
+                         col); //*m_keypad.m_currentFont->m_width );
++  const auto width = std::min<unsigned>(m_keypad.current_font().width(), G13_LCD_COLUMNS - col);
+   if (text_mode) {
+     memcpy(&image_buf[offset],
+-           &m_keypad.current_font().char_data(c).bits_inverted,
+-           m_keypad.current_font().width());
++           &m_keypad.current_font().char_data(static_cast<unsigned char>(c)).bits_inverted,
++           width);
+   } else {
+     memcpy(&image_buf[offset],
+-           &m_keypad.current_font().char_data(c).bits_regular,
+-           m_keypad.current_font().width());
++           &m_keypad.current_font().char_data(static_cast<unsigned char>(c)).bits_regular,
++           width);
+   }
+ }
+ 
+diff --git a/g13_lcd.hpp b/g13_lcd.hpp
+index d8a13af..60d66b2 100644
+--- a/g13_lcd.hpp
++++ b/g13_lcd.hpp
+@@ -16,7 +16,7 @@ const size_t G13_LCD_ROWS = 48;
+ const size_t G13_LCD_BYTES_PER_ROW = G13_LCD_COLUMNS / 8;
+ const size_t G13_LCD_BUF_SIZE = G13_LCD_ROWS * G13_LCD_BYTES_PER_ROW;
+ const size_t G13_LCD_TEXT_CHEIGHT = 8;
+-const size_t G13_LCD_TEXT_ROWS = 160 / G13_LCD_TEXT_CHEIGHT;
++const size_t G13_LCD_TEXT_ROWS = G13_LCD_ROWS / G13_LCD_TEXT_CHEIGHT;
+ 
+ class G13_LCD {
+ public:
+diff --git a/g13_stick.cpp b/g13_stick.cpp
+index f3a421b..2f39314 100644
+--- a/g13_stick.cpp
++++ b/g13_stick.cpp
+@@ -2,6 +2,7 @@
+  * This file contains code for managing keys and profiles
+  */
+ #include "g13.hpp"
++#include <algorithm>
+ 
+ namespace G13 {
+ 
+@@ -48,6 +49,9 @@ G13_StickZone *G13_Stick::zone(const std::string &name, bool create) {
+ void G13_Stick::set_mode(stick_mode_t m) {
+   if (m == m_stick_mode)
+     return;
++  if (m_stick_mode == STICK_KEYS) {
++    for (auto &zone : m_zones) zone.release();
++  }
+   if (m_stick_mode == STICK_CALCENTER || m_stick_mode == STICK_CALBOUNDS ||
+       m_stick_mode == STICK_CALNORTH) {
+     RecalcCalibrated();
+@@ -72,8 +76,11 @@ void G13_Stick::set_mode(stick_mode_t m) {
+ void G13_Stick::RecalcCalibrated() {}
+ 
+ void G13_Stick::RemoveZone(const G13_StickZone &zone) {
+-  const G13_StickZone &target(zone);
+-  m_zones.erase(std::remove(m_zones.begin(), m_zones.end(), target), m_zones.end());
++  auto it = std::find(m_zones.begin(), m_zones.end(), zone);
++  if (it != m_zones.end()) {
++    it->release();
++    m_zones.erase(it);
++  }
+ }
+ void G13_Stick::dump(std::ostream &out) const {
+   for (auto &zone : m_zones) {
+@@ -92,21 +99,23 @@ void G13_StickZone::dump(std::ostream &out) const {
+ }
+ 
+ void G13_StickZone::test(const G13_ZoneCoord &loc) {
+-  if (!_action)
+-    return;
+   bool prior_active = _active;
+   _active = _bounds.contains(loc);
+   if (!_active) {
+-    if (prior_active) {
+-      // cout << "exit stick zone " << m_name << std::endl;
+-      _action->act(false);
+-    }
++    if (prior_active) release();
+   } else {
+-    // cout << "in stick zone " << m_name << std::endl;
+-    _action->act(true);
++    if (!prior_active) _pressed_action = _action;
++    auto pressed = _pressed_action;
++    if (pressed) pressed->act(true);
+   }
+ }
+ 
++void G13_StickZone::release() {
++  _active = false;
++  auto pressed = std::move(_pressed_action);
++  if (pressed) pressed->act(false);
++}
++
+ G13_StickZone::G13_StickZone(G13_Stick &stick, const std::string &name,
+                              const G13_ZoneBounds &b,
+                              const G13_ActionPtr &action)
+diff --git a/helper.hpp b/helper.hpp
+index 50a85d6..3289068 100644
+--- a/helper.hpp
++++ b/helper.hpp
+@@ -146,8 +146,8 @@ inline const char *advance_ws(CCP &source, std::string &dest) {
+     dest = std::string(source, space - source);
+     source = space + 1;
+   } else {
+-    dest = source;
+-    source = nullptr;
++    dest = source ? source : "";
++    source = "";
+   }
+   return source;
+ }

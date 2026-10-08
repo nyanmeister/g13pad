@@ -1,0 +1,488 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 9cbe446..033520a 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.13)
+ project(g13)
+ 
+ set(CMAKE_CXX_STANDARD 17)
++find_package(Threads REQUIRED)
+ set(CMAKE_CXX_FLAGS "-std=c++17")
+ 
+ include_directories(.)
+@@ -76,5 +77,5 @@ add_executable(runtests
+         logo.hpp
+         testKeys.cpp)
+ 
+-target_link_libraries (g13d usb-1.0 log4cpp evdev)
+-target_link_libraries (runtests usb-1.0 log4cpp evdev gtest gmock)
+\ No newline at end of file
++target_link_libraries (g13d usb-1.0 log4cpp evdev Threads::Threads)
++target_link_libraries (runtests usb-1.0 log4cpp evdev gtest gmock Threads::Threads)
+diff --git a/g13_device.cpp b/g13_device.cpp
+index 75df977..3ddbd29 100644
+--- a/g13_device.cpp
++++ b/g13_device.cpp
+@@ -12,6 +12,8 @@
+ #include "logo.hpp"
+ #include <fstream>
+ #include <unistd.h>
++#include <sys/eventfd.h>
++#include <stdexcept>
+ 
+ namespace G13 {
+ // *************************************************************************
+@@ -195,13 +197,100 @@ int G13_Device::ReadKeypresses() {
+     }
+   }
+   if (size == G13_REPORT_SIZE) {
+-    parse_joystick(buffer);
+-    m_currentProfile->ParseKeys(buffer);
+-    SendEvent(EV_SYN, SYN_REPORT, 0);
++    ProcessInputReport(buffer);
+   }
+   return 0;
+ }
+ 
++void G13_Device::ProcessInputReport(unsigned char *buffer) {
++  parse_joystick(buffer);
++  m_currentProfile->ParseKeys(buffer);
++  SendEvent(EV_SYN, SYN_REPORT, 0);
++}
++
++void G13_Device::StartInputReader() {
++  if (m_inputThread.joinable()) return;
++  m_inputWake = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
++  if (m_inputWake < 0) throw std::runtime_error("Cannot create G13 input wake fd");
++  m_inputStopping.store(false);
++  {
++    std::lock_guard<std::mutex> lock(m_inputMutex);
++    m_inputReports.clear();
++    m_inputError = 0;
++  }
++  try {
++    m_inputThread = std::thread(&G13_Device::InputLoop, this);
++  } catch (...) {
++    close(m_inputWake);
++    m_inputWake = -1;
++    throw;
++  }
++}
++
++void G13_Device::StopInputReader() {
++  m_inputStopping.store(true);
++  m_inputSpace.notify_all();
++  if (m_inputThread.joinable()) m_inputThread.join();
++  if (m_inputWake >= 0) close(m_inputWake);
++  m_inputWake = -1;
++}
++
++void G13_Device::InputLoop() {
++  while (!m_inputStopping.load()) {
++    InputReport report{};
++    int size = 0;
++    // An idle reader can sleep: it no longer holds up the LCD/FIFO event loop.
++    const int error = libusb_interrupt_transfer(handle,
++        LIBUSB_ENDPOINT_IN | G13_KEY_ENDPOINT, report.data(), report.size(), &size, 100);
++    if (m_inputStopping.load()) break;
++    if (error && error != LIBUSB_ERROR_TIMEOUT) {
++      G13_ERR("G13 input reader stopped: " << DescribeLibusbErrorCode(error));
++      {
++        std::lock_guard<std::mutex> lock(m_inputMutex);
++        m_inputError = error;
++      }
++      const uint64_t wake = 1;
++      (void)write(m_inputWake, &wake, sizeof(wake));
++      break;
++    }
++    if (size != G13_REPORT_SIZE) continue;
++    {
++      std::unique_lock<std::mutex> lock(m_inputMutex);
++      // Bounded storage, preserving down/up order; never overwrite a release report.
++      m_inputSpace.wait(lock, [this] {
++        return m_inputStopping.load() || m_inputReports.size() < 256;
++      });
++      if (m_inputStopping.load()) break;
++      m_inputReports.push_back(report);
++    }
++    const uint64_t wake = 1;
++    (void)write(m_inputWake, &wake, sizeof(wake));
++  }
++}
++
++int G13_Device::ProcessInputReports() {
++  uint64_t wakes;
++  if (m_inputWake >= 0) (void)read(m_inputWake, &wakes, sizeof(wakes));
++  std::deque<InputReport> reports;
++  int error;
++  {
++    std::lock_guard<std::mutex> lock(m_inputMutex);
++    // Bound each dispatch turn so continuous input cannot starve the LCD FIFO.
++    for (size_t i = 0; i < 32 && !m_inputReports.empty(); ++i) {
++      reports.push_back(m_inputReports.front());
++      m_inputReports.pop_front();
++    }
++    if (!m_inputReports.empty()) {
++      const uint64_t wake = 1;
++      (void)write(m_inputWake, &wake, sizeof(wake));
++    }
++    error = m_inputError;
++  }
++  m_inputSpace.notify_one();
++  for (auto &report : reports) ProcessInputReport(report.data());
++  return error;
++}
++
+ void G13_Device::ReadConfigFile(const std::string &filename) {
+   std::ifstream s(filename);
+ 
+@@ -539,11 +628,15 @@ void G13_Device::RegisterContext(libusb_context *libusbContext) {
+ }
+ 
+ void G13_Device::Cleanup() {
++  // Join before closing libusb handles, FIFOs or uinput, including on unplug/shutdown.
++  StopInputReader();
+   SetKeyColor(0, 0, 0);
+   remove(m_input_pipe_name.c_str());
+   remove(m_output_pipe_name.c_str());
+   ioctl(m_uinput_fid, UI_DEV_DESTROY);
+   close(m_uinput_fid);
++  if (m_input_pipe_fid >= 0) close(m_input_pipe_fid);
++  if (m_output_pipe_fid >= 0) close(m_output_pipe_fid);
+   libusb_release_interface(handle, 0);
+   libusb_close(handle);
+ }
+diff --git a/g13_device.hpp b/g13_device.hpp
+index 7812dd9..b02db3d 100644
+--- a/g13_device.hpp
++++ b/g13_device.hpp
+@@ -13,6 +13,12 @@
+ #include <linux/uinput.h>
+ #include <map>
+ #include <memory>
++#include <array>
++#include <atomic>
++#include <condition_variable>
++#include <deque>
++#include <mutex>
++#include <thread>
+ 
+ namespace G13 {
+ // *************************************************************************
+@@ -59,6 +65,13 @@ public:
+ 
+   int ReadKeypresses();
+ 
++  // USB acquisition is independent; profile/key dispatch stays on the manager thread.
++  void StartInputReader();
++  void StopInputReader();
++  int ProcessInputReports();
++  int input_wake_fd() const { return m_inputWake; }
++  int command_fd() const { return m_input_pipe_fid; }
++
+   void parse_joystick(unsigned char *buf);
+ 
+   G13_ActionPtr MakeAction(const std::string &action);
+@@ -126,9 +139,9 @@ protected:
+ 
+   int m_uinput_fid;
+ 
+-  int m_input_pipe_fid{};
++  int m_input_pipe_fid{-1};
+   std::string m_input_pipe_name;
+-  int m_output_pipe_fid{};
++  int m_output_pipe_fid{-1};
+   std::string m_output_pipe_name;
+ 
+   std::map<std::string, FontPtr> pFonts;
+@@ -143,6 +156,16 @@ protected:
+   G13_ActionPtr pressed_actions[G13_NUM_KEYS]{};
+ 
+ private:
++  using InputReport = std::array<unsigned char, 8>;
++  void InputLoop();
++  void ProcessInputReport(unsigned char *buffer);
++  std::atomic<bool> m_inputStopping{false};
++  std::thread m_inputThread;
++  std::mutex m_inputMutex;
++  std::condition_variable m_inputSpace;
++  std::deque<InputReport> m_inputReports;
++  int m_inputError = 0;
++  int m_inputWake = -1;
+   libusb_device_handle *handle;
+   libusb_device *device;
+ };
+diff --git a/g13_hotplug.cpp b/g13_hotplug.cpp
+index dc98326..11a4080 100644
+--- a/g13_hotplug.cpp
++++ b/g13_hotplug.cpp
+@@ -86,17 +86,7 @@ int LIBUSB_CALL G13::G13_Manager::HotplugCallbackInsert(
+     libusb_hotplug_event event, void *user_data) {
+   G13_OUT("USB device connected");
+ 
+-  // Just make sure we have not been called multiple times
+-  for (auto g13 : g13s) {
+-    if (dev == g13->Device()) {
+-      return 0;
+-    }
+-  }
+-
+-  // It's brand new!
+-  OpenAndAddG13(dev);
+-
+-  // NOTE: can not SetupDevice() from this thread
++  QueueHotplug(dev, LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED);
+ 
+   return 0; // Rearm
+ }
+@@ -106,18 +96,7 @@ int LIBUSB_CALL G13::G13_Manager::HotplugCallbackRemove(
+     libusb_hotplug_event event, void *user_data) {
+ 
+   G13_OUT("USB device disconnected");
+-  int i = 0;
+-  for (auto iter = g13s.begin(); (iter != g13s.end()); ++i) {
+-    if (dev == (*iter)->Device()) {
+-      G13_OUT("Closing device " << i);
+-      auto g13 = iter;
+-      // (*g13)->Cleanup();
+-      iter = g13s.erase(iter);  // remove from vector first
+-      delete (*g13);            // delete the object after
+-    } else {
+-      iter++;
+-    }
+-  }
++  QueueHotplug(dev, LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT);
+   return 0; // Rearm
+ }
+ 
+@@ -137,6 +116,7 @@ void G13::G13_Manager::SetupDevice(G13_Device *g13) {
+     G13_OUT("config_fn = " << config_fn);
+     g13->ReadConfigFile(config_fn);
+   }
++  g13->StartInputReader();
+ }
+ 
+ void G13::G13_Manager::ArmHotplugCallbacks() {
+@@ -175,4 +155,4 @@ void G13::G13_Manager::ArmHotplugCallbacks() {
+   }
+ }
+ 
+-} // namespace G13
+\ No newline at end of file
++} // namespace G13
+diff --git a/g13_manager.cpp b/g13_manager.cpp
+index b7a720a..3d76865 100644
+--- a/g13_manager.cpp
++++ b/g13_manager.cpp
+@@ -10,11 +10,18 @@
+ #include <libevdev-1.0/libevdev/libevdev.h>
+ #include <log4cpp/OstreamAppender.hh>
+ #include <memory>
++#include <poll.h>
++#include <sys/eventfd.h>
++#include <unistd.h>
++#include <algorithm>
+ 
+ namespace G13 {
+ 
+ // definitions
+-bool G13_Manager::running = true;
++volatile std::sig_atomic_t G13_Manager::running = true;
++int G13_Manager::wake_fd = -1;
++std::mutex G13_Manager::hotplug_mutex;
++std::deque<std::pair<libusb_device *, libusb_hotplug_event>> G13_Manager::hotplug_events;
+ std::map<std::string, std::string> G13_Manager::stringConfigValues;
+ libusb_context *G13_Manager::libusbContext;
+ std::vector<G13::G13_Device *> G13_Manager::g13s;
+@@ -44,6 +51,15 @@ void G13_Manager::Cleanup() {
+     // g13->Cleanup();
+     delete g13;
+   }
++  g13s.clear();
++  // Readers are joined before clearing callbacks' retained references or exiting libusb.
++  {
++    std::lock_guard<std::mutex> lock(hotplug_mutex);
++    for (auto &event : hotplug_events) libusb_unref_device(event.first);
++    hotplug_events.clear();
++  }
++  if (wake_fd >= 0) close(wake_fd);
++  wake_fd = -1;
+   libusb_exit(libusbContext);
+ }
+ 
+@@ -93,9 +109,59 @@ void G13_Manager::InitKeynames() {
+ }
+ 
+ void G13_Manager::SignalHandler(int signal) {
+-  G13_OUT("Caught signal " << signal << " (" << strsignal(signal) << ")");
++  (void)signal;
++  const int saved_errno = errno;
+   running = false;
+-  // TODO: Should we break usblib handling with a reset?
++  const uint64_t wake = 1;
++  if (wake_fd >= 0) (void)write(wake_fd, &wake, sizeof(wake));
++  errno = saved_errno;
++}
++
++void G13_Manager::QueueHotplug(libusb_device *dev, libusb_hotplug_event event) {
++  // libusb callbacks may run on either I/O thread. They never mutate/delete devices.
++  {
++    std::lock_guard<std::mutex> lock(hotplug_mutex);
++    hotplug_events.emplace_back(libusb_ref_device(dev), event);
++  }
++  const uint64_t wake = 1;
++  if (wake_fd >= 0) (void)write(wake_fd, &wake, sizeof(wake));
++}
++
++void G13_Manager::ProcessHotplug() {
++  uint64_t wake;
++  if (wake_fd >= 0) (void)read(wake_fd, &wake, sizeof(wake));
++  std::deque<std::pair<libusb_device *, libusb_hotplug_event>> events;
++  {
++    std::lock_guard<std::mutex> lock(hotplug_mutex);
++    events.swap(hotplug_events);
++  }
++  for (auto &event : events) {
++    auto found = std::find_if(g13s.begin(), g13s.end(), [&event](G13_Device *d) {
++      return d->Device() == event.first;
++    });
++    if (event.second == LIBUSB_HOTPLUG_EVENT_DEVICE_ARRIVED) {
++      if (found == g13s.end() && OpenAndAddG13(event.first) == 0) SetupDevice(g13s.back());
++    } else if (found != g13s.end()) {
++      auto *device = *found;
++      g13s.erase(found);
++      delete device; // joins input reader before releasing its USB handle
++    }
++    libusb_unref_device(event.first);
++  }
++}
++
++void G13_Manager::WaitForActivity() {
++  std::vector<pollfd> fds{{wake_fd, POLLIN, 0}};
++  for (auto *d : g13s) {
++    fds.push_back({d->input_wake_fd(), POLLIN, 0});
++    fds.push_back({d->command_fd(), POLLIN, 0});
++  }
++  // FIFO readiness wakes rendering immediately, independent of the USB read timeout.
++  // The bounded timeout also services hotplug when no reader thread/device is present.
++  if (poll(fds.data(), fds.size(), 100) < 0 && errno != EINTR) {
++    G13_ERR("G13 event poll failed: " << strerror(errno));
++    running = false;
++  }
+ }
+ 
+ std::string G13_Manager::getStringConfigValue(const std::string &name) {
+@@ -199,6 +265,12 @@ int G13_Manager::Run() {
+     return EXIT_FAILURE;
+   }
+   libusb_set_option(libusbContext, LIBUSB_OPTION_LOG_LEVEL, 3);
++  wake_fd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
++  if (wake_fd < 0) {
++    G13_ERR("Cannot create G13 manager wake fd");
++    Cleanup();
++    return EXIT_FAILURE;
++  }
+ 
+   if (!libusb_has_capability(LIBUSB_CAP_HAS_HOTPLUG)) {
+     cnt = libusb_get_device_list(libusbContext, &devs);
+@@ -223,44 +295,35 @@ int G13_Manager::Run() {
+   signal(SIGINT, SignalHandler);
+   signal(SIGTERM, SignalHandler);
+ 
+-  for (auto g13 : g13s) {
+-    // This can not be done from the event handler (will give LIBUSB_ERROR_BUSY)
+-    SetupDevice(g13);
+-  }
+-
++  bool failed = false;
++  ProcessHotplug();
++  G13_OUT("Independent USB input reader and LCD/FIFO event loop active");
+   do {
+-    if (g13s.empty()) {
+-      G13_OUT("Waiting for device to show up ...");
+-      error = libusb_handle_events(libusbContext);
+-      G13_DBG("USB Event wakeup with " << g13s.size() << " devices registered");
+-      if (error != LIBUSB_SUCCESS) {
+-        G13_ERR("Error: " << G13_Device::DescribeLibusbErrorCode(error));
+-      } else {
+-        for (auto g13 : g13s) {
+-          // This can not be done from the event handler (will give
+-          // LIBUSB_ERROR_BUSY)
+-          SetupDevice(g13);
+-        }
++    timeval immediate{};
++    libusb_handle_events_timeout_completed(libusbContext, &immediate, nullptr);
++    ProcessHotplug();
++    for (auto it = g13s.begin(); it != g13s.end();) {
++      auto *g13 = *it;
++      const int input_error = g13->ProcessInputReports();
++      if (input_error == LIBUSB_ERROR_NO_DEVICE) {
++        // A transfer can report disappearance before the hotplug callback arrives.
++        it = g13s.erase(it);
++        delete g13;
++        continue;
+       }
+-    }
+-
+-    // Main loop
+-    for (auto g13 : g13s) {
+-      int status = g13->ReadKeypresses();
+-      if (!g13s.empty()) {
+-        // Cleanup might have removed the object before this loop has run
+-        // TODO: This will not work with multiplt devices and can be better
+-        g13->ReadCommandsFromPipe();
+-      };
+-      if (status < 0) {
++      if (input_error < 0) {
++        failed = true;
+         running = false;
+       }
++      g13->ReadCommandsFromPipe();
++      ++it;
+     }
++    if (running) WaitForActivity();
+   } while (running);
+ 
+   Cleanup();
+   G13_OUT("Exit");
+-  return EXIT_SUCCESS;
++  return failed ? EXIT_FAILURE : EXIT_SUCCESS;
+ }
+ 
+ /*
+@@ -283,4 +346,4 @@ void G13_Manager::setLogoFilename(const std::string &newLogoFilename) {
+   logoFilename = newLogoFilename;
+ }
+ 
+-} // namespace G13
+\ No newline at end of file
++} // namespace G13
+diff --git a/g13_manager.hpp b/g13_manager.hpp
+index 34a1cfa..7a157a0 100644
+--- a/g13_manager.hpp
++++ b/g13_manager.hpp
+@@ -12,6 +12,9 @@
+ #include "g13_log.hpp"
+ #include "g13_manager.hpp"
+ #include <libusb-1.0/libusb.h>
++#include <csignal>
++#include <deque>
++#include <mutex>
+ 
+ #define CONTROL_DIR std::string("/tmp/")
+ 
+@@ -24,7 +27,13 @@ private:
+   G13_Manager();
+ 
+   // declarations
+-  static bool running;
++  static volatile std::sig_atomic_t running;
++  static int wake_fd;
++  static std::mutex hotplug_mutex;
++  static std::deque<std::pair<libusb_device *, libusb_hotplug_event>> hotplug_events;
++  static void QueueHotplug(libusb_device *, libusb_hotplug_event);
++  static void ProcessHotplug();
++  static void WaitForActivity();
+   static std::map<std::string, std::string> stringConfigValues;
+   static libusb_context *libusbContext;
+   static std::vector<G13::G13_Device *> g13s;

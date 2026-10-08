@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply the saved g13pad profile at login
+ConditionPathExists=/run/g13d/g13-0
+
+[Service]
+Type=oneshot
+ExecStartPre="@G13PAD_BINDIR@/g13map" detach-pointer
+ExecStart="@G13PAD_BINDIR@/g13map" apply
+
+[Install]
+WantedBy=default.target

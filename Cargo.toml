@@ -1,0 +1,63 @@
+[workspace]
+members = ["crates/g13pad-core", "crates/g13pad-analog"]
+default-members = [".", "crates/g13pad-core", "crates/g13pad-analog"]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.16"
+edition = "2021"
+license = "GPL-3.0-or-later"
+
+[workspace.dependencies]
+g13pad-core = { path = "crates/g13pad-core" }
+
+[package]
+name = "g13map"
+version.workspace = true
+edition.workspace = true
+description = "Logitech G13 key-binding editor for g13d, with an LXQt panel applet"
+license.workspace = true
+default-run = "g13map"
+
+[features]
+default = ["editor", "art"]
+editor = ["dep:eframe", "dep:egui", "dep:read-fonts", "dep:image", "art"]
+# The built-in LCD animations (src/art.rs): the editor's Animations window and g13map-anim.
+art = []
+
+[[bin]]
+name = "g13map-editor"
+path = "src/editor.rs"
+required-features = ["editor"]
+
+[[bin]]
+name = "g13map-anim"
+path = "src/anim.rs"
+required-features = ["art"]
+
+[dependencies]
+g13pad-core.workspace = true
+eframe = { version = "0.36", optional = true, default-features = false, features = ["glow", "x11", "wayland", "default_fonts"] }
+egui = { version = "0.36", optional = true }
+serde_json = "1"
+read-fonts = { version = "0.41", optional = true }
+image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.full-debug]
+inherits = "dev"
+debug = true
+
+[profile.full-debug.package."*"]
+debug = true
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true

@@ -1,0 +1,5 @@
+[G13 stick belongs to the game controller adapter]
+MatchName=G13
+MatchVendor=0x046D
+MatchProduct=0xC21C
+AttrEventCode=-EV_ABS;-BTN_EXTRA;

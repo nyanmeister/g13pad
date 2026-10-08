@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 32 32">
+  <!-- Original g13pad mark: LCD, key matrix, offset thumbstick and palm rest.
+       One colour retains contrast at panel sizes; no manufacturer badge or font. -->
+  <path d="M10 2h9c2 0 3 2 4 5l2 7-4 6c1 2 3 5 3 7 0 2-4 3-10 3S4 29 4 27c0-2 3-5 4-7l-5-6L6 7c1-3 2-5 4-5Z"
+        fill="none" stroke="COLOUR" stroke-width="1.8" stroke-linejoin="round"/>
+  <rect x="10" y="4" width="9" height="4" rx="1" fill="COLOUR"/>
+  <path d="M7 11h4v3H7Zm5 0h4v3h-4Zm5 0h4v3h-4ZM8 15h4v3H8Zm5 0h4v3h-4Zm5 0h4v3h-4ZM11 19h4v3h-4Zm5 0h4v3h-4Z" fill="COLOUR"/>
+  <path d="M23 17c4-1 6 2 6 5 0 2-2 3-5 3" fill="none" stroke="COLOUR" stroke-width="1.8" stroke-linecap="round"/>
+  <circle cx="25" cy="21" r="1.7" fill="COLOUR"/>
+</svg>

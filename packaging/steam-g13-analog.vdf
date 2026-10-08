@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Optional Steam Input template. Continuous gamepad axes; no keyboard conversion.
+"controller_mappings"
+{
+    "version" "3"
+    "game" "G13 Analog"
+    "title" "G13 Analog"
+    "description" "Continuous G13 left/right stick and gamepad click. Board keys remain configured by g13map. Requires gamepad support in the game."
+    "controller_type" "controller_generic"
+    "export_type" "template"
+    "group"
+    {
+        "id" "0"
+        "mode" "joystick_move"
+        "inputs" { "click" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button JOYSTICK_LEFT" } } } } }
+        "settings" { "output_joystick" "0" "deadzone_inner_radius" "0" }
+    }
+    "group"
+    {
+        "id" "1"
+        "mode" "joystick_move"
+        "inputs" { "click" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button JOYSTICK_RIGHT" } } } } }
+        "settings" { "output_joystick" "1" "deadzone_inner_radius" "0" }
+    }
+    "group"
+    {
+        "id" "2"
+        "mode" "four_buttons"
+        "inputs"
+        {
+            "button_a" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button A" } } } }
+            "button_b" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button B" } } } }
+            "button_x" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button X" } } } }
+            "button_y" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button Y" } } } }
+        }
+    }
+    "group"
+    {
+        "id" "3"
+        "mode" "switches"
+        "inputs"
+        {
+            "button_escape" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button start" } } } }
+            "button_menu" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button select" } } } }
+            "left_bumper" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button shoulder_left" } } } }
+            "right_bumper" { "activators" { "Full_Press" { "bindings" { "binding" "xinput_button shoulder_right" } } } }
+        }
+    }
+    "preset"
+    {
+        "id" "0"
+        "name" "Default"
+        "group_source_bindings"
+        {
+            "0" "joystick active"
+            "1" "right_joystick active"
+            "2" "button_diamond active"
+            "3" "switch active"
+        }
+    }
+}

@@ -1,0 +1,37 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# shellcheck shell=bash
+# makepkg supplies these variables and consumes the package metadata.
+# shellcheck disable=SC2034,SC2154
+# Build from a local committed source archive; no public release URL exists yet.
+pkgname=g13pad
+pkgver=0.2.16
+pkgrel=1
+pkgdesc='Logitech G13 driver, profile editor, LCD and analog-stick integration'
+arch=('x86_64')
+license=('GPL-3.0-or-later' 'OFL-1.1' 'Ubuntu-font-1.0' 'MIT')
+depends=('libusb' 'libevdev' 'log4cpp' 'systemd' 'sudo' 'libglvnd' 'libxkbcommon' 'libxkbcommon-x11' 'libx11' 'libxcursor' 'libxi' 'libxrandr')
+makedepends=('cmake' 'ninja' 'rust')
+optdepends=('xboxdrv: analog stick controller' 'xorg-xinput: isolate the source pointer in an existing X11 session' 'zenity: graphical image picker' 'fontconfig: installed font selection and international label fallback' 'ttf-dejavu: broad Latin/Greek/Cyrillic/Hebrew label coverage' 'lxqt-panel: optional panel applet' 'xfce4-genmon-plugin: optional XFCE panel applet')
+conflicts=('g13-git')
+provides=('g13')
+backup=('etc/g13/default.bind' 'etc/g13/analog.conf')
+source=("$pkgname-$pkgver.tar.gz")
+# Locally created archive; publication must supply a verified checksum.
+sha256sums=('SKIP')
+
+build() {
+  cmake -S "$srcdir/$pkgname-$pkgver" -B "$srcdir/build" -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib \
+    -DBUILD_TESTING=ON -DG13PAD_CARGO_TARGET_DIR="${G13PAD_CARGO_TARGET_DIR:-$srcdir/build/rust}" \
+    -DG13PAD_RUST_JOBS="${G13PAD_RUST_JOBS:-${G13PAD_JOBS:-2}}" \
+    -DG13PAD_RUST_TEST_PROFILE=release
+  cmake --build "$srcdir/build" -j "${G13PAD_JOBS:-2}"
+}
+
+check() {
+  ctest --test-dir "$srcdir/build" --output-on-failure
+}
+
+package() {
+  DESTDIR="$pkgdir" cmake --install "$srcdir/build"
+}

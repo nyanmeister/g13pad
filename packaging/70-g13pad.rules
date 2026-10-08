@@ -1,0 +1,5 @@
+# Driver account access to this USB device and uinput.
+SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c21c", GROUP="g13", MODE="0660"
+KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="g13", MODE="0660"
+# Exact source device: retain keyboard handling, give the adapter an evdev path.
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="G13", ATTRS{id/vendor}=="046d", ATTRS{id/product}=="c21c", ENV{ID_INPUT_MOUSE}="", GROUP="g13", MODE="0660", SYMLINK+="input/g13-analog-source"

@@ -1,0 +1,35 @@
+diff --git a/g13_action.cpp b/g13_action.cpp
+index 39dd8d2..fedd05b 100644
+--- a/g13_action.cpp
++++ b/g13_action.cpp
+@@ -22,7 +22,8 @@ G13_Action_Keys::G13_Action_Keys(G13_Device &keypad,
+     if (kval == BAD_KEY_VALUE) {
+       throw G13_CommandException("create action unknown key : " + key);
+     }
+-    _keys.push_back(kval);
++    // g13map uses KEY_RESERVED to clear a binding; it must emit no event at all.
++    if (kval != KEY_RESERVED) _keys.push_back(kval);
+   }
+ 
+   if (keydownup.size()>1){
+@@ -32,7 +33,7 @@ G13_Action_Keys::G13_Action_Keys(G13_Device &keypad,
+       if (kval == BAD_KEY_VALUE) {
+         throw G13_CommandException("create action unknown key : " + key);
+       }
+-      _keysup.push_back(kval);
++      if (kval != KEY_RESERVED) _keysup.push_back(kval);
+     }
+   }
+ 
+diff --git a/g13_keys.hpp b/g13_keys.hpp
+index bb73f2e..bb2c6cf 100644
+--- a/g13_keys.hpp
++++ b/g13_keys.hpp
+@@ -48,6 +48,7 @@ static const char *G13_NONPARSED_KEYS[] = {
+ // formerly KB_INPUT_KEY_SEQ
+ // clang-format off
+ static const char*  G13_SYMBOLS[] = {
++  "RESERVED",
+   "ESC", "1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "MINUS", "EQUAL", "BACKSPACE",
+   "TAB", "Q", "W", "E", "R", "T", "Y", "U", "I", "O",
+   "P", "LEFTBRACE", "RIGHTBRACE", "ENTER", "LEFTCTRL", "RIGHTCTRL", "A", "S", "D", "F",

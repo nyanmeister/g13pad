@@ -1,0 +1,8 @@
+[Unit]
+Description=Reconnect Logitech G13 to Arch-Virtual (%i)
+After=libvirtd.service virtqemud.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/g13pad-usb-reattach %i
+TimeoutStartSec=45

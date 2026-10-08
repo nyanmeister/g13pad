@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=G13 Pad
+Comment=Configure Logitech G13 bindings, profiles and LCD
+Exec="@G13PAD_BINDIR@/g13map" edit
+Icon=g13pad
+Terminal=false
+Categories=Settings;HardwareSettings;
