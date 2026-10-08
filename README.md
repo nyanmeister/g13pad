@@ -10,6 +10,15 @@ Linux service/permission files, and isolated regression checks. Builds and packa
 have no service or desktop side effects. i3 window rules and LXQt/XFCE applets are optional;
 the editor works independently.
 
+![Aquarium: fish cross, a pufferfish stays](docs/images/aquarium.gif)
+![Tesseracts: two hypercubes turning through the fourth dimension](docs/images/tesseracts.gif)
+
+Two of the built-in LCD animations, in the panel's own two colours (sampled from a video
+of the glass). The editor's **Animations…** window previews all of them live and keeps
+one with a click:
+
+![The editor with the Animations window open](docs/images/editor-animations.png)
+
 ## Build and check
 
 On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev log4cpp`
