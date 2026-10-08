@@ -1,0 +1,50 @@
+name: Build, test and stage
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Native build and test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build pkg-config shellcheck \
+            libusb-1.0-0-dev libevdev-dev liblog4cpp5-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcursor-dev libxi-dev \
+            libxrandr-dev libgl1-mesa-dev libwayland-dev fontconfig
+      - name: Rust tools
+        run: rustup update stable && rustup override set stable && rustup component add rustfmt clippy
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Lint
+        run: cargo clippy --locked --workspace --all-targets
+      - name: Shell lint
+        run: shellcheck -S warning build.sh check.sh tools/*.sh packaging/PKGBUILD
+      - name: Rust tests (editor, CLI, animations)
+        run: cargo test --locked -p g13map
+        env:
+          RUST_TEST_THREADS: "1"
+      - name: Rust tests (core, analog adapter)
+        run: cargo test --locked -p g13pad-core -p g13pad-analog
+      - name: Configure and build (driver, CLI, editor, animations, adapter)
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
+            -DCMAKE_INSTALL_PREFIX=/usr -DCMAKE_INSTALL_LIBDIR=lib -DG13PAD_RUST_JOBS=4
+          cmake --build build -j 4
+      - name: CTest (driver proofs, versions, release-profile Rust suite)
+        run: ctest --test-dir build --output-on-failure
+      - name: Versions of the built executables
+        run: |
+          for b in build/g13d build/pbm2lpbm build/rust/release/g13map build/rust/release/g13map-editor \
+                   build/rust/release/g13map-anim build/rust/release/g13pad-analog; do "$b" --version; done
+      - name: Stage an installation tree
+        run: DESTDIR="$PWD/stage" cmake --install build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: g13pad-linux-x86_64
+          path: stage/
