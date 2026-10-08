@@ -26,9 +26,10 @@ jobs:
       - name: Shell lint
         run: shellcheck -S warning build.sh check.sh tools/*.sh packaging/PKGBUILD
       - name: Rust tests (editor, CLI, animations)
-        run: cargo test --locked -p g13map
+        run: cargo test --locked -p g13map -- --nocapture
         env:
           RUST_TEST_THREADS: "1"
+          RUST_BACKTRACE: "1"
       - name: Rust tests (core, analog adapter)
         run: cargo test --locked -p g13pad-core -p g13pad-analog
       - name: Configure and build (driver, CLI, editor, animations, adapter)
