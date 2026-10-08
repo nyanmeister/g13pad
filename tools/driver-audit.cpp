@@ -24,6 +24,8 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
 static constexpr int capture_fd = 123456;
 static std::array<bool, KEY_MAX + 1> down{};
 static size_t key_events = 0;
+static std::array<int, 2> axes{};
+static size_t sync_events = 0;
 
 extern "C" ssize_t __real_write(int, const void *, size_t);
 extern "C" ssize_t __wrap_write(int fd, const void *buf, size_t n) {
@@ -35,6 +37,8 @@ extern "C" ssize_t __wrap_write(int fd, const void *buf, size_t n) {
     down[ev.code] = ev.value != 0;
     ++key_events;
   }
+  if (ev.type == EV_ABS && ev.code <= ABS_Y) axes[ev.code] = ev.value;
+  if (ev.type == EV_SYN && ev.code == SYN_REPORT) ++sync_events;
   return n;
 }
 
@@ -78,6 +82,32 @@ public:
 };
 
 #ifdef G13_AUDIT_PROOF
+static void check_axis_modes() {
+  for (const char *mode : {"KEYS", "CALCENTER", "CALBOUNDS", "CALNORTH"}) {
+    Device d;
+    d.Command("stickmode ABSOLUTE");
+    assert(axes[0] == 127 && axes[1] == 127);
+    d.joystick(0, 255);
+    assert(axes[0] == 0 && axes[1] == 255);
+    const auto sync_before = sync_events;
+    d.Command((std::string("stickmode ") + mode).c_str());
+    assert(axes[0] == 127 && axes[1] == 127);
+    assert(sync_events == sync_before + 1 && "mode change needs its own sync");
+    // Calibration updates only when reports arrive; switch back without one.
+    d.Command("stickmode ABSOLUTE");
+    assert(axes[0] == 0 && axes[1] == 255);
+  }
+  Device d;
+  d.Command("bind STICK_RIGHT KEY_RIGHT");
+  d.Command("stickmode ABSOLUTE");
+  d.Command("stickmode KEYS");
+  d.joystick(245, 127);
+  assert(axes[0] == 127 && axes[1] == 127 && down[KEY_RIGHT]);
+  d.Command("stickmode ABSOLUTE");
+  assert(axes[0] == 245 && axes[1] == 127 && !down[KEY_RIGHT]);
+  std::cout << "Analog mode publishes the latest position; keys/calibration center axes immediately\n";
+}
+
 static void check_zone_commands() {
   const auto no_held_keys = [] { for (bool held : down) assert(!held); };
   down.fill(false);
@@ -141,6 +171,7 @@ static void check_zone_commands() {
 
 int main() {
   log4cpp::Category::getRoot().setPriority(log4cpp::Priority::CRIT);
+  check_axis_modes();
   check_zone_commands();
   Device d;
   d.Command("stickmode ABSOLUTE");

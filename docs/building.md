@@ -86,3 +86,13 @@ finish all its active builds first, then use `cargo clean --release --target-dir
 (or omit `--release` to clear all profiles). This deletes generated artifacts and forces
 a subsequent cold build; it does not change source or installed programs. A fresh CLI-only
 build avoids compiling the editor dependency graph altogether.
+
+## The Source engine health module
+
+`contrib/source-health` builds into `g15-mp-x86_64.so` and `g15-sp-x86_64.so` and, when the
+compiler can link `-m32` (Arch: `lib32-glibc` and `lib32-gcc-libs` from multilib), the `i386` pair for
+the 32-bit clients such as Half-Life 2; without that toolchain CMake warns and builds
+the 64-bit module only. `G13PAD_BUILD_SOURCE_HEALTH=OFF` leaves both out. The tests
+`source-health-load*` drive the module through the engine's interface and
+`source-health-symbols*` (binutils) refuse libstdc++ and glibc symbols newer than 2.4,
+so the module loads inside Steam's runtimes.

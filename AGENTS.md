@@ -103,8 +103,8 @@ started under, over the new one: if a colour "leaks" between profiles, look ther
 
 ## Iterating without the package cycle
 
-- `~/.config/g13map/meter` holds the look (colours per band, the dark hold, beat spacing,
-  the flash, the CS2 port) and is re-read within two seconds while the meter runs.
+- `~/.config/g13map/meter` holds the look (the band ladder and its colours, the dark hold, beat
+  spacing, the swell, the flash, where the heart and the readout sit, the CS2 port) and is re-read within two seconds while the meter runs.
 - `tools/dev-watch.sh` runs `g13map-watch.service` from a warm `cargo build --release`
   through a systemd drop-in; `off` restores the installed package. Build the package only
   for what stays.

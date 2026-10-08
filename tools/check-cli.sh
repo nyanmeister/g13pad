@@ -42,6 +42,11 @@ while [ ! -f "$fixture/commands" ]; do kill -0 "$reader_pid"; i=$((i+1)); [ "$i"
 i=0
 while ! rg -q '^bind G1 KEY_RESERVED$' "$fixture/commands"; do i=$((i+1)); [ "$i" -lt 50 ]; sleep .1; done
 "$binary" marquee 'Text without a display' cli > "$fixture/text.log"
+# The Source engine feeder: the page file prints, a folder without an engine is refused.
+"$binary" health source-res | rg -q '^"Logitech G-15 Keyboard Layout"$'
+"$binary" health source-res | rg -q 'G13 %\(localplayer\)m_iHealth%'
+if "$binary" health source "$fixture" >"$fixture/source.log" 2>&1; then exit 1; fi
+rg -q 'no bin/engine.so' "$fixture/source.log"
 test -f "$G13MAP_CONFIG/lcd/cli.lpbm"
 test "$(wc -c < "$G13MAP_CONFIG/lcd/cli.lpbm")" -eq 960
 "$binary" profile lcd 'CLI profile' cli

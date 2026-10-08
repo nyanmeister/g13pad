@@ -128,21 +128,28 @@ pub(crate) fn frames(n: usize, f: impl Fn(i32, &mut Bitmap)) -> Vec<Bitmap> {
         .collect()
 }
 
+/// Columns one ECG complex takes, P wave to the end of the T wave: the shortest beat
+/// the meter can show, 0.8 s at its 50 columns a second (asked 2026-10-08: beats from
+/// 2.0 s calm to 0.8 s racing; the complex was 60 columns, which floored racing at 1.2 s).
+pub(crate) const ECG_COLUMNS: i32 = 40;
+/// The column of the spike's top in `ecg`.
+pub(crate) const ECG_R: i32 = 21;
+
 /// One ECG complex, column by column: the lift above the baseline at `u` columns after
-/// the beat starts (a P wave, the QRS spike, a T wave over 60 columns, then flat).
+/// the beat starts (a P wave, the QRS spike, a T wave over `ECG_COLUMNS`, then flat).
 pub(crate) fn ecg(u: i32) -> i32 {
     match u {
-        10..=17 => [0, 1, 1, 2, 2, 1, 1, 0][(u - 10) as usize],
-        30 => -1,
-        31 => -2,
-        32 => 6,
-        33 => 14,
-        34 => 10,
-        35 => 2,
-        36 => -5,
-        37 => -3,
-        38 => -1,
-        48..=59 => [0, 1, 2, 2, 3, 3, 3, 2, 2, 1, 1, 0][(u - 48) as usize],
+        4..=11 => [0, 1, 1, 2, 2, 1, 1, 0][(u - 4) as usize],
+        18 => -1,
+        19 => -2,
+        20 => 6,
+        ECG_R => 14,
+        22 => 10,
+        23 => 2,
+        24 => -5,
+        25 => -3,
+        26 => -1,
+        30..=39 => [0, 1, 2, 2, 3, 3, 2, 2, 1, 0][(u - 30) as usize],
         _ => 0,
     }
 }

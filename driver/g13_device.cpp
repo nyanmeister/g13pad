@@ -137,6 +137,19 @@ int G13CreateUinput(G13_Device *g13) {
     close(ufile);
     return -1;
   }
+  // The legacy descriptor cannot specify a current value. Set it before the
+  // device is exposed: zero on a 0..255 axis looks like a fully held stick.
+  for (auto code : {ABS_X, ABS_Y}) {
+    struct uinput_abs_setup axis {};
+    axis.code = code;
+    axis.absinfo.value = 127;
+    axis.absinfo.maximum = 255;
+    if (ioctl(ufile, UI_ABS_SETUP, &axis) < 0) {
+      G13_ERR("Could not initialize G13 stick axis");
+      close(ufile);
+      return -1;
+    }
+  }
   retcode = ioctl(ufile, UI_DEV_CREATE);
   if (retcode) {
     G13_ERR("Error creating uinput device for G13");

@@ -15,7 +15,7 @@ void G13_Device::parse_joystick(unsigned char *buf) {
 G13_Stick::G13_Stick(G13_Device &keypad)
     : _keypad(keypad), m_zones(std::make_shared<ZoneList>()),
       m_bounds(0, 0, 255, 255), m_center_pos(127, 127),
-      m_north_pos(127, 0) {
+      m_north_pos(127, 0), m_current_pos(127, 127) {
   m_stick_mode = STICK_KEYS;
 
   auto add_zone = [this, &keypad](const std::string &name, double x1, double y1,
@@ -65,6 +65,12 @@ void G13_Stick::set_mode(stick_mode_t m) {
     RecalcCalibrated();
   }
   m_stick_mode = m;
+  // USB reports may arrive only on changes. Publish the new mode's state now,
+  // including a sync, so leaving analog mode cannot strand a held axis.
+  const auto position = m == STICK_ABSOLUTE ? m_current_pos : G13_StickCoord(127, 127);
+  _keypad.SendEvent(EV_ABS, ABS_X, position.x);
+  _keypad.SendEvent(EV_ABS, ABS_Y, position.y);
+  _keypad.SendEvent(EV_SYN, SYN_REPORT, 0);
   switch (m_stick_mode) {
   case STICK_CALBOUNDS:
     m_bounds.tl = G13_StickCoord(255, 255);

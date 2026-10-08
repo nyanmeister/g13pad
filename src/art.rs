@@ -587,7 +587,7 @@ fn heartbeat() -> Vec<Bitmap> {
             bm.line(x, trace(u), x + 1, trace(u + 1));
         }
         // The heart beats as the spike passes the right side.
-        if (30..40).contains(&((2 * t + 150) % BEAT)) {
+        if (18..28).contains(&((2 * t + 150) % BEAT)) {
             bm.sprite(7, 3, BIG);
         } else {
             bm.sprite(8, 4, HEART);

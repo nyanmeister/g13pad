@@ -35,6 +35,11 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map health demo                   a scripted pass through the meter's states
   g13map health cs2 [PORT]             Counter-Strike 2 Game State Integration feed
   g13map health cs2-config [PORT]      the cfg file the game needs for that
+  g13map health source DIR [sp|mp]     Source engine game (Half-Life 2, CS:Source, ...):
+                                       put the LCD module and page into its folder
+                                       (singleplayer: with armour; multiplayer: health only)
+  g13map health source DIR remove      take them out again
+  g13map health source-res             that page file, for a game set up by hand
   g13map layout                       print active X11 layout's physical key labels
   g13map watch                        run the profile/LCD watcher
   g13map detach-pointer               isolate the G13 source pointer under X11
@@ -304,6 +309,13 @@ fn health(args: &[&str]) -> Result<String, String> {
         ["demo"] => meter::demo(),
         ["cs2", p @ ..] if p.len() <= 1 => meter::cs2(port(p.first())?),
         ["cs2-config", p @ ..] if p.len() <= 1 => Ok(meter::cs2_config(port(p.first())?)),
+        ["source", dir] => meter::source_install(std::path::Path::new(dir), None),
+        ["source", dir, "remove"] => meter::source_remove(std::path::Path::new(dir)),
+        ["source", dir, kind] => match meter::SourceKind::parse(kind) {
+            Some(k) => meter::source_install(std::path::Path::new(dir), Some(k)),
+            None => Err(format!("a game's kind is sp or mp, not '{kind}'")),
+        },
+        ["source-res"] => Ok(meter::SOURCE_RES.to_string()),
         [value] | [value, "shield", _] => {
             let line = args.join(" ");
             let now = std::time::SystemTime::now();
@@ -312,7 +324,7 @@ fn health(args: &[&str]) -> Result<String, String> {
                 None => Err(format!("invalid health '{value}': VALUE or VALUE/MAX, 0 or more")),
             }
         }
-        _ => Err("usage: g13map health VALUE[/MAX] [shield S[/MAX]] | wait | off | demo | cs2 [PORT] | cs2-config [PORT]".into()),
+        _ => Err("usage: g13map health VALUE[/MAX] [shield S[/MAX]] | wait | off | demo | cs2 [PORT] | cs2-config [PORT] | source DIR [sp|mp|remove] | source-res".into()),
     }
 }
 

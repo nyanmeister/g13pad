@@ -82,7 +82,7 @@ root; it does not activate services. Prefer an OS package over installing onto a
 system by hand: CMake's installation copies configuration files and does not merge them.
 See [installation](docs/installation.md) and [migration](docs/migration.md) first.
 
-For a local Arch package, export a committed source tree as `g13pad-0.2.29.tar.gz`, put it
+For a local Arch package, export a committed source tree as `g13pad-0.2.34.tar.gz`, put it
 beside `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local
 archive with a placeholder checksum; a public release must supply a verified checksum.
 An Arch package preserves changed startup bindings/calibration through pacman's backup
@@ -103,6 +103,7 @@ g13map apply                        # apply the selected saved profile
 g13map watch                        # profile switching and LCD playback
 g13map marquee 'Message' NAME        # keep reusable LCD text, no hardware write
 g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs2
+g13map health source DIR            # Source engine game: install the LCD module + page
 g13map --version
 g13map panel xfce                   # XFCE Generic Monitor status and editor button
 g13map panel waybar                 # Waybar custom-module JSON
@@ -123,9 +124,10 @@ rain, a heartbeat, an aquarium, tesseracts); a click keeps one as a picture. `g1
 keeps the same scenes from a terminal. The **health meter** (0.2.17) is a live heartbeat
 that follows a game: `g13map health 87` (or `87/125 shield 40/60`) feeds it, the watcher
 draws a monitor trace that beats faster as health falls, a bar, a readout and a shield bar,
-and sets the backlight by band (green above 75, yellow, orange, red from 25 down, blue over
-100 for an overshield, off at 0 with a flatline, then after three seconds the search for a
-pulse under red). `g13map health wait` is a game connected
+and sets the backlight by band (by default green above 75, yellow, orange, red from 25 down,
+blue over 100 for an overshield, off at 0 with a flatline, then after three seconds the search
+for a pulse under red; the ladder, its colours and the rest of the look are lines in
+`~/.config/g13map/meter`, re-read live). `g13map health wait` is a game connected
 without health yet (a lobby); `off` or an expired `ttl` gives the panel back to the
 profile. A profile chooses it as its picture (`g13map profile lcd NAME health`, or `health cs2`
 for the watcher to run the Counter-Strike 2 Game State listener itself), so the window

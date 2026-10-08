@@ -24,10 +24,10 @@
 use crate::draw::*;
 use crate::lcd::{Bitmap, H, W};
 use std::{
-    fs,
+    env, fs,
     io::{Read, Write},
     net::{TcpListener, TcpStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -53,57 +53,56 @@ impl State {
             helmet: false,
         }
     }
-    pub fn band(self) -> Option<Band> {
+    /// The health, if there is one to show.
+    pub fn pct(self) -> Option<u32> {
         match self {
             State::Wait => None,
-            State::Health { pct, .. } => Some(Band::of(pct)),
+            State::Health { pct, .. } => Some(pct),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Band {
-    Dead,
-    Red,
-    Orange,
-    Yellow,
-    Green,
-    Shield,
+/// A backlight band: the health it starts at and its colour. The tuning file lists them
+/// (`band NAME FROM R G B`, asked 2026-10-08: the edges, the colours and extra bands in
+/// the file, so a Doom health past 200 can have a colour of its own). The band at 0 is
+/// death (lights out, flatline); the lowest above it is the alarm, whose beats flash
+/// and whose colour the search for a pulse runs under.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Band {
+    pub name: String,
+    pub from: u32,
+    pub rgb: [u8; 3],
 }
 
 impl Band {
-    pub fn of(pct: u32) -> Band {
-        match pct {
-            0 => Band::Dead,
-            1..=25 => Band::Red,
-            26..=50 => Band::Orange,
-            51..=75 => Band::Yellow,
-            76..=100 => Band::Green,
-            _ => Band::Shield,
+    fn new(name: &str, from: u32, rgb: [u8; 3]) -> Band {
+        Band {
+            name: name.into(),
+            from,
+            rgb,
         }
     }
-    /// The band's default backlight.
-    pub fn rgb(self) -> [u8; 3] {
-        Tuning::default().rgb(self)
+    /// The G13's LED makes yellow and orange from red plus a little green; full green
+    /// in the mix reads lime.
+    fn defaults() -> Vec<Band> {
+        vec![
+            Band::new("dead", 0, [0, 0, 0]),
+            Band::new("red", 1, [255, 0, 0]),
+            Band::new("orange", 26, [255, 48, 0]),
+            Band::new("yellow", 51, [255, 215, 0]),
+            Band::new("green", 76, [0, 255, 0]),
+            Band::new("blue", 101, [0, 64, 255]),
+        ]
     }
-    const ALL: [Band; 6] = [
-        Band::Dead,
-        Band::Red,
-        Band::Orange,
-        Band::Yellow,
-        Band::Green,
-        Band::Shield,
-    ];
-    fn key(self) -> &'static str {
-        match self {
-            Band::Dead => "dead",
-            Band::Red => "red",
-            Band::Orange => "orange",
-            Band::Yellow => "yellow",
-            Band::Green => "green",
-            Band::Shield => "blue",
-        }
-    }
+}
+
+/// What the alarm band's beat flashes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Flash {
+    Off,
+    /// The trace and the heart, above the bars.
+    Trace,
+    Panel,
 }
 
 /// Who writes the feed while a profile shows the meter (asked 2026-10-07: the meter is
@@ -192,16 +191,22 @@ pub fn preview(name: &str) -> Option<Bitmap> {
 /// a line that does not parse is ignored.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tuning {
-    /// Backlights in `Band::ALL` order. The G13's LED makes yellow and orange from red
-    /// plus a little green; full green in the mix reads lime.
-    pub colours: [[u8; 3]; 6],
+    /// The backlight bands, lowest first; never empty, the first starts at 0.
+    pub bands: Vec<Band>,
     /// Seconds the dark flatline holds after a drop to zero.
     pub hold: f32,
     /// Seconds from beat to beat at full health, and on the last point.
     pub calm: f32,
     pub racing: f32,
-    /// Whether the red band flashes the panel on each beat.
-    pub flash: bool,
+    /// Seconds the heart swells on each beat (asked 2026-10-08: a file setting, so the
+    /// look is tuned on the glass without a rebuild).
+    pub swell: f32,
+    /// What the alarm band's beats flash.
+    pub flash: Flash,
+    /// The heart's top-left corner, and the readout's right edge and top (pixels; the
+    /// panel is 160 by 43).
+    pub heart: [i32; 2],
+    pub readout: [i32; 2],
     /// The loopback port the Counter-Strike 2 listener takes.
     pub cs2_port: u16,
     /// The console log a `health log` profile follows; the newest file whose name
@@ -212,18 +217,14 @@ pub struct Tuning {
 impl Default for Tuning {
     fn default() -> Self {
         Tuning {
-            colours: [
-                [0, 0, 0],
-                [255, 0, 0],
-                [255, 48, 0],
-                [255, 215, 0],
-                [0, 255, 0],
-                [0, 64, 255],
-            ],
+            bands: Band::defaults(),
             hold: 3.0,
-            calm: 5.0,
-            racing: 1.4,
-            flash: true,
+            calm: 2.0,
+            racing: 0.8,
+            swell: 0.4,
+            flash: Flash::Panel,
+            heart: [6, 5],
+            readout: [157, 2],
             cs2_port: CS2_PORT,
             log_file: crate::state_dir().join("game.log"),
         }
@@ -241,13 +242,50 @@ impl Tuning {
     }
     pub fn parse(text: &str) -> Tuning {
         let mut t = Tuning::default();
+        // The first `band` line replaces the default ladder (death stays).
+        let mut listed = false;
         for line in text.lines() {
             let line = line.split('#').next().unwrap_or("");
             let mut words = line.split_whitespace();
             let Some(key) = words.next() else { continue };
             let values: Vec<&str> = words.collect();
             let secs = |v: &[&str]| v.first().and_then(|s| s.parse::<f32>().ok());
+            let ints = |v: &[&str]| {
+                v.iter()
+                    .map(|s| s.parse::<i32>().ok())
+                    .collect::<Option<Vec<i32>>>()
+            };
             match key {
+                "band" => {
+                    let Some((name, nums)) = values.split_first() else {
+                        continue;
+                    };
+                    let Some(n) = ints(nums) else { continue };
+                    let [from, r, g, b] = n[..] else { continue };
+                    if !(0..=999).contains(&from)
+                        || [r, g, b].iter().any(|c| !(0..=255).contains(c))
+                    {
+                        continue;
+                    }
+                    if !listed {
+                        t.bands.retain(|b| b.from == 0);
+                        listed = true;
+                    }
+                    t.bands.retain(|b| b.from != from as u32);
+                    t.bands
+                        .push(Band::new(name, from as u32, [r as u8, g as u8, b as u8]));
+                }
+                "heart" => {
+                    if let Some([x, y]) = ints(&values).as_deref() {
+                        // Room for the big heart and three rings around it.
+                        t.heart = [(*x).clamp(6, W as i32 - 13), (*y).clamp(5, H as i32 - 11)];
+                    }
+                }
+                "readout" => {
+                    if let Some([right, top]) = ints(&values).as_deref() {
+                        t.readout = [(*right).clamp(34, W as i32), (*top).clamp(0, H as i32 - 14)];
+                    }
+                }
                 "hold" => {
                     t.hold = secs(&values)
                         .filter(|s| (0.0..=60.0).contains(s))
@@ -263,10 +301,16 @@ impl Tuning {
                         .filter(|s| (0.2..=60.0).contains(s))
                         .unwrap_or(t.racing)
                 }
+                "swell" => {
+                    t.swell = secs(&values)
+                        .filter(|s| (0.1..=10.0).contains(s))
+                        .unwrap_or(t.swell)
+                }
                 "flash" => {
                     t.flash = match values.first() {
-                        Some(&"on") => true,
-                        Some(&"off") => false,
+                        Some(&"on" | &"panel") => Flash::Panel,
+                        Some(&"trace") => Flash::Trace,
+                        Some(&"off") => Flash::Off,
                         _ => t.flash,
                     }
                 }
@@ -283,14 +327,20 @@ impl Tuning {
                     }
                 }
                 _ => {
-                    if let Some(i) = Band::ALL.iter().position(|b| b.key() == key) {
+                    // A band's name with a colour recolours it (the file's first grammar:
+                    // `red 255 0 0`).
+                    if let Some(band) = t.bands.iter_mut().find(|b| b.name == key) {
                         let rgb: Vec<u8> = values.iter().filter_map(|v| v.parse().ok()).collect();
                         if let [r, g, b] = rgb[..] {
-                            t.colours[i] = [r, g, b];
+                            band.rgb = [r, g, b];
                         }
                     }
                 }
             }
+        }
+        t.bands.sort_by_key(|b| b.from);
+        if t.bands.first().is_none_or(|b| b.from != 0) {
+            t.bands.insert(0, Band::new("dead", 0, [0, 0, 0]));
         }
         t
     }
@@ -298,39 +348,84 @@ impl Tuning {
     pub fn to_text(&self) -> String {
         let mut s = String::from(
             "# The G13 health meter's look. g13map watch re-reads this within two seconds.\n\
-             # Backlight per band, R G B 0-255. Bands: dead 0, red 1-25, orange 26-50,\n\
-             # yellow 51-75, green 76-100, blue over 100.\n",
+             # Backlight bands, lowest first: band NAME FROM R G B, the health the band\n\
+             # starts at and its colour, 0-255. The band at 0 is death (lights out, a\n\
+             # flatline); the lowest above it is the alarm, whose beats flash. Add one for\n\
+             # a game whose health runs past 200: band purple 201 160 0 255\n",
         );
-        for (band, [r, g, b]) in Band::ALL.iter().zip(self.colours) {
-            s.push_str(&format!("{} {r} {g} {b}\n", band.key()));
+        for band in &self.bands {
+            let [r, g, b] = band.rgb;
+            s.push_str(&format!("band {} {} {r} {g} {b}\n", band.name, band.from));
         }
         s.push_str(&format!(
             "# Seconds the dark flatline holds after a drop to zero.\nhold {}\n\
              # Seconds from beat to beat at full health, and on the last point.\ncalm {}\nracing {}\n\
-             # on: the red band flashes the panel on each beat.\nflash {}\n\
+             # Seconds the heart swells on each beat.\nswell {}\n\
+             # What the alarm band's beats flash: panel, trace (the trace and the heart) or off.\nflash {}\n\
+             # The heart's top-left corner, in pixels of the 160x43 panel.\nheart {} {}\n\
+             # The readout's right edge and top.\nreadout {} {}\n\
              # The loopback port for a profile with `health cs2` (the game's cfg must match).\ncs2_port {}\n\
              # The console log a profile with `health log` follows (newest file starting with it).\nlog_file {}\n",
             self.hold,
             self.calm,
             self.racing,
-            if self.flash { "on" } else { "off" },
+            self.swell,
+            match self.flash {
+                Flash::Panel => "panel",
+                Flash::Trace => "trace",
+                Flash::Off => "off",
+            },
+            self.heart[0],
+            self.heart[1],
+            self.readout[0],
+            self.readout[1],
             self.cs2_port,
             self.log_file.display()
         ));
         s
     }
-    pub fn rgb(&self, band: Band) -> [u8; 3] {
-        self.colours[Band::ALL.iter().position(|b| *b == band).unwrap_or(0)]
+    /// The band `pct` falls in: the highest one starting at or below it.
+    pub fn band_at(&self, pct: u32) -> &Band {
+        self.bands
+            .iter()
+            .rev()
+            .find(|b| b.from <= pct)
+            .unwrap_or(&self.bands[0])
+    }
+    pub fn rgb_at(&self, pct: u32) -> [u8; 3] {
+        self.band_at(pct).rgb
+    }
+    /// The alarm band: the lowest above death.
+    fn alarm(&self) -> &Band {
+        self.bands
+            .iter()
+            .find(|b| b.from > 0)
+            .unwrap_or(&self.bands[0])
+    }
+    fn is_alarm(&self, pct: u32) -> bool {
+        pct > 0 && self.band_at(pct).from == self.alarm().from
+    }
+    /// Notches on the health bar where each band above the alarm begins, up to full.
+    fn notches(&self) -> Vec<i32> {
+        self.bands
+            .iter()
+            .filter(|b| b.from > 1 && b.from <= 100)
+            .map(|b| BAR_X + BAR_W * (b.from as i32 - 1) / 100)
+            .collect()
     }
     fn hold_ticks(&self) -> u32 {
         (self.hold / TICK.as_secs_f32()).round().max(1.0) as u32
     }
+    fn swell_ticks(&self) -> u32 {
+        (self.swell / TICK.as_secs_f32()).round().max(1.0) as u32
+    }
     /// Columns from one beat to the next at `pct`: the trace runs `SCROLL` columns a
-    /// tick, so seconds times columns a second, between racing and calm.
+    /// tick, so seconds times columns a second, between racing and calm; never shorter than
+    /// the complex itself.
     fn period(&self, pct: u32) -> i32 {
         let cols = |secs: f32| (secs * SCROLL as f32 / TICK.as_secs_f32()).round() as i32;
         let (racing, calm) = (cols(self.racing), cols(self.calm));
-        (racing + (calm - racing) * pct.min(100) as i32 / 100).max(60)
+        (racing + (calm - racing) * pct.min(100) as i32 / 100).max(ECG_COLUMNS)
     }
 }
 
@@ -465,10 +560,6 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
 pub const TICK: Duration = Duration::from_millis(100);
 const SCROLL: i32 = 5;
 const BASE: i32 = 22;
-/// The column of the spike's top in `ecg`.
-const R_PEAK: i32 = 33;
-const HEART_X: i32 = 4;
-const HEART_Y: i32 = 3;
 
 #[rustfmt::skip]
 const HEART: &[&str] = &[
@@ -533,9 +624,22 @@ fn readout(bm: &mut Bitmap, text: &str, right: i32, y: i32) {
 const BAR_X: i32 = 4;
 const BAR_W: i32 = 152;
 
+/// The shield bar's top row; its second hundred adds a row above and below.
+const SHIELD_TOP: i32 = 30;
+
+/// The ring around the heart at `hx, hy`, `out` pixels further out than the first.
+fn ring(bm: &mut Bitmap, hx: i32, hy: i32, out: i32) {
+    let (l, t, r, b) = (hx - 4 - out, hy - 3 - out, hx + 10 + out, hy + 8 + out);
+    bm.line(l + 1, t, r - 1, t);
+    bm.line(l + 1, b, r - 1, b);
+    bm.line(l, t + 1, l, b - 1);
+    bm.line(r, t + 1, r, b - 1);
+}
+
 /// The health bar along the bottom with notches at the band edges, and the shield bar
 /// above it when there is any shield: hatched, or solid when the head is covered too.
-fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool) {
+/// `shield` may run to twice the bar: the second hundred thickens it from the left.
+fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool, notches: &[i32]) {
     for x in 2..=157 {
         bm.plot(x, 34);
         bm.plot(x, 42);
@@ -544,8 +648,7 @@ fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool) {
         bm.plot(2, y);
         bm.plot(157, y);
     }
-    for k in 1..4 {
-        let x = BAR_X + BAR_W * k / 4;
+    for &x in notches {
         bm.put(x, 34, false);
         bm.put(x, 42, false);
     }
@@ -554,12 +657,19 @@ fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool) {
             bm.plot(x, y);
         }
     }
-    for x in BAR_X..BAR_X + shield.clamp(0, BAR_W) {
-        for y in 30..=32 {
-            if solid || (x + y) % 2 == 0 {
-                bm.plot(x, y);
-            }
+    let hatch = |bm: &mut Bitmap, x: i32, y: i32| {
+        if solid || (x + y) % 2 == 0 {
+            bm.plot(x, y);
         }
+    };
+    for x in BAR_X..BAR_X + shield.clamp(0, BAR_W) {
+        for y in SHIELD_TOP..=SHIELD_TOP + 2 {
+            hatch(bm, x, y);
+        }
+    }
+    for x in BAR_X..BAR_X + (shield - BAR_W).clamp(0, BAR_W) {
+        hatch(bm, x, SHIELD_TOP - 1);
+        hatch(bm, x, SHIELD_TOP + 3);
     }
 }
 
@@ -628,12 +738,12 @@ impl Meter {
     /// for a pulse.
     pub fn colour(&self, state: State, rest: [u8; 3]) -> [u8; 3] {
         if self.holding() {
-            return self.tuning.rgb(Band::Dead);
+            return self.tuning.rgb_at(0);
         }
-        match state.band() {
+        match state.pct() {
             None => rest,
-            Some(Band::Dead) => self.tuning.rgb(Band::Red),
-            Some(band) => self.tuning.rgb(band),
+            Some(0) => self.tuning.alarm().rgb,
+            Some(pct) => self.tuning.rgb_at(pct),
         }
     }
 
@@ -645,11 +755,13 @@ impl Meter {
         for x in W - SCROLL as usize..W {
             self.lift[x] = if beating { ecg(self.u) } else { 0 };
             // The heart pumps as the R peak enters, not as the quiet P wave does.
-            beat |= beating && self.u == R_PEAK;
-            self.u += 1;
-            if beating && self.u >= period {
-                self.u = 0;
-            }
+            beat |= beating && self.u == ECG_R;
+            // A flat trace holds the clock at the start, so the next pulse begins whole.
+            self.u = if beating && self.u + 1 < period {
+                self.u + 1
+            } else {
+                0
+            };
         }
         self.beat_age = match (beat, self.beat_age) {
             (true, _) => Some(0),
@@ -668,31 +780,38 @@ impl Meter {
     fn alive(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, helmet: bool) {
         self.scroll(pct);
         self.trace(bm);
-        let band = Band::of(pct);
-        if band == Band::Dead {
-            bm.sprite(HEART_X, HEART_Y, HEART_OUTLINE);
-        } else if matches!(self.beat_age, Some(0..=2)) {
-            bm.sprite(HEART_X - 1, HEART_Y - 1, HEART_BIG);
+        let [hx, hy] = self.tuning.heart;
+        if pct == 0 {
+            bm.sprite(hx, hy, HEART_OUTLINE);
+        } else if self.beat_age.is_some_and(|a| a < self.tuning.swell_ticks()) {
+            bm.sprite(hx - 1, hy - 1, HEART_BIG);
         } else {
-            bm.sprite(HEART_X, HEART_Y, HEART);
+            bm.sprite(hx, hy, HEART);
         }
         if shield > 0 {
-            // A ring around the heart, the shield's own mark.
-            bm.line(1, 0, 13, 0);
-            bm.line(1, 11, 13, 11);
-            bm.line(0, 1, 0, 10);
-            bm.line(14, 1, 14, 10);
+            // Rings around the heart, the shield's own mark: one per hundred, up to three
+            // (Doom's blue armour is 200 and mods go past it; asked 2026-10-08).
+            for out in 0..shield.div_ceil(100).min(3) {
+                ring(bm, hx, hy, out as i32);
+            }
         }
-        readout(bm, &pct.min(999).to_string(), 157, 2);
+        let [rx, ry] = self.tuning.readout;
+        readout(bm, &pct.min(999).to_string(), rx, ry);
         bars(
             bm,
             (BAR_W * pct.min(100) as i32 + 50) / 100,
-            (BAR_W * shield.min(100) as i32 + 50) / 100,
+            (BAR_W * shield.min(200) as i32 + 50) / 100,
             helmet,
+            &self.tuning.notches(),
         );
-        // On the last quarter every beat flashes the whole panel: the alarm.
-        if self.tuning.flash && band == Band::Red && self.beat_age == Some(0) {
-            for y in 0..H {
+        // In the alarm band every beat flashes: the panel, or the trace alone.
+        if self.beat_age == Some(0) && self.tuning.is_alarm(pct) {
+            let rows = match self.tuning.flash {
+                Flash::Off => 0,
+                Flash::Trace => SHIELD_TOP as usize - 1,
+                Flash::Panel => H,
+            };
+            for y in 0..rows {
                 for x in 0..W {
                     bm.set(x, y, !bm.get(x, y));
                 }
@@ -713,13 +832,15 @@ impl Meter {
             }
         }
         bm.line(cursor, BASE - 2, cursor, BASE + 2);
+        let [hx, hy] = self.tuning.heart;
         if t % 20 < 3 {
-            bm.sprite(HEART_X, HEART_Y, HEART);
+            bm.sprite(hx, hy, HEART);
         } else {
-            bm.sprite(HEART_X, HEART_Y, HEART_OUTLINE);
+            bm.sprite(hx, hy, HEART_OUTLINE);
         }
-        readout(bm, "--", 157, 2);
-        bars(bm, 0, 0, false);
+        let [rx, ry] = self.tuning.readout;
+        readout(bm, "--", rx, ry);
+        bars(bm, 0, 0, false, &self.tuning.notches());
         let x = BAR_X + tri(t * 2, BAR_W - 6);
         for dx in 0..6 {
             for y in 36..=40 {
@@ -880,11 +1001,14 @@ fn run(shared: &Mutex<Shared>, stop: &AtomicBool) {
 /// A scripted pass through every state, for a look at the meter without a game.
 pub fn demo() -> Result<String, String> {
     let active = crate::active_name();
-    let lcd = crate::load(&active).ok().and_then(|(p, _)| p.lcd);
-    if selects(lcd.as_deref()).is_none() {
+    // Health mode is the profile's own line since 0.2.3x; an old picture name still counts.
+    let shows = crate::load(&active)
+        .ok()
+        .is_some_and(|(p, _)| p.health.is_some() || selects(p.lcd.as_deref()).is_some());
+    if !shows {
         println!(
-            "note: profile '{active}' does not show the health meter (g13map profile lcd \
-             '{active}' health); the panel will not follow this run"
+            "note: profile '{active}' has no health mode (g13map profile health '{active}' \
+             feed); the panel will not follow this run"
         );
     }
     let steps: &[(&str, Option<State>, u64)] = &[
@@ -930,10 +1054,10 @@ pub fn demo() -> Result<String, String> {
             4000,
         ),
         (
-            "150",
+            "150, armour 200",
             Some(State::Health {
                 pct: 150,
-                shield: 100,
+                shield: 200,
                 helmet: false,
             }),
             2000,
@@ -1160,22 +1284,52 @@ mod tests {
 
     #[test]
     fn bands_follow_the_asked_edges() {
+        let d = Tuning::default();
         let edges = [
-            (0, Band::Dead),
-            (1, Band::Red),
-            (25, Band::Red),
-            (26, Band::Orange),
-            (50, Band::Orange),
-            (51, Band::Yellow),
-            (75, Band::Yellow),
-            (76, Band::Green),
-            (100, Band::Green),
-            (101, Band::Shield),
-            (999, Band::Shield),
+            (0, "dead"),
+            (1, "red"),
+            (25, "red"),
+            (26, "orange"),
+            (50, "orange"),
+            (51, "yellow"),
+            (75, "yellow"),
+            (76, "green"),
+            (100, "green"),
+            (101, "blue"),
+            (999, "blue"),
         ];
         for (pct, band) in edges {
-            assert_eq!(Band::of(pct), band, "{pct}");
+            assert_eq!(d.band_at(pct).name, band, "{pct}");
         }
+        assert_eq!(d.alarm().name, "red");
+        assert_eq!(d.notches(), vec![42, 80, 118]);
+        // A file's own ladder replaces the default one, in any order; death stays, the
+        // lowest band above it is the alarm, and a band past 200 is just another line.
+        let t = Tuning::parse(
+            "band purple 201 160 0 255\nband low 1 9 9 9\nband high 101 0 0 9\n\
+             band mid 40 1 2 3\nband bad 1000 1 1 1\nband bad2 10 1 2 999\nband short 5 1\n",
+        );
+        let names: Vec<(u32, &str)> = t.bands.iter().map(|b| (b.from, b.name.as_str())).collect();
+        assert_eq!(
+            names,
+            vec![
+                (0, "dead"),
+                (1, "low"),
+                (40, "mid"),
+                (101, "high"),
+                (201, "purple")
+            ]
+        );
+        assert_eq!(t.rgb_at(0), [0, 0, 0]);
+        assert_eq!(t.rgb_at(39), [9, 9, 9]);
+        assert_eq!(t.rgb_at(100), [1, 2, 3]);
+        assert_eq!(t.rgb_at(250), [160, 0, 255]);
+        assert!(t.is_alarm(39) && !t.is_alarm(40) && !t.is_alarm(0));
+        assert_eq!(t.notches(), vec![BAR_X + BAR_W * 39 / 100]);
+        // Redefining death keeps it at the bottom; an old-style colour line recolours.
+        let t = Tuning::parse("band dead 0 1 1 1\nband one 1 2 2 2\nred 7 7 7\none 8 8 8\n");
+        assert_eq!(t.bands.len(), 2);
+        assert_eq!((t.rgb_at(0), t.rgb_at(50)), ([1, 1, 1], [8, 8, 8]));
     }
 
     #[test]
@@ -1184,12 +1338,18 @@ mod tests {
         assert_eq!(Tuning::parse(&d.to_text()), d);
         assert_eq!(Tuning::parse(""), d);
         let t = Tuning::parse(
-            "yellow 255 255 0 # more yellow\nhold 1.5\nflash off\ncalm abc\nracing 0\nnonsense 1 2 3\nred 1 2\n",
+            "yellow 255 255 0 # more yellow\nhold 1.5\nflash off\ncalm abc\nracing 0\nswell 0.25\nnonsense 1 2 3\nred 1 2\nheart 200 -5\nreadout 10 2\n",
         );
-        assert_eq!(t.rgb(Band::Yellow), [255, 255, 0]);
-        assert_eq!(t.rgb(Band::Red), d.rgb(Band::Red));
+        assert_eq!(t.rgb_at(60), [255, 255, 0]);
+        assert_eq!(t.rgb_at(10), d.rgb_at(10));
         assert_eq!(t.hold, 1.5);
-        assert!(!t.flash);
+        assert_eq!(t.flash, Flash::Off);
+        assert_eq!((t.heart, t.readout), ([147, 5], [34, 2]));
+        assert_eq!(
+            Tuning::parse("flash trace\nheart 20 10\n").flash,
+            Flash::Trace
+        );
+        assert_eq!((t.swell, t.swell_ticks()), (0.25, 3));
         assert_eq!((t.calm, t.racing), (d.calm, d.racing));
         // The hold and the beat spacing follow the file.
         let mut m = Meter {
@@ -1202,15 +1362,15 @@ mod tests {
         assert!(m.holding());
         m.frame(State::health(0));
         assert!(!m.holding());
-        assert_eq!(d.period(100), 250);
-        assert_eq!(d.period(0), 70);
+        assert_eq!(d.period(100), 100);
+        assert_eq!(d.period(0), 40);
         assert_eq!(
             Tuning {
                 calm: 0.5,
                 ..d.clone()
             }
             .period(100),
-            60
+            ECG_COLUMNS
         );
     }
 
@@ -1387,6 +1547,37 @@ mod tests {
             }),
             152 * 3
         );
+        // Past 100 the second hundred adds a row above and below, from the left, and a
+        // ring around the heart per hundred, up to three (Doom's blue armour is 200).
+        let armour = |s: u32| State::Health {
+            pct: 100,
+            shield: s,
+            helmet: true,
+        };
+        let rim = |s: State| {
+            let f = Meter::default().frame(s);
+            (lit_in(&f, 4, 29, 156, 30), lit_in(&f, 4, 33, 156, 34))
+        };
+        assert_eq!(rim(armour(100)), (0, 0));
+        assert_eq!(rim(armour(150)), (76, 76));
+        assert_eq!(rim(armour(200)), (152, 152));
+        assert_eq!(rim(armour(999)), (152, 152));
+        let [hx, hy] = Tuning::default().heart.map(|v| v as usize);
+        let outer = |s: State| {
+            let f = Meter::default().frame(s);
+            lit_in(&f, hx - 5, hy - 4, hx + 12, hy - 3)
+                + lit_in(&f, hx - 5, hy + 9, hx + 12, hy + 10)
+        };
+        assert_eq!(outer(armour(100)), 0);
+        assert_eq!(outer(armour(101)), 2 * 15);
+        let third = |s: State| {
+            let f = Meter::default().frame(s);
+            lit_in(&f, hx - 6, hy - 5, hx + 13, hy - 4)
+                + lit_in(&f, hx - 6, hy + 10, hx + 13, hy + 11)
+        };
+        assert_eq!(third(armour(200)), 0);
+        assert_eq!(third(armour(201)), 2 * 17);
+        assert_eq!(third(armour(999)), 2 * 17);
         // A flatline never beats and holds still, dark, for three seconds; then the
         // search for a pulse begins under red, and any health ends the count.
         let mut m = Meter::default();
@@ -1402,7 +1593,7 @@ mod tests {
             })
             .collect();
         assert_eq!(colours[29], [0, 0, 0]);
-        assert_eq!(colours[31], Band::Red.rgb());
+        assert_eq!(colours[31], Tuning::default().rgb_at(1));
         m.frame(State::health(5));
         assert_eq!(m.dead, 0);
         m.frame(State::Wait);
@@ -1419,10 +1610,13 @@ mod tests {
             }
             let after = m.frame(next);
             assert_ne!(after.0, first.0, "{next:?} after the hold");
-            let want = next.band().map_or([9, 9, 9], Band::rgb);
+            let want = next
+                .pct()
+                .map_or([9, 9, 9], |p| Tuning::default().rgb_at(p));
             assert_eq!(m.colour(next, [9, 9, 9]), want, "{next:?} colour after");
         }
-        // Full health beats every 250 columns, 50 ticks.
+        // Full health beats every 100 columns, 20 ticks, the first on the fifth tick, as
+        // the R peak enters (indices are zero-based).
         let mut m = Meter::default();
         let beats: Vec<u32> = (0..200u32)
             .filter(|_| {
@@ -1430,7 +1624,7 @@ mod tests {
                 m.beat_age == Some(0)
             })
             .collect();
-        assert_eq!(beats, vec![6, 56, 106, 156]);
+        assert_eq!(beats, (0..10).map(|i| 4 + 20 * i).collect::<Vec<_>>());
         // On the last quarter the beat frame is the panel inverted: mostly lit.
         let mut m = Meter::default();
         let flash = (0..40)
@@ -1554,6 +1748,8 @@ mod dump {
             ("h075", State::health(75)),
             ("h100", full(100, 60, false)),
             ("h125", full(125, 100, true)),
+            ("a200", full(100, 200, false)),
+            ("a300", full(100, 300, true)),
         ] {
             let mut m = Meter::default();
             for i in 0..40 {
@@ -1606,8 +1802,8 @@ pub fn log_line(line: &str) -> Option<State> {
     }
     Some(State::Health {
         pct: (health / max * 100.0).round().clamp(0.0, 999.0) as u32,
-        // Doom's green armour is 100, blue 200: full bar from green up.
-        shield: armor.round().clamp(0.0, 100.0) as u32,
+        // Doom's green armour is 100, blue 200: the bar thickens past 100.
+        shield: armor.round().clamp(0.0, 999.0) as u32,
         helmet: false,
     })
 }
@@ -1683,6 +1879,345 @@ fn follow_log(path: &std::path::Path, stop: &AtomicBool) {
     }
 }
 
+// ---- Source engine games ----
+
+/// The LCD page a Source 2013 client renders when started with `-g15`: the title page
+/// says `G13 wait`, the player page spells the health line that `g15.so`
+/// (`contrib/source-health`) turns into the feed.
+pub const SOURCE_RES: &str = include_str!("../contrib/source-health/g15.res");
+
+/// A Source engine game folder as Steam lays it out: `bin/` with the engine (under
+/// `linux64/` for a 64-bit client), and one or more mod folders with a `gameinfo.txt`
+/// (`cstrike`, `hl2`, `episodic`, ...), each of which mounts `custom/*`.
+#[derive(Debug)]
+pub struct SourceGame {
+    pub bits: u8,
+    /// Where the engine looks for the module: `bin/g15.so` (32-bit) or
+    /// `bin/linux64/bin/g15.so` (64-bit, its platform folder plus the name it asks for).
+    pub module: PathBuf,
+    pub mods: Vec<PathBuf>,
+    /// From the mods' `gameinfo.txt` `type` keys: all `singleplayer_only` makes the game
+    /// singleplayer; anything else, or nothing said, multiplayer, the safe side (the sp
+    /// module patches the client's vtable for armour, which no anti-cheat should see).
+    pub kind: SourceKind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SourceKind {
+    Single,
+    Multi,
+}
+
+impl SourceKind {
+    pub fn word(self) -> &'static str {
+        match self {
+            SourceKind::Single => "sp",
+            SourceKind::Multi => "mp",
+        }
+    }
+    pub fn parse(word: &str) -> Option<SourceKind> {
+        match word {
+            "sp" | "single" | "singleplayer" => Some(SourceKind::Single),
+            "mp" | "multi" | "multiplayer" => Some(SourceKind::Multi),
+            _ => None,
+        }
+    }
+}
+
+/// The `type` key of a gameinfo.txt (`singleplayer_only`, `multiplayer_only`), if any.
+fn gameinfo_type(mod_dir: &Path) -> Option<String> {
+    let text = fs::read_to_string(mod_dir.join("gameinfo.txt")).ok()?;
+    text.lines().find_map(|l| {
+        let mut w = l.split_whitespace();
+        (w.next()? == "type").then(|| w.next().unwrap_or("").trim_matches('"').to_string())
+    })
+}
+
+pub fn source_game(root: &std::path::Path) -> Result<SourceGame, String> {
+    use std::io::Read;
+    let (engine, module) = if root.join("bin/linux64/engine.so").is_file() {
+        (
+            root.join("bin/linux64/engine.so"),
+            root.join("bin/linux64/bin/g15.so"),
+        )
+    } else if root.join("bin/engine.so").is_file() {
+        (root.join("bin/engine.so"), root.join("bin/g15.so"))
+    } else {
+        return Err(format!(
+            "{}: no bin/engine.so or bin/linux64/engine.so here; give the game's own folder, \
+             the one holding bin/ and the mod folder (cstrike, hl2, ...)",
+            root.display()
+        ));
+    };
+    let mut head = [0u8; 5];
+    fs::File::open(&engine)
+        .and_then(|mut f| f.read_exact(&mut head))
+        .map_err(|e| format!("{}: {e}", engine.display()))?;
+    let bits = match head {
+        [0x7f, b'E', b'L', b'F', 1] => 32,
+        [0x7f, b'E', b'L', b'F', 2] => 64,
+        _ => return Err(format!("{}: not an ELF library", engine.display())),
+    };
+    let mut mods: Vec<PathBuf> = fs::read_dir(root)
+        .map_err(|e| format!("{}: {e}", root.display()))?
+        .filter_map(|e| e.ok())
+        .map(|e| e.path())
+        .filter(|p| p.join("gameinfo.txt").is_file())
+        .collect();
+    mods.sort();
+    if mods.is_empty() {
+        return Err(format!(
+            "{}: no mod folder with a gameinfo.txt",
+            root.display()
+        ));
+    }
+    let types: Vec<String> = mods.iter().filter_map(|m| gameinfo_type(m)).collect();
+    let kind = if types.len() == mods.len() && types.iter().all(|t| t == "singleplayer_only") {
+        SourceKind::Single
+    } else {
+        SourceKind::Multi
+    };
+    Ok(SourceGame {
+        bits,
+        module,
+        mods,
+        kind,
+    })
+}
+
+/// The built module for a client of `bits`: `G13MAP_G15_DIR`, then
+/// `lib/g13pad/source-health` under the executable's prefix, then the usual prefixes.
+fn g15_module(kind: SourceKind, bits: u8) -> Result<PathBuf, String> {
+    let name = format!(
+        "g15-{}-{}.so",
+        kind.word(),
+        if bits == 64 { "x86_64" } else { "i386" }
+    );
+    let mut dirs = Vec::new();
+    if let Some(d) = env::var_os("G13MAP_G15_DIR") {
+        dirs.push(PathBuf::from(d));
+    }
+    if let Some(prefix) = env::current_exe().ok().and_then(|exe| {
+        exe.parent()
+            .and_then(|bin| bin.parent().map(Path::to_path_buf))
+    }) {
+        dirs.push(prefix.join("lib/g13pad/source-health"));
+    }
+    dirs.push(PathBuf::from("/usr/lib/g13pad/source-health"));
+    dirs.push(PathBuf::from("/usr/local/lib/g13pad/source-health"));
+    dirs.iter()
+        .map(|d| d.join(&name))
+        .find(|p| p.is_file())
+        .ok_or_else(|| {
+            format!(
+                "{name} not found in {}; build the source-health component or set G13MAP_G15_DIR",
+                dirs.iter()
+                    .map(|d| d.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+}
+
+fn res_path(mod_dir: &Path) -> PathBuf {
+    mod_dir.join("custom/g13pad/resource/g15.res")
+}
+
+/// `g13map health source DIR [sp|mp]`: the module (of the game's kind unless told
+/// otherwise) into the game's bin folder, the page into every mod folder's `custom/`,
+/// and what is left to do by hand.
+pub fn source_install(root: &Path, kind: Option<SourceKind>) -> Result<String, String> {
+    let game = source_game(root)?;
+    let kind = kind.unwrap_or(game.kind);
+    let module = g15_module(kind, game.bits)?;
+    if let Some(d) = game.module.parent() {
+        fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+    }
+    // Beside, then renamed over: a running game keeps the inode it mapped.
+    let staged = game.module.with_extension("so.new");
+    fs::copy(&module, &staged)
+        .and_then(|_| fs::rename(&staged, &game.module))
+        .map_err(|e| format!("{} -> {}: {e}", module.display(), game.module.display()))?;
+    let mut out = format!(
+        "{}-bit {} client: {} ({})\n",
+        game.bits,
+        match kind {
+            SourceKind::Single => "singleplayer",
+            SourceKind::Multi => "multiplayer",
+        },
+        game.module.display(),
+        match kind {
+            SourceKind::Single => "health and armour; hooks the client's Battery message",
+            SourceKind::Multi => "health only; touches nothing of the game's",
+        }
+    );
+    for m in &game.mods {
+        let res = res_path(m);
+        let dir = res.parent().unwrap();
+        fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+        let staged = res.with_extension("res.new");
+        fs::write(&staged, SOURCE_RES)
+            .and_then(|_| fs::rename(&staged, &res))
+            .map_err(|e| format!("{}: {e}", res.display()))?;
+        out.push_str(&format!("page: {}\n", res.display()));
+    }
+    out.push_str(
+        "Now add -g15 to the game's launch options in Steam, and put its profile in health \
+         mode feed (g13map profile health NAME feed). Remove with: g13map health source DIR remove",
+    );
+    Ok(out)
+}
+
+/// `g13map health source DIR remove`: only what `source_install` put there.
+pub fn source_remove(root: &Path) -> Result<String, String> {
+    let game = source_game(root)?;
+    let mut removed = Vec::new();
+    let mut gone = |p: &Path| -> Result<(), String> {
+        match fs::remove_file(p) {
+            Ok(()) => {
+                removed.push(p.display().to_string());
+                Ok(())
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(e) => Err(format!("{}: {e}", p.display())),
+        }
+    };
+    gone(&game.module)?;
+    for m in &game.mods {
+        let res = res_path(m);
+        gone(&res)?;
+        // Our folders only, and only while empty.
+        let _ = fs::remove_dir(res.parent().unwrap());
+        let _ = fs::remove_dir(m.join("custom/g13pad"));
+    }
+    if game.bits == 64 {
+        let _ = fs::remove_dir(game.module.parent().unwrap());
+    }
+    Ok(if removed.is_empty() {
+        "nothing of ours there".into()
+    } else {
+        format!("removed:\n{}", removed.join("\n"))
+    })
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+    use crate::test_support::Sandbox;
+
+    /// A game folder with an engine of `bits` and the named mod folders.
+    fn game(dir: &Path, name: &str, bits: u8, mods: &[&str]) -> PathBuf {
+        let root = dir.join(name);
+        let engine = if bits == 64 {
+            root.join("bin/linux64/engine.so")
+        } else {
+            root.join("bin/engine.so")
+        };
+        fs::create_dir_all(engine.parent().unwrap()).unwrap();
+        fs::write(
+            &engine,
+            [0x7f, b'E', b'L', b'F', if bits == 64 { 2 } else { 1 }, 0],
+        )
+        .unwrap();
+        for m in mods {
+            fs::create_dir_all(root.join(m)).unwrap();
+            fs::write(root.join(m).join("gameinfo.txt"), "\"GameInfo\" {}\n").unwrap();
+        }
+        root
+    }
+
+    #[test]
+    fn the_module_follows_the_engines_class_and_the_page_every_mod() {
+        let sandbox = Sandbox::new("source");
+        let modules = sandbox.dir.join("modules");
+        fs::create_dir_all(&modules).unwrap();
+        for (name, body) in [
+            ("g15-mp-x86_64.so", "sixty-four mp"),
+            ("g15-sp-x86_64.so", "sixty-four sp"),
+            ("g15-mp-i386.so", "thirty-two mp"),
+            ("g15-sp-i386.so", "thirty-two sp"),
+        ] {
+            fs::write(modules.join(name), body).unwrap();
+        }
+        let saved = env::var_os("G13MAP_G15_DIR");
+        env::set_var("G13MAP_G15_DIR", &modules);
+
+        let css = game(&sandbox.dir, "Counter-Strike Source", 64, &["cstrike"]);
+        fs::write(
+            css.join("cstrike/gameinfo.txt"),
+            "\"GameInfo\"\n{\n\ttype multiplayer_only\n}\n",
+        )
+        .unwrap();
+        let report = source_install(&css, None).unwrap();
+        assert!(report.starts_with("64-bit multiplayer client"), "{report}");
+        assert_eq!(
+            fs::read(css.join("bin/linux64/bin/g15.so")).unwrap(),
+            b"sixty-four mp"
+        );
+        assert_eq!(
+            fs::read_to_string(css.join("cstrike/custom/g13pad/resource/g15.res")).unwrap(),
+            SOURCE_RES
+        );
+        assert!(SOURCE_RES.contains("G13 wait") && SOURCE_RES.contains("%(localplayer)m_iHealth%"));
+
+        let hl2 = game(&sandbox.dir, "Half-Life 2", 32, &["hl2", "episodic", "ep2"]);
+        fs::write(hl2.join("hl2/custom/readme.txt"), "theirs").unwrap_or_else(|_| {
+            fs::create_dir_all(hl2.join("hl2/custom")).unwrap();
+            fs::write(hl2.join("hl2/custom/readme.txt"), "theirs").unwrap();
+        });
+        for m in ["hl2", "episodic", "ep2"] {
+            fs::write(
+                hl2.join(m).join("gameinfo.txt"),
+                "\"GameInfo\"\n{\n\ttype\t\t\"singleplayer_only\"\n}\n",
+            )
+            .unwrap();
+        }
+        let report = source_install(&hl2, None).unwrap();
+        assert!(report.starts_with("32-bit singleplayer client"), "{report}");
+        assert_eq!(fs::read(hl2.join("bin/g15.so")).unwrap(), b"thirty-two sp");
+        // Told otherwise, the safe module goes in; a mixed or unlabelled root is multiplayer.
+        source_install(&hl2, Some(SourceKind::Multi)).unwrap();
+        assert_eq!(fs::read(hl2.join("bin/g15.so")).unwrap(), b"thirty-two mp");
+        fs::write(hl2.join("ep2/gameinfo.txt"), "\"GameInfo\" {}\n").unwrap();
+        assert_eq!(source_game(&hl2).unwrap().kind, SourceKind::Multi);
+        source_install(&hl2, None).unwrap();
+        for m in ["hl2", "episodic", "ep2"] {
+            assert!(
+                hl2.join(m).join("custom/g13pad/resource/g15.res").is_file(),
+                "{m}"
+            );
+        }
+
+        // Removal takes only ours and leaves the game's own custom files.
+        assert!(source_remove(&hl2).unwrap().starts_with("removed:"));
+        assert!(!hl2.join("bin/g15.so").exists());
+        assert!(!hl2.join("hl2/custom/g13pad").exists());
+        assert!(hl2.join("hl2/custom/readme.txt").is_file());
+        assert!(hl2.join("bin/engine.so").is_file());
+        assert_eq!(source_remove(&hl2).unwrap(), "nothing of ours there");
+        source_remove(&css).unwrap();
+        assert!(!css.join("bin/linux64/bin").exists());
+        assert!(css.join("bin/linux64/engine.so").is_file());
+
+        match saved {
+            Some(v) => env::set_var("G13MAP_G15_DIR", v),
+            None => env::remove_var("G13MAP_G15_DIR"),
+        }
+    }
+
+    #[test]
+    fn folders_that_are_not_a_game_are_refused() {
+        let sandbox = Sandbox::new("source-refuse");
+        let err = source_install(&sandbox.dir, None).unwrap_err();
+        assert!(err.contains("no bin/engine.so"), "{err}");
+        let no_mod = game(&sandbox.dir, "bare", 64, &[]);
+        assert!(source_game(&no_mod).unwrap_err().contains("gameinfo.txt"));
+        let odd = game(&sandbox.dir, "odd", 64, &["mod"]);
+        fs::write(odd.join("bin/linux64/engine.so"), b"not an elf").unwrap();
+        assert!(source_game(&odd).unwrap_err().contains("not an ELF"));
+    }
+}
+
 #[cfg(test)]
 mod log_tests {
     use super::*;
@@ -1700,7 +2235,7 @@ mod log_tests {
             log_line("[00:51:59] G13HEALTH 200 100 200\n"),
             Some(State::Health {
                 pct: 200,
-                shield: 100,
+                shield: 200,
                 helmet: false
             })
         );

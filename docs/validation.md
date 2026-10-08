@@ -492,3 +492,44 @@ and calibration were restored. Running driver/watcher hashes match the package; 
 adapter executes the installed xboxdrv. The XFCE applet returned the original profile.
 `tools/check-vm-application.sh` documents/repeats the bounded integration fixture.
 No new physical all-key/gameplay test, cold VM boot or extended soak is claimed.
+
+## 0.2.30 — neutral controller axes at startup and mode changes
+
+The plain G13 input device now advertises centered axes before creation. Switching
+from analog output to keyboard or calibration modes centers both axes immediately,
+with a synchronization event; entering analog mode publishes the latest sampled
+position without waiting for another USB report. Keyboard direction bindings remain
+independent of the neutral controller axes.
+
+Native regression checks cover initialization before device discovery, all inactive
+modes, key emission, and restoring the sampled position. Driver action and manager
+checks also passed with address, undefined-behavior and leak sanitizers.
+
+## 0.2.31 — Source engine health feed
+
+`contrib/source-health/g15.cpp` is the Logitech LCD module the Source 2013 client loads
+with `-g15`; it writes the health meter's feed from the page `g15.res`. Built as
+`g15-x86_64.so` and, with a 32-bit toolchain, `g15-i386.so`, without libstdc++ and with
+no glibc symbol newer than 2.4 (`source-health-symbols` tests), and driven through the
+engine's interface by `tools/check-g15.cpp` (`source-health-load` tests: menu, team menu,
+alive, hurt, shield, death, respawn, shutdown). `g13map health source DIR [remove]`
+installs it by the engine's ELF class into `bin/` or `bin/linux64/bin/` and the page into
+every mod folder's `custom/g13pad/`; the Rust tests cover both layouts and removal.
+
+On the real games (2026-10-08, the probe that became this module): Counter-Strike:
+Source 64-bit in the sniper container and Half-Life 2 32-bit loaded it, logged
+`Logitech LCD Keyboard initialized`, and fed health live through damage, death and
+respawn. Armour was not reachable on either.
+
+## 0.2.32 — Source feeder split into singleplayer and multiplayer modules
+
+`g15-mp-*` is the feeder alone; `g15-sp-*` adds `armour.cpp`, which reaches the client's
+`VClient017` interface through the client library's `CreateInterface` and patches the
+`DispatchUserMessage` vtable slot to read `Battery` user messages for the shield bar
+(the client player entity carries no armour in this branch). `tools/fake-client.cpp`
+stands in for a client library in ctest: the `source-health-load-sp-*` tests prove the
+slot is patched, messages are passed on, a 16-bit value is read at the cursor (bit 0
+and bit 3), other message types are ignored, a page-supplied shield wins and a map
+change forgets the hook's value. `g13map health source DIR [sp|mp]` picks the module
+by the mods' `gameinfo.txt` `type` keys (all `singleplayer_only` → sp, else mp) unless
+told; the Rust tests cover both and the override.

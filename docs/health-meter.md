@@ -3,7 +3,9 @@
 The watcher (`g13map-watch.service`) can turn the LCD and the backlight into a health
 meter for the game in front of you: a monitor trace that beats faster as health falls, a
 bar with notches at the band edges, a readout, a hatched shield bar and a ring around the
-heart while there is any shield or armour, and the backlight by band:
+heart while there is any shield or armour (a ring per hundred of it, up to three, and a thicker bar past 100, as
+with Doom's blue armour), and the backlight by band. The default ladder, every edge and
+colour of which is a line in the tuning file (below):
 
 | health | backlight |
 |---|---|
@@ -97,6 +99,19 @@ watcher follow that file (`log_file` in the tuning file) into the meter: a
 soulsphere's 200 reads as an overshield, armour is the shield, 0 when dead. Its README
 has the build and the launcher options.
 
+## Source engine games (Half-Life 2, Counter-Strike: Source, ...)
+
+The Source 2013 client has a Logitech LCD feature of its own: with `-g15` in the launch
+options it loads `bin/g15.so` and renders `resource/g15.res` into it four times a second.
+`contrib/source-health` is that module, feeding `~/.local/state/g13map/health` with the
+player's health, `wait` without a live player and `0` at a death.
+`g13map health source DIR` puts the module (of the client's architecture) and the page
+into the game's folder; then add `-g15` in Steam and give the game's profile health mode
+`feed`. Two modules: multiplayer games (VAC-secured) get the plain feeder and health
+only; singleplayer games (Half-Life 2 and its episodes) get one that also hooks the
+client's `Battery` user message for the shield bar, since armour is on no page token.
+The installer picks by the game's `gameinfo.txt`; its README has the details.
+
 ## Other games
 
 A feeder is anything that learns the health and writes the line. A feeder that rewrites
@@ -108,10 +123,14 @@ output to a console logfile, which a few lines of shell can follow into `g13map 
 
 The meter's look lives in `~/.config/g13map/meter`, written with its defaults the first
 time the watcher runs and re-read within two seconds of a change while the meter is
-on: the backlight per band (`green 0 255 0`, `yellow`, `orange`, `red`, `blue`, `dead`),
-`hold` (seconds of dark flatline after a drop to zero), `calm` and `racing` (seconds
-from beat to beat at full health and on the last point) and `flash on|off` for the
-red band's panel flash. Edit, save, look at the glass.
+on: the backlight ladder, one `band NAME FROM R G B` line per band, lowest first (the band
+at 0 is death, the lowest above it the alarm; add `band purple 201 160 0 255` for a game
+whose health runs past 200, drop or move the others as you like), `hold` (seconds of dark flatline after a drop to zero), `calm` and `racing` (seconds
+from beat to beat at full health and on the last point; 2.0 and 0.8 by default, and a
+beat is never shorter than 0.8 s, the width of one complex on the glass), `swell` (seconds
+the heart stays big on each beat, 0.4 by default), `flash panel|trace|off` for the alarm
+band's flash on each beat, and where the heart (`heart X Y`, its top-left corner) and the
+readout (`readout RIGHT TOP`) sit on the 160 by 43 panel. Edit, save, look at the glass.
 
 For changes to the code itself, `tools/dev-watch.sh` runs `g13map-watch.service` from a
 warm `cargo build --release` of the checkout through a systemd drop-in (about half a

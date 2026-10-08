@@ -34,7 +34,24 @@ extern "C" int __wrap_access(const char *path, int mode) {
   if (std::string(path) == "/dev/input/uinput" || std::string(path) == "/dev/uinput") return 0;
   return __real_access(path, mode);
 }
-extern "C" int __wrap_ioctl(int fd, unsigned long, ...) { assert(fd == 123456); return 0; }
+static int initialized_axes = 0;
+extern "C" int __wrap_ioctl(int fd, unsigned long request, ...) {
+  assert(fd == 123456);
+  if (request == UI_ABS_SETUP) {
+    va_list args;
+    va_start(args, request);
+    const auto *axis = va_arg(args, const uinput_abs_setup *);
+    va_end(args);
+    assert(axis->code == ABS_X || axis->code == ABS_Y);
+    assert(axis->absinfo.value == 127 && axis->absinfo.minimum == 0 &&
+           axis->absinfo.maximum == 255);
+    initialized_axes |= 1 << axis->code;
+  } else if (request == UI_DEV_CREATE) {
+    assert(initialized_axes == 3 && "both axes must be neutral before discovery");
+    initialized_axes = 0;
+  }
+  return 0;
+}
 extern "C" ssize_t __real_write(int, const void *, size_t);
 extern "C" ssize_t __wrap_write(int fd, const void *data, size_t n) {
   if (fd != 123456) return __real_write(fd, data, n);
