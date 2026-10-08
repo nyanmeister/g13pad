@@ -5,6 +5,10 @@ backlight, LCD images/animation/text, and an optional Xbox-compatible analog sti
 The editor is launched with **`g13map edit`**; existing `~/.config/g13map` profiles are retained.
 The small `g13map` CLI/watcher and optional `g13map-editor` executable are separate.
 
+Here's what it looks like in the graphical configuration menu (Currently available on LXQt and XFCE):
+<img width="992" height="712" alt="image" src="https://github.com/user-attachments/assets/b0110d2e-496f-4714-913e-0a1334ea8aba" />
+
+
 The repository contains the tested C++ driver, Rust editor, analog adapter integration,
 Linux service/permission files, and isolated regression checks. Builds and package staging
 have no service or desktop side effects. i3 window rules and LXQt/XFCE applets are optional;
