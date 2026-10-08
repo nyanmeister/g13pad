@@ -68,18 +68,35 @@ second. What made it work:
 ## Games that talk on their own (Counter-Strike 2)
 
 CS2's Game State Integration posts JSON to a local HTTP listener named in a cfg file in
-`game/csgo/cfg/`; `g13map health cs2-config` prints it. A profile whose picture is
-`health cs2` makes the watcher run the listener itself while the profile is active, so
+`game/csgo/cfg/`; `g13map health cs2-config` prints it. A profile in health mode `cs2`
+makes the watcher run the listener itself while the profile is active, so
 nothing has to be started by hand. `player.state.health`, `armor` and `helmet` are the
 fields; while dead, `player` is whoever is being spectated (compare `player.steamid`
 with `provider.steamid`), and the menu has no `player.state` at all. Counter-Strike:
 Source has the same armour and helmet but no Game State Integration; it needs another
-route (a server plugin), and a profile set to `health cs2` there waits forever.
+route (a server plugin), and a profile in mode `cs2` there waits forever.
+
+## Doom-family engines: the console is the channel
+
+ZDoom-family engines (Zandronum, GZDoom) have no integration feed, but ACS can print
+to the console and the console can go to a file (`+logfile PATH`). `contrib/doom-health`
+is a tiny ACS library loaded with every game through `LOADACS` that prints a tagged
+line, dark grey, only on a change (the console is the player's too; the follower keeps
+the feed alive between lines); health mode `log` makes the watcher follow the newest
+file with that name. Lessons: a PK3 is a zip, and `bsdtar -a` writes a *tar* for an
+unknown extension (the engine then lists the file with no lumps and nothing runs);
+an ACS library must start with `#library "NAME"`, or its string constants resolve
+against another mod's table (with Brutal Doom loaded the tag came out as its weapon
+strings with my numbers between); Zandronum appends a timestamp to the log name unless
+`sv_logfilenametimestamp` is off; Zandronum 3.2 returns 0 for `APROP_SpawnHealth`; the console is not on stdout
+there, so look at the logfile, and test on a private X display with a copied config
+(`-config`), because the engine rewrites its ini on exit.
 
 ## Choosing where it shows
 
-The meter is a profile's picture (`g13map profile lcd NAME health`), so the i3 window
-rules put it on the game's windows and nowhere else. Two profiles with the same reader
+The meter is a profile's **Health mode** tick with a reader (`g13map profile health NAME
+feed|cs2|log`; the picture stays kept underneath), so the i3 window rules put it on the
+game's windows and nowhere else. Two profiles with the same reader
 hand the meter across a switch; any other picture ends it, and the ending profile's
 own backlight comes back (the meter was once restoring the colour of the profile it
 started under, over the new one: if a colour "leaks" between profiles, look there).

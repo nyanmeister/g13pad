@@ -18,8 +18,9 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile leds NAME BITS        save M-key LED mask (0–15)
   g13map profile stick NAME MODE       analog, keys or current
   g13map profile controller NAME MAP   e.g. 'right r3 0 0 0' (stick/click/swap/invert-X/Y)
-  g13map profile lcd NAME IMAGE        kept LCD image name, none, or the health meter:
-                                       health (a mod or script feeds it), health cs2
+  g13map profile lcd NAME IMAGE        kept LCD image name, or none
+  g13map profile health NAME MODE      health mode: off, feed (a mod or script),
+                                       cs2 (the watcher's listener), log (a console log)
   g13map modes on|off|show             enable/disable/show M-Sum profile switching
   g13map modes set SUM NAME            assign a saved profile to sum 0–7
   g13map modes clear SUM               restore that sum's fallback
@@ -136,6 +137,14 @@ fn profile(args: &[&str]) -> Result<String, String> {
                 None
             } else {
                 Some(gamepad::Mapping::from_compact(&values.join(" "))?)
+            };
+        }
+        ("health", [mode]) => {
+            p.health = match *mode {
+                "off" => None,
+                word => Some(meter::Reader::parse(word).ok_or_else(|| {
+                    format!("health mode must be off, feed, cs2 or log, not '{word}'")
+                })?),
             };
         }
         ("lcd", [image]) => {

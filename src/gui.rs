@@ -945,6 +945,20 @@ impl App {
         self.player = Some(lcd::show(self.profile.lcd.as_deref(), false)?);
         Ok(())
     }
+    /// Health mode went on, off or to another reader: the watcher shows the meter once the
+    /// profile is saved and active, so the unit must run for it.
+    fn health_mode_changed(&mut self) {
+        let mut msg = match self.profile.health {
+            Some(r) => format!("Health mode: {} (not saved yet)", r.about()),
+            None => "Health mode off: the picture shows again (not saved yet)".to_string(),
+        };
+        let mut r = Ok(());
+        if self.profile.health.is_some() && !self.modes.on && !self.rules.on {
+            r = Self::watch_unit(true);
+            msg.push_str("; g13map-watch.service enabled to show it after the editor closes");
+        }
+        self.report(r, &msg);
+    }
     /// Uses a kept image (or none) for this profile: live at once, saved with the profile.
     fn lcd_use(&mut self, name: Option<String>) {
         if let Some(n) = &name {
@@ -1138,36 +1152,36 @@ impl App {
             {
                 self.lcd_use(None);
             }
-            // The health meter as the profile's picture, with its reader.
-            let current = crate::meter::selects(self.profile.lcd.as_deref());
-            let mut picked: Option<&str> = None;
-            egui::ComboBox::from_id_salt("health meter")
-                .selected_text(if current.is_some() {
-                    "Health meter ✓"
-                } else {
-                    "Health meter…"
-                })
-                .show_ui(ui, |ui| {
-                    for (name, reader) in crate::meter::NAMES {
-                        let label = match reader {
-                            crate::meter::Reader::Feed => "Health meter (a mod or script feeds it)",
-                            crate::meter::Reader::Cs2 => "Health meter + Counter-Strike 2 listener",
-                        };
-                        if ui
-                            .selectable_label(current == Some(reader), label)
-                            .clicked()
-                        {
-                            picked = Some(name);
-                        }
-                    }
-                })
-                .response
+        });
+        // Health mode: the meter instead of the picture while this profile is active,
+        // with its reader; the picture stays kept for when the tick comes off.
+        ui.horizontal(|ui| {
+            use crate::meter::Reader;
+            let mut on = self.profile.health.is_some();
+            if ui
+                .checkbox(&mut on, "Health mode")
                 .on_hover_text(
                     "A live heartbeat and backlight that follow the game's health; \
                      g13map watch shows it while this profile is active",
-                );
-            if let Some(name) = picked {
-                self.lcd_use(Some(name.to_string()));
+                )
+                .changed()
+            {
+                self.profile.health = on.then_some(Reader::Feed);
+                self.health_mode_changed();
+            }
+            if let Some(current) = self.profile.health {
+                let mut picked = current;
+                egui::ComboBox::from_id_salt("health reader")
+                    .selected_text(current.about())
+                    .show_ui(ui, |ui| {
+                        for r in [Reader::Feed, Reader::Cs2, Reader::Log] {
+                            ui.selectable_value(&mut picked, r, r.about());
+                        }
+                    });
+                if picked != current {
+                    self.profile.health = Some(picked);
+                    self.health_mode_changed();
+                }
             }
         });
         ui.horizontal(|ui| {

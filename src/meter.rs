@@ -115,10 +115,50 @@ pub enum Reader {
     Feed,
     /// The watcher runs the Counter-Strike 2 Game State listener itself.
     Cs2,
+    /// The watcher follows a game's console log file (`log_file` in the tuning file) for
+    /// `G13HEALTH HEALTH MAX ARMOR` lines, as the Doom ACS script in `contrib/` prints.
+    Log,
 }
 
-/// The meter's picture names for a profile's `# lcd` line, with their readers.
-pub const NAMES: [(&str, Reader); 2] = [("health", Reader::Feed), ("health cs2", Reader::Cs2)];
+impl Reader {
+    /// The word in a profile's `# health` line and in `g13map profile health`.
+    pub fn key(self) -> &'static str {
+        match self {
+            Reader::Feed => "feed",
+            Reader::Cs2 => "cs2",
+            Reader::Log => "log",
+        }
+    }
+    pub fn parse(word: &str) -> Option<Reader> {
+        [Reader::Feed, Reader::Cs2, Reader::Log]
+            .into_iter()
+            .find(|r| r.key() == word)
+    }
+    /// What the reader is, for a label.
+    pub fn about(self) -> &'static str {
+        match self {
+            Reader::Feed => "a mod or script feeds it",
+            Reader::Cs2 => "Counter-Strike 2 listener",
+            Reader::Log => "a game's console log (Doom)",
+        }
+    }
+    /// The picture name that once selected this reader (`# lcd health cs2`); the watcher
+    /// still keys on it inside.
+    pub fn picture(self) -> &'static str {
+        NAMES
+            .iter()
+            .find(|(_, r)| *r == self)
+            .map_or("health", |(n, _)| n)
+    }
+}
+
+/// The meter's old picture names (`# lcd health cs2`, before the profile's own
+/// `# health` line); a profile that still says one is read as health mode.
+pub const NAMES: [(&str, Reader); 3] = [
+    ("health", Reader::Feed),
+    ("health cs2", Reader::Cs2),
+    ("health log", Reader::Log),
+];
 
 /// The reader a profile's picture name selects, if it is the meter.
 pub fn selects(name: Option<&str>) -> Option<Reader> {
@@ -164,6 +204,9 @@ pub struct Tuning {
     pub flash: bool,
     /// The loopback port the Counter-Strike 2 listener takes.
     pub cs2_port: u16,
+    /// The console log a `health log` profile follows; the newest file whose name
+    /// starts with it (Zandronum adds a timestamp to the name).
+    pub log_file: PathBuf,
 }
 
 impl Default for Tuning {
@@ -182,6 +225,7 @@ impl Default for Tuning {
             racing: 1.4,
             flash: true,
             cs2_port: CS2_PORT,
+            log_file: crate::state_dir().join("game.log"),
         }
     }
 }
@@ -233,6 +277,11 @@ impl Tuning {
                         .filter(|p| *p > 0)
                         .unwrap_or(t.cs2_port)
                 }
+                "log_file" => {
+                    if let Some(v) = values.first() {
+                        t.log_file = PathBuf::from(v);
+                    }
+                }
                 _ => {
                     if let Some(i) = Band::ALL.iter().position(|b| b.key() == key) {
                         let rgb: Vec<u8> = values.iter().filter_map(|v| v.parse().ok()).collect();
@@ -259,12 +308,14 @@ impl Tuning {
             "# Seconds the dark flatline holds after a drop to zero.\nhold {}\n\
              # Seconds from beat to beat at full health, and on the last point.\ncalm {}\nracing {}\n\
              # on: the red band flashes the panel on each beat.\nflash {}\n\
-             # The loopback port for a profile with `health cs2` (the game's cfg must match).\ncs2_port {}\n",
+             # The loopback port for a profile with `health cs2` (the game's cfg must match).\ncs2_port {}\n\
+             # The console log a profile with `health log` follows (newest file starting with it).\nlog_file {}\n",
             self.hold,
             self.calm,
             self.racing,
             if self.flash { "on" } else { "off" },
-            self.cs2_port
+            self.cs2_port,
+            self.log_file.display()
         ));
         s
     }
@@ -710,6 +761,7 @@ impl Live {
         let listener = match reader {
             Reader::Feed => None,
             Reader::Cs2 => Some(Listener::start(tuning.cs2_port)),
+            Reader::Log => Some(Listener::follow(tuning.log_file.clone())),
         };
         let shared = Arc::new(Mutex::new(Shared {
             state,
@@ -1005,14 +1057,26 @@ pub fn cs2(port: u16) -> Result<String, String> {
     cs2_serve(port, &AtomicBool::new(false))
 }
 
-/// The CS2 listener on a thread of its own, for a profile that selects `health cs2`;
-/// dropping it stops the listener and frees the port.
+/// A reader on a thread of its own: the CS2 listener for `health cs2`, the log
+/// follower for `health log`; dropping it stops the thread (and frees the port).
 pub struct Listener {
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
 }
 
 impl Listener {
+    /// Follows the game's console log into the feed.
+    pub fn follow(path: PathBuf) -> Listener {
+        let stop = Arc::new(AtomicBool::new(false));
+        let thread = {
+            let stop = stop.clone();
+            thread::spawn(move || follow_log(&path, &stop))
+        };
+        Listener {
+            stop,
+            thread: Some(thread),
+        }
+    }
     pub fn start(port: u16) -> Listener {
         let stop = Arc::new(AtomicBool::new(false));
         let thread = {
@@ -1522,5 +1586,165 @@ mod dump {
             }
         }
         fs::write(dir.join("demo.colours"), colours).unwrap();
+    }
+}
+
+// ---- a game's console log ----
+
+/// How long a log line lives in the feed; the ACS script repeats itself every ~5 s.
+const LOG_TTL: Duration = Duration::from_secs(15);
+
+/// The state in a `G13HEALTH HEALTH MAX ARMOR` console line, if the line is one.
+pub fn log_line(line: &str) -> Option<State> {
+    let rest = line.split("G13HEALTH ").nth(1)?;
+    let mut w = rest.split_whitespace();
+    let health: f64 = w.next()?.parse().ok()?;
+    let max: f64 = w.next()?.parse().ok()?;
+    let armor: f64 = w.next()?.parse().ok()?;
+    if max <= 0.0 || health < 0.0 || armor < 0.0 {
+        return None;
+    }
+    Some(State::Health {
+        pct: (health / max * 100.0).round().clamp(0.0, 999.0) as u32,
+        // Doom's green armour is 100, blue 200: full bar from green up.
+        shield: armor.round().clamp(0.0, 100.0) as u32,
+        helmet: false,
+    })
+}
+
+/// The newest file whose name starts with `path`'s (Zandronum appends a timestamp).
+fn newest_log(path: &std::path::Path) -> Option<PathBuf> {
+    let dir = path.parent()?;
+    let stem = path.file_name()?.to_str()?;
+    fs::read_dir(dir)
+        .ok()?
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_name().to_str().is_some_and(|n| n.starts_with(stem)))
+        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
+        .max()
+        .map(|(_, p)| p)
+}
+
+/// Follows the log until `stop`: the last tagged line already there gives the first
+/// state, new lines give the rest; a new or truncated file is picked up within a second.
+fn follow_log(path: &std::path::Path, stop: &AtomicBool) {
+    use std::io::{BufRead, Seek, SeekFrom};
+    let mut open: Option<(PathBuf, std::io::BufReader<fs::File>, u64)> = None;
+    let mut last: Option<State> = None;
+    let mut announced = false;
+    // The script prints only on change; the feed's ttl is kept alive from here.
+    let mut kept = Instant::now();
+    while !stop.load(Ordering::Relaxed) {
+        let newest = newest_log(path);
+        if open.as_ref().map(|(p, _, _)| p) != newest.as_ref() {
+            open = newest.and_then(|p| {
+                let f = fs::File::open(&p).ok()?;
+                eprintln!("health meter: following {}", p.display());
+                announced = true;
+                Some((p, std::io::BufReader::new(f), 0))
+            });
+            last = None;
+        }
+        if !announced {
+            eprintln!("health meter: no log yet at {}", path.display());
+            announced = true;
+        }
+        let mut changed = None;
+        if let Some((p, reader, seen)) = &mut open {
+            // Truncated (a new game over the same name): start again from the top.
+            if fs::metadata(&*p).map(|m| m.len()).unwrap_or(0) < *seen {
+                let _ = reader.seek(SeekFrom::Start(0));
+                *seen = 0;
+            }
+            let mut line = String::new();
+            while let Ok(n) = reader.read_line(&mut line) {
+                if n == 0 {
+                    break;
+                }
+                *seen += n as u64;
+                if let Some(s) = log_line(&line) {
+                    changed = Some(s);
+                }
+                line.clear();
+            }
+        }
+        if changed.is_some() {
+            last = changed;
+        }
+        if let Some(s) = last {
+            if changed.is_some() || kept.elapsed() >= LOG_TTL / 3 {
+                if let Err(e) = write(Some(s), Some(LOG_TTL)) {
+                    eprintln!("health meter: {e}");
+                }
+                kept = Instant::now();
+            }
+        }
+        thread::sleep(TICK);
+    }
+}
+
+#[cfg(test)]
+mod log_tests {
+    use super::*;
+    #[test]
+    fn console_lines_become_states() {
+        assert_eq!(
+            log_line("G13HEALTH 87 100 50"),
+            Some(State::Health {
+                pct: 87,
+                shield: 50,
+                helmet: false
+            })
+        );
+        assert_eq!(
+            log_line("[00:51:59] G13HEALTH 200 100 200\n"),
+            Some(State::Health {
+                pct: 200,
+                shield: 100,
+                helmet: false
+            })
+        );
+        assert_eq!(log_line("G13HEALTH 0 100 0"), Some(State::health(0)));
+        for bad in [
+            "G13HEALTH 1 0 0",
+            "G13HEALTH x 100 0",
+            "health 1 2 3",
+            "G13HEALTH 1 100",
+        ] {
+            assert_eq!(log_line(bad), None, "{bad}");
+        }
+    }
+    #[test]
+    fn the_newest_matching_log_is_followed_into_the_feed() {
+        let _box = crate::test_support::Sandbox::new("meter-log");
+        prepare();
+        let base = crate::state_dir().join("game.log");
+        assert_eq!(newest_log(&base), None);
+        fs::write(
+            crate::state_dir().join("game.log__old"),
+            "G13HEALTH 50 100 0\n",
+        )
+        .unwrap();
+        thread::sleep(Duration::from_millis(20));
+        let new = crate::state_dir().join("game.log__new");
+        fs::write(&new, "noise\nG13HEALTH 80 100 20\n").unwrap();
+        assert_eq!(newest_log(&base), Some(new.clone()));
+        let l = Listener::follow(base.clone());
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(
+            read(),
+            Some(State::Health {
+                pct: 80,
+                shield: 20,
+                helmet: false
+            })
+        );
+        use std::io::Write;
+        let mut f = fs::OpenOptions::new().append(true).open(&new).unwrap();
+        writeln!(f, "G13HEALTH 0 100 0").unwrap();
+        drop(f);
+        thread::sleep(Duration::from_millis(300));
+        assert_eq!(read(), Some(State::health(0)));
+        drop(l);
     }
 }

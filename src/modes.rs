@@ -200,7 +200,11 @@ impl Panel {
         Option<SystemTime>,
         Option<SystemTime>,
     ) {
-        let pic = load(profile).ok().and_then(|(p, _)| p.lcd);
+        // Health mode counts as the picture here: the meter's old name for the reader, so
+        // show() keys on one string for picture, meter and reader alike.
+        let pic = load(profile)
+            .ok()
+            .and_then(|(p, _)| p.health.map(|r| r.picture().to_string()).or(p.lcd));
         let m = |ext: &str| {
             pic.as_ref()
                 .and_then(|n| mtime(&lcd::dir().join(format!("{n}.{ext}"))))

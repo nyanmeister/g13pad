@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// G13Health for ZDoom-family engines (Zandronum, GZDoom): prints the local player's
+// health and armour to the console, in dark grey, only when one of them changes, so a
+// console logfile carries them out of the game with as little noise as possible:
+//   G13HEALTH <health> <spawnhealth> <armor>
+// `g13map watch` follows that file into the health meter (and keeps the meter alive
+// between lines itself, so there is no heartbeat). Build with acc:
+//   acc g13health.acs G13HLTH.o   and put the object in a PK3 as ACS/G13HLTH.o with a
+// LOADACS lump naming it (see the README). The #library line matters: without it the
+// library's strings resolve against another mod's string table.
+#library "G13HLTH"
+#include "zcommon.acs"
+
+// Every player's ENTER runs this; only the console player's lines are wanted, the
+// others' go to their own consoles anyway.
+script "G13Health" ENTER
+{
+    int lastHealth = -1;
+    int lastArmor = -1;
+    while (true)
+    {
+        if (PlayerNumber() == ConsolePlayerNumber())
+        {
+            int health = GetActorProperty(0, APROP_Health);
+            int spawnHealth = GetActorProperty(0, APROP_SpawnHealth);
+            int armor = CheckInventory("BasicArmor");
+            if (health < 0) health = 0;
+            // Zandronum 3.2 answers 0 for APROP_SpawnHealth: Doom's 100 then.
+            if (spawnHealth <= 0) spawnHealth = 100;
+            if (health != lastHealth || armor != lastArmor)
+            {
+                // \cu: dark grey, the quietest console colour.
+                Log(s:"\cuG13HEALTH ", d:health, s:" ", d:spawnHealth, s:" ", d:armor);
+                lastHealth = health;
+                lastArmor = armor;
+            }
+        }
+        Delay(5);
+    }
+}

@@ -75,6 +75,10 @@ pub struct Profile {
     /// Name of the LCD image in the history (`# lcd NAME`: a comment, so the daemon never
     /// sees it; the frame itself goes through `daemon::send_lcd`).
     pub lcd: Option<String>,
+    /// Health mode (`# health feed|cs2|log`, asked 2026-10-08): the health meter shows
+    /// instead of the picture while the profile is active, fed by that reader. The
+    /// picture stays kept for when the mode is off again.
+    pub health: Option<crate::meter::Reader>,
     /// None preserves the current mode. A comment so the service remains its only owner.
     pub stick: Option<StickMode>,
     pub gamepad: Option<crate::gamepad::Mapping>,
@@ -113,6 +117,12 @@ impl Profile {
                 }
                 if let Some(name) = comment.trim().strip_prefix("lcd ") {
                     p.lcd = Some(name.trim().to_string()).filter(|n| !n.is_empty());
+                }
+                if let Some(word) = comment.trim().strip_prefix("health ") {
+                    p.health = crate::meter::Reader::parse(word.trim());
+                    if p.health.is_none() {
+                        notes.push(format!("ignored invalid health mode: {line}"));
+                    }
                 }
                 continue;
             }
@@ -153,6 +163,14 @@ impl Profile {
                 _ => p.extra.push(line.to_string()),
             }
         }
+        // Before `# health`, the meter was a picture name (`# lcd health cs2`): read as
+        // health mode with no picture of its own, written back the new way.
+        if p.health.is_none() {
+            if let Some(reader) = crate::meter::selects(p.lcd.as_deref()) {
+                p.health = Some(reader);
+                p.lcd = None;
+            }
+        }
         (p, notes)
     }
 
@@ -165,6 +183,9 @@ impl Profile {
         );
         if let Some(n) = &self.lcd {
             out.push_str(&format!("# lcd {n}\n"));
+        }
+        if let Some(reader) = self.health {
+            out.push_str(&format!("# health {}\n", reader.key()));
         }
         if let Some(mode) = self.stick {
             out.push_str(&format!("# stick {}\n", mode.label()));
@@ -305,6 +326,22 @@ mod tests {
         assert_eq!(p.extra, vec!["font 5x8"]);
         let (again, _) = Profile::parse(&p.to_text());
         assert_eq!(again, p);
+    }
+    #[test]
+    fn health_mode_is_its_own_line_and_old_picture_names_migrate() {
+        use crate::meter::Reader;
+        let (p, notes) = Profile::parse("# lcd my pic\n# health cs2\n");
+        assert!(notes.is_empty());
+        assert_eq!(p.health, Some(Reader::Cs2));
+        assert_eq!(p.lcd.as_deref(), Some("my pic"));
+        assert!(p.to_text().contains("# health cs2\n"));
+        assert_eq!(Profile::parse(&p.to_text()).0, p);
+        let (old, _) = Profile::parse("# lcd health log\n");
+        assert_eq!((old.health, old.lcd.clone()), (Some(Reader::Log), None));
+        assert!(old.to_text().contains("# health log\n"));
+        let (bad, notes) = Profile::parse("# health yes\n");
+        assert_eq!(bad.health, None);
+        assert_eq!(notes.len(), 1);
     }
     #[test]
     fn stick_preferences_are_metadata_and_legacy_profiles_preserve_the_mode() {

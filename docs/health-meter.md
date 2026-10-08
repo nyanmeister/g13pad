@@ -20,15 +20,17 @@ profile's colour.
 
 ## Choosing it per profile
 
-The meter is a picture a profile can choose, so the window rules put it on the game's
-windows and nowhere else: in the editor's LCD section pick **Health meter…**, or
-`g13map profile lcd deeprock health`. The name carries the reader:
+A profile has a **Health mode** tick in the editor's LCD section (or `g13map profile
+health deeprock feed`), so the window rules put the meter on the game's windows and
+nowhere else; the profile's own picture stays kept and shows again when the tick comes
+off. The mode names the reader:
 
-- `health`: something else writes the feed (a game mod, a script, `g13map health`).
+- `feed`: something else writes the feed (a game mod, a script, `g13map health`).
   Without a feed the panel waits, searching for a pulse.
-- `health cs2`: the watcher runs the Counter-Strike 2 Game State listener itself while
-  the profile is active (port `cs2_port` in the tuning file, 3000 by default), so
-  nothing has to be started by hand; the game's cfg must still be in place.
+- `cs2`: the watcher runs the Counter-Strike 2 Game State listener itself while the
+  profile is active (port `cs2_port` in the tuning file, 3000 by default), so nothing
+  has to be started by hand; the game's cfg must still be in place.
+- `log`: the watcher follows a game's console log (`log_file` in the tuning file).
 
 Two profiles with the same reader hand the meter across a switch without a restart; a
 profile with another picture ends it. `g13map health demo` only shows while the active
@@ -85,6 +87,15 @@ five times a second and writes `~/.local/state/g13map/health` through Proton's `
 dwarf's normal maximum (`MaxHealth` with any beer divided out, so perks count as 100%
 and a Red Rock Blaster's extra shows as blue), the shield as DRG's "armor", 0 when down, `wait`
 without a local dwarf; 15 s `ttl`, rewritten every 5 s. Its README has the install.
+
+## Doom (Zandronum, GZDoom)
+
+`contrib/doom-health` is an ACS script that prints `G13HEALTH health spawnhealth armor`
+to the console on every change; with the engine's console sent to a logfile
+(`+logfile PATH`, `+sv_logfilenametimestamp false`) a profile in health mode `log` makes the
+watcher follow that file (`log_file` in the tuning file) into the meter: a
+soulsphere's 200 reads as an overshield, armour is the shield, 0 when dead. Its README
+has the build and the launcher options.
 
 ## Other games
 
