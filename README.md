@@ -121,18 +121,14 @@ background, threshold/dither, inversion and animation. Text supports installed f
 size, multiline wrapping/alignment and scrolling. **Animations…** offers built-in looping
 pixel art drawn in code (a rainy skyline, a starfield, Pong, Life, waves, cubes, digital
 rain, a heartbeat, an aquarium, tesseracts); a click keeps one as a picture. `g13map-anim` lists and
-keeps the same scenes from a terminal. The **health meter** (0.2.17) is a live heartbeat
-that follows a game: `g13map health 87` (or `87/125 shield 40/60`) feeds it, the watcher
-draws a monitor trace that beats faster as health falls, a bar, a readout and a shield bar,
-and sets the backlight by band (by default green above 75, yellow, orange, red from 25 down,
-blue over 100 for an overshield, off at 0 with a flatline, then after three seconds the search
-for a pulse under red; the ladder, its colours and the rest of the look are lines in
-`~/.config/g13map/meter`, re-read live). `g13map health wait` is a game connected
-without health yet (a lobby); `off` or an expired `ttl` gives the panel back to the
-profile. A profile chooses it as its picture (`g13map profile lcd NAME health`, or `health cs2`
-for the watcher to run the Counter-Strike 2 Game State listener itself), so the window
-rules put it on the game's windows; `g13map health demo` runs through the states
-(see [health meter](docs/health-meter.md)). `g13map-apply.service` restores the
+keeps the same scenes from a terminal. The **health meter** (0.2.17, pictured above) is
+fed one line at a time: `g13map health 87` (or `87/125 shield 40/60`); `wait` is a game
+connected without health yet (a lobby); `off` or an expired `ttl` gives the panel back to
+the profile. A profile chooses it as its picture (`g13map profile lcd NAME health`, or
+`health cs2` for the watcher to run the Counter-Strike 2 Game State listener itself). The
+ladder, its colours and the rest of the look are lines in `~/.config/g13map/meter`,
+re-read live; see [the health meter](docs/health-meter.md).
+`g13map-apply.service` restores the
 saved profile at login; `g13map-watch.service` handles automatic switching/animation,
 temporary LCD error recovery, and profile reapplication after a driver reconnect.
 

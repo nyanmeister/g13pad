@@ -2097,7 +2097,8 @@ mod tests {
 
 /// `G13MAP_METER_DUMP=DIR cargo test --lib meter::dump -- --ignored`: forty frames of
 /// every state as PBM files under DIR, for a contact sheet, and the demo as
-/// `demo-NNN.pbm` with `demo.colours` (one `R G B` backlight per frame), for a GIF.
+/// `demo-NNN.pbm` with `demo.colours` (one `R G B` backlight per frame) for
+/// `tools/health-gif.sh`, which renders the README's GIF from them.
 #[cfg(test)]
 mod dump {
     use super::*;
