@@ -58,6 +58,11 @@ void G13_Device::LcdWrite(unsigned char *data, size_t size) {
                                      << DescribeLibusbErrorCode(error) << ", "
                                      << bytes_written << " bytes written");
   }
+  if (!m_lcd_file_name.empty()) {
+    // What the glass shows, for readers such as the OBS overlay; a repeat is not rewritten.
+    const std::string frame(reinterpret_cast<const char *>(data), size);
+    if (frame != m_lcd_last && G13ReplaceFile(m_lcd_file_name, frame)) m_lcd_last = frame;
+  }
 }
 
 void G13_Device::LcdWriteFile(const std::string &filename) {

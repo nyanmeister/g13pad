@@ -136,6 +136,39 @@ hand the meter across a switch; any other picture ends it, and the ending profil
 own backlight comes back (the meter was once restoring the colour of the profile it
 started under, over the new one: if a colour "leaks" between profiles, look there).
 
+## The OBS overlay and the driver's state files
+
+`g13map obs` (src/obs.rs, 0.2.39) draws the pad for an OBS window capture. What it
+took, for the next thing that wants to show the pad or the glass on a monitor:
+
+- **The input-overlay plugin cannot drive it.** Its gamepad path (SDL2
+  `SDL_GameController` in the installed 5.1.0; SDL3 `SDL_Gamepad` upstream) stops at
+  the 21 mapped buttons, and its keyboard path (libuiohook) sees the profile's bindings,
+  not the keys, so a key-code layout would change with every profile and mode. The
+  overlay is therefore our own window, with the plugin's *asset shape* kept (a PNG
+  sheet, a JSON layout, pressed sprite 3 px below) so the art can be repainted the
+  same way as the plugin's presets.
+- **The driver publishes its state as files beside the pipes**, like the health feed:
+  `g13-0_keys` (`stick X Y`, `backlight R G B`, `keys NAME...`; the text is rewritten
+  atomically on change, from the raw report bits in `G13_KEY_STRINGS` order) and
+  `g13-0_lcd` (the 960 bytes last sent to the glass). Not the output FIFO: `g13map
+  watch` already reads that, and a FIFO splits its bytes between readers. The names
+  are set at the top of `RegisterContext`, because `LcdInit` sends the logo and
+  `SetKeyColor` runs before the pipes exist and both are state. A proof
+  (`tools/driver-keystate-proof.cpp`) pins the bit order; it is exempt from the
+  `--wrap=write` the other proofs link with.
+- **The sheet is generated from the editor's board** (`board::spots`, the traced
+  outline) on a 4-pixel grid, the grammar read off the plugin's pixel keyboard: a
+  1-unit outline, a bevel light at top-left and dark at bottom-right, 3x5 glyphs, cyan
+  ink when pressed. `g13map obs --dump DIR` writes it; a test keeps `assets/obs/`
+  equal to the generator, so regenerate after changing the art.
+- **The glass table** (src/glass.rs, `~/.config/g13map/glass`) is the one place that
+  translates LED values to monitor colours; draw the LCD through `Glass::render`
+  rather than inventing colours. The lit tint is 55 % toward white, as the README GIF.
+- **Check the window carries alpha** with a raw `xwd` dump (ImageMagick drops the
+  alpha byte of a depth-32 window): the corner pixel reads `00000000`, the body
+  `2c2c2cff`. `import -window` composites over black and proves nothing.
+
 ## Iterating without the package cycle
 
 - `~/.config/g13map/meter` holds the look (the band ladder and its colours, the dark hold, beat

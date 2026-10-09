@@ -4,7 +4,7 @@ default-members = [".", "crates/g13pad-core", "crates/g13pad-analog"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.38"
+version = "0.2.39"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -34,6 +34,11 @@ required-features = ["editor"]
 name = "g13map-anim"
 path = "src/anim.rs"
 required-features = ["art"]
+
+[[bin]]
+name = "g13map-obs"
+path = "src/obs_main.rs"
+required-features = ["editor"]
 
 [dependencies]
 g13pad-core.workspace = true

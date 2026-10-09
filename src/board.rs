@@ -34,15 +34,15 @@ pub struct Spot {
 }
 
 /// The photo outline reaches left/above the control origin; `OFF` shifts everything drawn.
-const OFF: Vec2 = Vec2::new(32.0, 5.0);
-const W: f32 = 575.0;
-const H: f32 = 816.0;
-const LCD: Rect = Rect::from_min_max(Pos2::new(145.0, 15.0), Pos2::new(355.0, 87.0));
-const STICK_CENTRE: Pos2 = Pos2::new(462.0, 478.0);
+pub(crate) const OFF: Vec2 = Vec2::new(32.0, 5.0);
+pub(crate) const W: f32 = 575.0;
+pub(crate) const H: f32 = 816.0;
+pub(crate) const LCD: Rect = Rect::from_min_max(Pos2::new(145.0, 15.0), Pos2::new(355.0, 87.0));
+pub(crate) const STICK_CENTRE: Pos2 = Pos2::new(462.0, 478.0);
 const STICK_SQUARE: Rect = Rect::from_min_max(Pos2::new(426.0, 442.0), Pos2::new(498.0, 514.0));
 /// Coordinates follow the 598×896 upstream product photograph, minus (50, 80).
 /// Retain the full palm rest and the thumbstick's asymmetric outer edge.
-const OUTLINE: [[f32; 2]; 51] = [
+pub(crate) const OUTLINE: [[f32; 2]; 51] = [
     [117., 0.],
     [173., -3.],
     [277., -3.],

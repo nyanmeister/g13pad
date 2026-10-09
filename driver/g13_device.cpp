@@ -213,6 +213,10 @@ void G13_Device::SetKeyColor(int red, int green, int blue) {
     G13_ERR("Problem changing color: " + DescribeLibusbErrorCode(error));
     return;
   }
+  m_backlight[0] = red;
+  m_backlight[1] = green;
+  m_backlight[2] = blue;
+  if (m_report_seen) WriteKeyState(m_last_report); // the state file carries the colour
 }
 
 /*! reads and processes key state report from G13
@@ -242,6 +246,58 @@ void G13_Device::ProcessInputReport(unsigned char *buffer) {
   parse_joystick(buffer);
   m_currentProfile->ParseKeys(buffer);
   SendEvent(EV_SYN, SYN_REPORT, 0);
+  WriteKeyState(buffer);
+}
+
+std::string G13KeyStateText(const unsigned char *report, const int backlight[3]) {
+  std::string text = "stick " + std::to_string(report[1]) + " " +
+                     std::to_string(report[2]) + "\nbacklight " +
+                     std::to_string(backlight[0]) + " " + std::to_string(backlight[1]) + " " +
+                     std::to_string(backlight[2]) + "\nkeys";
+  for (size_t i = 0; i < G13_NUM_KEYS; ++i) {
+    if (!(report[3 + i / 8] & (1u << (i % 8)))) continue;
+    const std::string name = G13_KEY_STRINGS[i];
+    // Firmware state bits share the bitmap; only LIGHT among the non-parsed is a key.
+    if (name.rfind("UNDEF", 0) == 0 || name == "LIGHT_STATE" || name == "LIGHT2" ||
+        name == "MISC_TOGGLE")
+      continue;
+    text += ' ';
+    text += name;
+  }
+  text += '\n';
+  return text;
+}
+
+bool G13ReplaceFile(const std::string &path, const std::string &content) {
+  const std::string temporary = path + ".tmp";
+  const int fd = open(temporary.c_str(),
+                      O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, 0640);
+  if (fd < 0) return false;
+  size_t done = 0;
+  while (done < content.size()) {
+    const ssize_t n = write(fd, content.data() + done, content.size() - done);
+    if (n < 0 && errno == EINTR) continue;
+    if (n <= 0) break;
+    done += n;
+  }
+  close(fd);
+  if (done == content.size() && rename(temporary.c_str(), path.c_str()) == 0) return true;
+  unlink(temporary.c_str());
+  return false;
+}
+
+void G13_Device::WriteKeyState(const unsigned char *report) {
+  if (report != m_last_report) {
+    memcpy(m_last_report, report, sizeof(m_last_report));
+    m_report_seen = true;
+  }
+  if (m_keys_file_name.empty()) return;
+  std::string text = G13KeyStateText(report, m_backlight);
+  if (text == m_keys_last) return;
+  if (!G13ReplaceFile(m_keys_file_name, text) && m_keys_last.empty()) {
+    G13_ERR("cannot write " << m_keys_file_name << ": " << strerror(errno));
+  }
+  m_keys_last = text; // a failure is reported once, not per key press
 }
 
 void G13_Device::StartInputReader() {
@@ -644,6 +700,11 @@ void G13_Device::Command(char const *str) {
 
 void G13_Device::RegisterContext(libusb_context *libusbContext) {
   m_ctx = libusbContext;
+  // State files first: the logo LcdInit sends and the colour set below are state too.
+  m_keys_file_name = G13_Manager::Instance()->MakePipeName(this, true) + "_keys";
+  m_lcd_file_name = G13_Manager::Instance()->MakePipeName(this, true) + "_lcd";
+  const unsigned char idle[8] = {0, 128, 128, 0, 0, 0, 0, 0}; // until the pad reports
+  WriteKeyState(idle);
 
   int leds = 0;
   int red = 0;
@@ -685,6 +746,14 @@ void G13_Device::Cleanup() {
   };
   unlink_owned(m_input_pipe_name, m_input_pipe_fid);
   unlink_owned(m_output_pipe_name, m_output_pipe_fid);
+  // A state file is ours only while it is a plain file we own (the directory is the
+  // daemon's; this guards a substituted path all the same).
+  for (const std::string &path : {m_keys_file_name, m_lcd_file_name}) {
+    struct stat state_file {};
+    if (!path.empty() && lstat(path.c_str(), &state_file) == 0 && S_ISREG(state_file.st_mode)
+        && state_file.st_uid == geteuid())
+      unlink(path.c_str());
+  }
   ioctl(m_uinput_fid, UI_DEV_DESTROY);
   close(m_uinput_fid);
   if (m_input_pipe_fid >= 0) close(m_input_pipe_fid);

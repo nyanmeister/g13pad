@@ -659,6 +659,33 @@ among them, native windows not. A login session on a Wayland compositor was not 
 the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
 scan) is the same one the X11 source uses for `DISPLAY`.
 
+### 0.2.39 — the OBS overlay and the driver's state files — 2026-10-08
+
+Asked for an OBS asset of the pad in the style of the input-overlay plugin's presets.
+The plugin cannot drive one (its gamepad path stops at 21 mapped buttons, its keyboard
+path sees bindings), so the driver now writes `g13-0_keys` and `g13-0_lcd` beside its
+pipes and `g13map obs` draws the pad in its own transparent window from them.
+
+- `keystate-proof`: the state text from raw reports (bit order, firmware bits left
+  out, the stick's bytes, the backlight) passes; the driver suite passes (`manager-proof`,
+  `fifo-proof`, `driver-version`). Rust: 88 lib tests pass, including that the
+  committed `assets/obs/` equals the generator and every control has a sprite; clippy
+  and `cargo fmt --check` clean.
+- On a private display (Xvfb :99) with stand-in state files: the window opened at
+  576x816, depth 32; a raw `xwd` dump reads `00000000` at a corner and `2c2c2cff` on
+  the body (alpha carried). Rewriting the keys file lit G1, G7, G22, M2, L3, BD, LEFT
+  and the stick click cyan within a frame, moved the cap to (255, 30), and turned the
+  LCD box from blue to the glass table's orange; `--lcd 3` opened the 480x129 LCD window.
+- On the VM (anarchy-virtual, XFCE, the pad attached) with the new `g13d` through a
+  `g13.service` drop-in: `/run/g13d/g13-0_keys` held `stick 128 128`, `backlight 0 80
+  160`, `keys` and `g13-0_lcd` the 960-byte logo at once after the restart; the
+  overlay on the live display drew the logo in that blue. Limit: no key was pressed
+  on the pad during the check (nobody at it), so a live press lighting a sprite rests
+  on the proof's bit order and the same write path the LCD file took.
+- Not exercised: OBS itself capturing the window (the capture composites alpha as
+  any depth-32 window); i3 unmaps windows on hidden workspaces, so the overlay has to
+  stay on a visible one.
+
 ### 0.2.38 — sway's native windows through the i3 IPC — 2026-10-08
 
 A live sway login on the test VM (lightdm autologin, the pad attached): the watcher

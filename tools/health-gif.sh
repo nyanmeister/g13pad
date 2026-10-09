@@ -21,6 +21,12 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
 display() {
+    # The user's own table (see src/glass.rs) wins when it names the colour.
+    glass="${XDG_CONFIG_HOME:-$HOME/.config}/g13map/glass"
+    if [ -r "$glass" ]; then
+        found=$(awk -v led="$1" '$1" "$2" "$3 == led { print $4, $5, $6; exit }' "$glass")
+        if [ -n "$found" ]; then echo "$found"; return; fi
+    fi
     case "$1" in
     '0 255 0') echo 0 150 0 ;;      # green on the glass
     '255 48 0') echo 255 128 0 ;;   # orange on the glass

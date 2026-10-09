@@ -21,6 +21,7 @@ mod focus;
 mod fonts;
 #[cfg(all(test, feature = "editor"))]
 mod fuzz_tests;
+pub mod glass;
 #[cfg(feature = "editor")]
 mod gui;
 pub mod keys;
@@ -29,6 +30,8 @@ pub mod lcd;
 mod marquee;
 pub mod meter;
 mod modes;
+#[cfg(feature = "editor")]
+pub mod obs;
 pub mod overlay;
 mod panel;
 pub mod profile;
@@ -238,6 +241,12 @@ pub fn run() {
 }
 
 #[cfg(feature = "editor")]
+/// `g13map-obs`: the OBS overlay window (launched by `g13map obs`).
+pub fn run_obs() {
+    let args: Vec<String> = env::args().skip(1).collect();
+    finish(obs::run(&args));
+}
+
 pub fn run_editor() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {

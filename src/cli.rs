@@ -43,6 +43,8 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map health source-res             that page file, for a game set up by hand
   g13map layout                       print active X11 layout's physical key labels
   g13map watch                        run the profile/LCD watcher
+  g13map obs [OPTIONS]                OBS overlay window: the pad with keys lit as pressed,
+                                      the stick, the LCD (g13map obs --help for options)
   g13map detach-pointer               isolate the G13 source pointer under X11
   g13map --version                    print version, without hardware or a display
 
@@ -293,6 +295,7 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
         ["edit"] => launch_editor(),
         ["apply"] => apply(),
         ["watch"] => modes::watch(),
+        ["obs", rest @ ..] => launch_obs(rest),
         ["layout"] => serde_json::to_string_pretty(&keys::layout_map()).map_err(|e| e.to_string()),
         ["detach-pointer"] => session::detach_pointer().map(|d| d.to_string()),
         ["--version"] | ["version"] => Ok(format!("g13pad {} (g13map)", env!("CARGO_PKG_VERSION"))),
@@ -354,6 +357,18 @@ fn launch_editor() -> Result<String, String> {
     Err(format!(
         "cannot open {}: {error}; install/build the editor component",
         editor.display()
+    ))
+}
+
+/// `g13map obs ...` hands over to the overlay binary beside this one.
+fn launch_obs(args: &[&str]) -> Result<String, String> {
+    use std::os::unix::process::CommandExt;
+    let exe = env::current_exe().map_err(|e| e.to_string())?;
+    let overlay = exe.with_file_name("g13map-obs");
+    let error = Command::new(&overlay).args(args).exec();
+    Err(format!(
+        "cannot open {}: {error}; install/build the editor component",
+        overlay.display()
     ))
 }
 

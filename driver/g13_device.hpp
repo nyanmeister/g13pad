@@ -35,6 +35,17 @@ typedef std::shared_ptr<G13_Font> FontPtr;
 
 const size_t G13_NUM_KEYS = 40;
 
+/*! The key state file's text for one input report: `stick X Y` (raw 0..255) and
+ * `backlight R G B`, and `keys` followed by the names of the keys held, in G13_KEY_STRINGS order (the
+ * firmware's state bits left out, the backlight button kept). Readers such as the OBS
+ * overlay (`g13map obs`) poll the file; it is rewritten only when the text changes.
+ */
+std::string G13KeyStateText(const unsigned char *report, const int backlight[3]);
+
+/*! Replaces `path` with `content`, written whole under a temporary name and renamed,
+ * so a reader never sees half a state. Mode 0640, no symlink following. */
+bool G13ReplaceFile(const std::string &path, const std::string &content);
+
 class G13_Device {
 public:
   G13_Device(libusb_device *dev, libusb_context *ctx,
@@ -143,6 +154,16 @@ protected:
   std::string m_input_pipe_name;
   int m_output_pipe_fid{-1};
   std::string m_output_pipe_name;
+  // State files beside the pipes, rewritten atomically on change: the keys held and
+  // the stick (`g13-0_keys`), the frame on the LCD (`g13-0_lcd`, 960 bytes).
+  std::string m_keys_file_name;
+  std::string m_keys_last;
+  std::string m_lcd_file_name;
+  std::string m_lcd_last;
+  unsigned char m_last_report[8]{};
+  bool m_report_seen{false};
+  int m_backlight[3]{0, 0, 255};
+  void WriteKeyState(const unsigned char *report);
 
   std::map<std::string, FontPtr> pFonts;
   FontPtr m_currentFont;
