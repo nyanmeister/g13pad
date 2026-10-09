@@ -165,6 +165,24 @@ took, for the next thing that wants to show the pad or the glass on a monitor:
 - **The glass table** (src/glass.rs, `~/.config/g13map/glass`) is the one place that
   translates LED values to monitor colours; draw the LCD through `Glass::render`
   rather than inventing colours. The lit tint is 55 % toward white, as the README GIF.
+- **The OBS plugin** (`obs/g13pad-obs.c`, 0.2.41) is the real answer to "a source like
+  the others": libobs C API, `gs_image_file4_init` with `GS_IMAGE_ALPHA_PREMULTIPLY`,
+  blend ONE/INVSRCALPHA with sRGB framebuffer like image-source, one
+  `gs_draw_sprite_subregion` per element, a dynamic 160x43 `GS_RGBA` texture for the
+  LCD updated in `video_render` (the graphics context is sure there). jansson parses
+  the layout: `obs_data` arrays hold objects only, so `pos: [x, y]` is unreadable
+  through it. Arch's `obs-studio` package carries the headers and the CMake package
+  (`OBS::libobs`).
+- **Testing OBS headless touched the live config once.** `HOME=` alone is not enough:
+  this session exports `XDG_CONFIG_HOME=/home/user/.config`, so an OBS started with a
+  scratch HOME loaded and *saved* the real profile and scene collection (restored from
+  `Untitled.json.bak`; the ini files were rewritten and could not be checked). Set
+  `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME` to the scratch tree, confirm
+  the process's environ before trusting it, and kill it with `-9` if it is wrong, so it
+  never saves on exit. User plugins load from
+  `$XDG_CONFIG_HOME/obs-studio/plugins/NAME/bin/64bit/NAME.so` with `data/locale`
+  beside; a scene-collection item copied from a group needs `group_item_backup: false`
+  or it stays hidden.
 - **Check the window carries alpha** with a raw `xwd` dump (ImageMagick drops the
   alpha byte of a depth-32 window): the corner pixel reads `00000000`, the body
   `2c2c2cff`. `import -window` composites over black and proves nothing.

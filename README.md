@@ -61,7 +61,7 @@ comes off. `g13map health demo` runs the states on your own panel. See
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.40.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.41.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -212,29 +212,31 @@ Counter-Strike 2 Game State listener itself). The ladder, its colours and the re
 look are lines in `~/.config/g13map/meter`, re-read live. See
 [the health meter](docs/health-meter.md).
 
-### The OBS overlay
+### The OBS source
 
-`g13map obs` (0.2.39) opens a borderless, transparent window of the pad, drawn in the
-style of the input-overlay plugin's pixel keyboard: keys light cyan as the pad reports
-them (whatever the profile binds them to), the stick cap travels, and the LCD shows the
-frame on the glass in the backlight's colour. Add it to OBS as a window capture
-("G13 overlay"); it must stay mapped, so keep it on a visible workspace (a second
-monitor's is fine, and a fullscreen game may cover it). `g13map obs --lcd 4` is the LCD
-alone as a second window ("G13 LCD"), to place and scale on its own; `--scale`,
-`--background RRGGBB` (chroma key instead of transparency) and `--help` have the rest.
-The editor's **OBS…** button (0.2.40) opens and closes both windows with the same options
-and writes the sheet below.
+`g13pad-obs` (0.2.41) is an OBS plugin: **G13 pad (g13pad)** in the Sources list, beside
+the input-overlay ones. It draws the pad in the style of the plugin's pixel keyboard,
+keys lit cyan as the pad reports them (whatever the profile binds them to), the stick
+cap travelling, and the LCD showing the frame on the glass in the backlight's colour.
+Its properties: the picture (the pad, or the LCD alone at a chosen size) and a sheet
+folder for a repaint. No window is involved; it reads the driver's state files.
 
-The picture is a sprite sheet in the plugin's own shape (`assets/obs/g13.png` with
-`g13.json`; each key's sprite, its pressed twin 3 px below). `g13map obs --dump DIR`
-writes it out; a repainted copy in `~/.config/g13map/obs/` (or `--asset DIR`) is drawn
-instead. The driver writes its state beside its pipes, for this and anything else:
-`/run/g13d/g13-0_keys` (`stick X Y`, `backlight R G B`, `keys G1 M2 ...`, rewritten on
-change) and `g13-0_lcd` (the 960-byte frame last sent to the glass).
+The sheet is in the plugin's own shape (`assets/obs/g13.png` with `g13.json`, installed
+under `/usr/share/g13pad/obs/`; each key's sprite, its pressed twin 3 px below). A
+repainted copy in `~/.config/g13map/obs/` is drawn instead. The driver writes its state
+beside its pipes: `/run/g13d/g13-0_keys` (`stick X Y`, `backlight R G B`, `keys G1 M2
+...`, rewritten on change) and `g13-0_lcd` (the 960-byte frame last sent to the glass).
+Anything else can read them.
 
 The G13's LEDs are not a monitor's primaries, so `~/.config/g13map/glass` translates
 backlight values to what the glass shows (`R G B  R G B` per line, LED then monitor);
-the overlay and the README's GIF draw through it.
+the source, the overlay window and the README's GIF draw through it.
+
+Without OBS, or on a machine without the plugin, `g13map obs` (0.2.39) is the same
+picture as a borderless transparent window ("G13 overlay"; `--lcd N` the LCD alone as
+"G13 LCD"; `--dump DIR` writes the sheet for repainting; `--help` has the rest), and
+the editor's **OBS…** button (0.2.40) opens and closes those windows. A window must stay
+on a visible workspace to be captured; the plugin needs nothing of the kind.
 
 ### Panel applets
 

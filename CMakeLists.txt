@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.40 LANGUAGES CXX)
+project(g13pad VERSION 0.2.41 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 find_package(Threads REQUIRED)
@@ -317,3 +317,26 @@ endforeach()
 install(FILES LICENSE NOTICE.md docs/installation.md docs/migration.md docs/provenance.md docs/steam-input.md docs/building.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/g13pad)
 install(DIRECTORY LICENSES/ DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/g13pad)
+
+# The OBS source plugin: the pad as a source beside the input-overlay ones (obs/).
+option(G13PAD_BUILD_OBS "Build the OBS source plugin (needs libobs and jansson)" ON)
+if(G13PAD_BUILD_OBS)
+  find_package(libobs QUIET)
+  pkg_check_modules(JANSSON QUIET IMPORTED_TARGET jansson)
+  if(libobs_FOUND AND JANSSON_FOUND)
+    add_library(g13pad-obs MODULE obs/g13pad-obs.c)
+    set_target_properties(g13pad-obs PROPERTIES PREFIX "" C_STANDARD 11 C_EXTENSIONS ON)
+    target_link_libraries(g13pad-obs PRIVATE OBS::libobs PkgConfig::JANSSON)
+    target_compile_definitions(g13pad-obs PRIVATE
+      G13PAD_OBS_SHEET_DIR="${CMAKE_INSTALL_FULL_DATADIR}/g13pad/obs"
+      G13PAD_VERSION="${PROJECT_VERSION}")
+    install(TARGETS g13pad-obs LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}/obs-plugins)
+    install(DIRECTORY obs/data/ DESTINATION ${CMAKE_INSTALL_DATADIR}/obs/obs-plugins/g13pad-obs)
+    if(BUILD_TESTING)
+      add_test(NAME obs-plugin-symbols COMMAND sh -c "nm -D --defined-only $<TARGET_FILE:g13pad-obs> | grep -q ' T obs_module_load'")
+    endif()
+  else()
+    message(STATUS "OBS source plugin not built: libobs or jansson not found")
+  endif()
+endif()
+install(FILES assets/obs/g13.png assets/obs/g13.json DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/obs)

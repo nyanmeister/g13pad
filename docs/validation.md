@@ -659,6 +659,31 @@ among them, native windows not. A login session on a Wayland compositor was not 
 the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
 scan) is the same one the X11 source uses for `DISPLAY`.
 
+### 0.2.41 — the OBS source plugin — 2026-10-08
+
+Asked for the pad as a source like the other overlays, not a window on a visible
+workspace. `obs/g13pad-obs.c` is a libobs module registering **G13 pad (g13pad)**: it
+loads the same sheet and layout (jansson), polls the driver's two state files every
+10 ms, draws one sprite per element with the image-source blend (premultiplied, sRGB
+framebuffer) and the LCD as a dynamic texture through the glass table. Properties:
+the pad or the LCD alone (with its pixel size), a sheet folder.
+
+- Built against Arch's obs-studio 32.2.2 headers (`OBS::libobs`) and jansson 2.15;
+  `obs-plugin-symbols` (an exported `obs_module_load`) passes.
+- OBS 32.2.2 itself on Xvfb :99 (llvmpipe) with a scratch config tree (`HOME`,
+  `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `XDG_CACHE_HOME` all pointed there), the plugin
+  in the user plugin folder, and a scene collection holding one `g13pad` source: the
+  log shows the module load and the sheet (37 elements, 576x816); the preview drew the
+  pad over black with the keys idle, the stick centred and the LCD box showing the
+  live health-meter trace in its red band, read from the real driver with the pad
+  attached.
+- **Mistake on the way:** the first headless run set `HOME` only; the session's
+  `XDG_CONFIG_HOME` pointed at the real config, so that OBS loaded and saved the live
+  profile and scene collection. The collection was restored from `Untitled.json.bak`
+  (the only difference was a group's collapsed flag); `user.ini`, `global.ini`, the
+  profile's `basic.ini` and two plugin config files were rewritten and could not be
+  compared. Killed with `-9` so it never saved again.
+
 ### 0.2.40 — the editor's OBS panel — 2026-10-08
 
 Asked for the OBS options in the editor. **OBS…** in the top bar opens a panel: the pad
