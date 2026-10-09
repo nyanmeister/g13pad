@@ -257,8 +257,13 @@ took, for the next thing that wants to show the pad or the glass on a monitor:
 `src/factorio_main.rs` is a read-only external Rust observer and launch wrapper,
 not a Factorio mod. Linux ships function symbols and line DWARF, but not the game
 class layouts: gdb's initial indexing is costly and does not recover those types.
-Derive fields from named accessors, gate every layout by ELF build ID, and verify
-it in a private scenario before enabling a new build. Read `/proc/PID/mem` only;
+Derive fields from named accessors and resolve relocated globals and class markers
+from ELF symbols. The build ID is informational: try new native builds with the
+last member layout, validating pointers, object types, bounded collections and
+finite numbers. Keep HP bounds generous for mods and permit overheal/overcharge.
+Ten consecutive bad snapshots disable telemetry for the launch; menu/loading waits
+reset that counter. Verify changed IDs, moved symbols and junk data in a private
+scenario. Read `/proc/PID/mem` only;
 never loosen ptrace policy or install a privileged observer. The production
 wrapper is the game's ancestor, including Steam's runtime wrappers.
 

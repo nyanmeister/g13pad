@@ -4,9 +4,15 @@
 handle. It never attaches a debugger, stops the game, injects code, runs console
 commands, changes a save, or installs a Factorio mod.
 
-Supported executable: **Linux x86-64 experimental 2.1.21, build 87673**, ELF build ID
-`60910b0b4f9cff6de7cf1a5a089334784f7945f8`. An unknown build leaves the game running
-and reports that telemetry is unavailable. Offsets are not reused across updates.
+Tested executable: **Linux x86-64 experimental 2.1.21, build 87673**, ELF build ID
+`60910b0b4f9cff6de7cf1a5a089334784f7945f8`. Other native builds are attempted
+automatically. The observer resolves named globals and class markers from the
+executable's ELF symbols, retaining the previous addresses where symbols are absent.
+Member offsets remain provisional; pointer, object type, collection and numeric
+checks validate each reading. Health limits are broad (up to a billion HP) and
+allow modded overheal and equipment overcharge. Ten consecutive invalid reads
+(about two seconds) stop telemetry for that launch and report the reason; the game
+continues. Menus/loading and temporary read races do not disable telemetry.
 Windows/Proton, ARM64, and headless servers are not supported by this reader.
 
 Use Steam launch options:
@@ -60,3 +66,9 @@ Run it with a separate configuration, write-data directory, mod directory and X
 display. The Steam build needs its app ID in the test working directory to avoid
 redirecting a standalone launch back through Steam. Never run this fixture on a
 normal save.
+
+`tools/factorio/fixture-compat/control.lua` adds an initially empty armor inventory
+and a 100,000 HP force bonus. Test a copy of the executable with a different build
+ID to exercise automatic compatibility; never alter the normal game executable.
+Synthetic ELF tests verify moved symbols and malformed tables, and reader tests
+cover persistent junk, transient failures, menu waits, overheal and overcharge.

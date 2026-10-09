@@ -14,6 +14,131 @@ use std::{
 };
 const BUILD_ID: &str = "60910b0b4f9cff6de7cf1a5a089334784f7945f8";
 const GLOBAL: u64 = 0x4255870;
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Layout([u64; 11]);
+const SYMBOLS: [&str; 11] = [
+    "global",
+    "_ZN13PrototypeListI16QualityPrototypeE16indexToPrototypeE",
+    "_ZN13PrototypeListI18EquipmentPrototypeE16indexToPrototypeE",
+    "_ZTV5Armor",
+    "_ZTV16BatteryEquipment",
+    "_ZTV21EnergyShieldEquipment",
+    "_ZTV19CharacterController",
+    "_ZTV9Character",
+    "_ZTV26CraftItemTechnologyTrigger",
+    "_ZTV27CraftFluidTechnologyTrigger",
+    "_ZNK17TechnologyTrigger11getProgressEv",
+];
+const FALLBACK: Layout = Layout([
+    GLOBAL, 0x425faf0, 0x425f310, 0x3f97738, 0x3e7fab8, 0x3e80718, 0x3d7e330, 0x3db1378, 0x3faf258,
+    0x3faf168, 0x25d3360,
+]);
+
+fn native_header(f: &File) -> io::Result<[u8; 64]> {
+    let h = bytes::<64>(f, 0)?;
+    if &h[..6] != b"\x7fELF\x02\x01" || u16::from_le_bytes(h[18..20].try_into().unwrap()) != 62 {
+        return Err(invalid("requires native Linux x86-64 ELF"));
+    }
+    Ok(h)
+}
+fn file_range(f: &File, at: u64, length: u64) -> io::Result<()> {
+    if at
+        .checked_add(length)
+        .is_none_or(|end| end > f.metadata().map(|m| m.len()).unwrap_or(0))
+    {
+        return Err(invalid("ELF section outside executable"));
+    }
+    Ok(())
+}
+fn image_origin(f: &File) -> io::Result<u64> {
+    let h = native_header(f)?;
+    let offset = u64::from_le_bytes(h[32..40].try_into().unwrap());
+    let stride = u16::from_le_bytes(h[54..56].try_into().unwrap());
+    let count = u16::from_le_bytes(h[56..58].try_into().unwrap());
+    if stride != 56 || count > 128 {
+        return Err(invalid("invalid ELF load headers"));
+    }
+    file_range(f, offset, u64::from(count) * 56)?;
+    for i in 0..count {
+        let p = bytes::<56>(f, offset + u64::from(i) * 56)?;
+        if u32::from_le_bytes(p[..4].try_into().unwrap()) == 1
+            && u64::from_le_bytes(p[8..16].try_into().unwrap()) == 0
+        {
+            return Ok(u64::from_le_bytes(p[16..24].try_into().unwrap()));
+        }
+    }
+    Err(invalid("executable origin missing"))
+}
+
+// Read the small symbol/string sections once, never scan the game heap. Member
+// offsets remain provisional on new builds; every snapshot still validates them.
+fn resolve_layout(f: &File) -> io::Result<(Layout, usize)> {
+    let h = native_header(f)?;
+    let offset = u64::from_le_bytes(h[40..48].try_into().unwrap());
+    let stride = u16::from_le_bytes(h[58..60].try_into().unwrap());
+    let count = u16::from_le_bytes(h[60..62].try_into().unwrap());
+    let mut layout = FALLBACK;
+    let mut resolved = [false; 11];
+    if count == 0 {
+        return Ok((layout, 0)); // stripped build: try the previous layout
+    }
+    if stride != 64 || count > 4096 {
+        return Err(invalid("invalid ELF section headers"));
+    }
+    file_range(f, offset, u64::from(count) * 64)?;
+    let mut sections = Vec::with_capacity(count as usize);
+    for i in 0..count {
+        sections.push(bytes::<64>(f, offset + u64::from(i) * 64)?);
+    }
+    for section in &sections {
+        if u32::from_le_bytes(section[4..8].try_into().unwrap()) != 2 {
+            continue;
+        }
+        let table_at = u64::from_le_bytes(section[24..32].try_into().unwrap());
+        let size = u64::from_le_bytes(section[32..40].try_into().unwrap());
+        let link = u32::from_le_bytes(section[40..44].try_into().unwrap()) as usize;
+        let entry = u64::from_le_bytes(section[56..64].try_into().unwrap());
+        if entry != 24 || size % 24 != 0 || size > 64 * 1024 * 1024 {
+            return Err(invalid("invalid ELF symbol table"));
+        }
+        let names = sections
+            .get(link)
+            .ok_or_else(|| invalid("invalid ELF string table link"))?;
+        if u32::from_le_bytes(names[4..8].try_into().unwrap()) != 3 {
+            return Err(invalid("invalid ELF string table"));
+        }
+        let names_at = u64::from_le_bytes(names[24..32].try_into().unwrap());
+        let names_size = u64::from_le_bytes(names[32..40].try_into().unwrap());
+        if names_size > 64 * 1024 * 1024 {
+            return Err(invalid("oversize ELF string table"));
+        }
+        file_range(f, names_at, names_size)?;
+        file_range(f, table_at, size)?;
+        let mut strings = vec![0; names_size as usize];
+        f.read_exact_at(&mut strings, names_at)?;
+        let mut symbols = vec![0; size as usize];
+        f.read_exact_at(&mut symbols, table_at)?;
+        for symbol in symbols.as_chunks::<24>().0 {
+            let name = u32::from_le_bytes(symbol[..4].try_into().unwrap()) as usize;
+            let address = u64::from_le_bytes(symbol[8..16].try_into().unwrap());
+            if symbol[6..8] == [0, 0] || address == 0 || address > 1 << 30 {
+                continue;
+            }
+            let tail = strings
+                .get(name..)
+                .ok_or_else(|| invalid("invalid ELF symbol name"))?;
+            let end = tail
+                .iter()
+                .position(|v| *v == 0)
+                .ok_or_else(|| invalid("unterminated ELF symbol name"))?;
+            if let Some(i) = SYMBOLS.iter().position(|s| s.as_bytes() == &tail[..end]) {
+                layout.0[i] = address;
+                resolved[i] = true;
+            }
+        }
+    }
+    Ok((layout, resolved.iter().filter(|v| **v).count()))
+}
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
 }
@@ -67,19 +192,32 @@ fn build_id(f: &File) -> io::Result<String> {
 struct Reader {
     mem: File,
     base: u64,
+    layout: Layout,
+}
+fn native_game(pid: u32) -> bool {
+    fs::read_link(format!("/proc/{pid}/exe"))
+        .ok()
+        .and_then(|p| {
+            p.file_name()
+                .map(|s| s == "factorio" || s == "factorio (deleted)")
+        })
+        .unwrap_or(false)
 }
 impl Reader {
     fn open(pid: u32) -> io::Result<Self> {
         let exe = File::open(format!("/proc/{pid}/exe"))?;
-        let id = build_id(&exe)?;
+        native_header(&exe)?;
+        if fs::read_to_string(format!("/proc/{pid}/comm"))? != "factorio\n" || !native_game(pid) {
+            return Err(invalid("expected a native Factorio process"));
+        }
+        let id = build_id(&exe).unwrap_or_else(|_| "unidentified".into());
+        let (layout, found) = resolve_layout(&exe)?;
         if id != BUILD_ID {
-            return Err(invalid(&format!(
-                "unsupported Factorio build {id}; tested 2.1.21 build 87673"
-            )));
+            eprintln!("g13map-factorio: trying unverified build {id}; resolved {found}/11 symbols, validating readings");
         }
         let ino = exe.metadata()?.ino();
         let maps = fs::read_to_string(format!("/proc/{pid}/maps"))?;
-        let base = maps
+        let mapping = maps
             .lines()
             .find_map(|l| {
                 let p: Vec<_> = l.split_whitespace().collect();
@@ -89,9 +227,13 @@ impl Reader {
                 u64::from_str_radix(p[0].split('-').next()?, 16).ok()
             })
             .ok_or_else(|| invalid("executable load mapping missing"))?;
+        let base = mapping
+            .checked_sub(image_origin(&exe)?)
+            .ok_or_else(|| invalid("invalid executable origin"))?;
         Ok(Self {
             mem: File::open(format!("/proc/{pid}/mem"))?,
             base,
+            layout,
         })
     }
     fn read<const N: usize>(&self, at: u64) -> io::Result<[u8; N]> {
@@ -101,32 +243,52 @@ impl Reader {
         bytes(&self.mem, at)
     }
     fn ptr(&self, at: u64) -> io::Result<u64> {
+        let value = self.word(at)?;
+        if value != 0 && !(0x10000..0x0000_8000_0000_0000).contains(&value) {
+            return Err(invalid("invalid pointer value"));
+        }
+        Ok(value)
+    }
+    fn word(&self, at: u64) -> io::Result<u64> {
         Ok(u64::from_le_bytes(self.read(at)?))
+    }
+    fn address(&self, symbol: usize) -> u64 {
+        self.base + self.layout.0[symbol]
+    }
+    fn vtable(&self, symbol: usize) -> u64 {
+        self.address(symbol) + 16
     }
     fn byte(&self, at: u64) -> io::Result<u8> {
         Ok(self.read::<1>(at)?[0])
     }
     fn f32(&self, at: u64) -> io::Result<f64> {
         let v = f32::from_le_bytes(self.read(at)?) as f64;
-        number(v)
+        finite(v)
     }
     fn f64(&self, at: u64) -> io::Result<f64> {
-        number(f64::from_le_bytes(self.read(at)?))
+        finite(f64::from_le_bytes(self.read(at)?))
     }
     fn quality(&self, id: u8) -> io::Result<f64> {
-        let table = self.ptr(self.base + 0x425faf0)?;
+        let table = self.ptr(self.address(1))?;
         let proto = self.ptr(table + u64::from(id) * 8)?;
-        self.f32(proto + 0x370)
+        let quality = self.f32(proto + 0x370)?;
+        if !(0.001..=1e6).contains(&quality) {
+            return Err(invalid("invalid quality multiplier"));
+        }
+        Ok(quality)
     }
     fn label(&self, prototype: u64) -> io::Result<String> {
         let addr = self.ptr(prototype + 8)?;
-        let length = self.ptr(prototype + 16)?;
+        let length = self.word(prototype + 16)?;
         if length == 0 || length > 256 {
             return Err(invalid("invalid prototype name length"));
         }
         let mut b = vec![0; length as usize];
         self.mem.read_exact_at(&mut b, addr)?;
         let s = std::str::from_utf8(&b).map_err(|_| invalid("invalid prototype name"))?;
+        if s.chars().any(|c| c.is_control() || c.is_whitespace()) {
+            return Err(invalid("invalid prototype name characters"));
+        }
         Ok(s.chars()
             .take(32)
             .map(|c| {
@@ -141,8 +303,11 @@ impl Reader {
     fn equipment(&self, character: u64) -> io::Result<(f64, f64, Option<f64>)> {
         let inventory = self.ptr(character + 0x398)?;
         let item = self.ptr(inventory + 8)?;
-        if item == 0 || self.ptr(item)? != self.base + 0x3f97748 {
+        if item == 0 {
             return Ok((0., 0., None));
+        }
+        if self.ptr(item)? != self.vtable(3) {
+            return Err(invalid("unexpected armor type"));
         }
         let grid = self.ptr(item + 0x58)?;
         if grid == 0 {
@@ -156,14 +321,14 @@ impl Reader {
         for i in 0..count {
             let e = self.ptr(start + i * 8)?;
             let vt = self.ptr(e)?;
-            if vt == self.base + 0x3e7fac8 {
+            if vt == self.vtable(4) {
                 let source = self.ptr(e + 0x30)?;
                 charge += self.f64(source + 0x20)?;
                 capacity += self.f64(source + 0x28)?;
-            } else if vt == self.base + 0x3e80728 {
+            } else if vt == self.vtable(5) {
                 shield += self.f32(e + 0x48)?;
                 let id = u16::from_le_bytes(self.read(e + 0x20)?);
-                let table = self.ptr(self.base + 0x425f310)?;
+                let table = self.ptr(self.address(2))?;
                 let proto = self.ptr(table + u64::from(id) * 8)?;
                 max_shield += self.f32(proto + 0x330)? * self.quality(self.byte(e + 0x22)?)?;
             }
@@ -171,6 +336,8 @@ impl Reader {
         if bounds != self.read::<16>(grid + 0x20)? {
             return Err(invalid("equipment changed during read"));
         }
+        bounded_pool(shield, max_shield, 1e9)?;
+        bounded_pool(charge, capacity, 1e15)?;
         Ok((
             shield,
             max_shield,
@@ -204,10 +371,16 @@ impl Reader {
         if root != self.ptr(header + 8)? {
             return Err(invalid("alerts changed during read"));
         }
+        if count > 65536 {
+            return Err(invalid("invalid attack count"));
+        }
         Ok(count.min(999))
     }
     fn snapshot(&self) -> io::Result<String> {
-        let global = self.ptr(self.base + GLOBAL)?;
+        let global = self.ptr(self.address(0))?;
+        if global == 0 {
+            return Ok("wait ttl 3\n".into());
+        }
         let game = self.ptr(global + 0x68)?;
         if game == 0 {
             return Ok("wait ttl 3\n".into());
@@ -222,12 +395,12 @@ impl Reader {
         let force = self.ptr(forces + u64::from(force_id) * 8)?;
         let active = self.ptr(player + 0xbe0)?;
         let mut controller = active;
-        if self.ptr(controller)? != self.base + 0x3d7e340 {
+        if self.ptr(controller)? != self.vtable(6) {
             // Player retains its character controller while remote/map controllers are active.
             controller = 0;
             for offset in [0x50, 0x58, 0x60, 0x68] {
                 let candidate = self.ptr(player + offset)?;
-                if candidate != 0 && self.ptr(candidate)? == self.base + 0x3d7e340 {
+                if candidate != 0 && self.ptr(candidate)? == self.vtable(6) {
                     controller = candidate;
                     break;
                 }
@@ -235,7 +408,11 @@ impl Reader {
         }
         if controller == 0 {
             // LuaPlayer::ticks_to_respawn uses UINT64_MAX while not respawning.
-            if self.ptr(player + 0x750)? != u64::MAX {
+            let respawn = self.word(player + 0x750)?;
+            if respawn != u64::MAX {
+                if respawn > 216000 {
+                    return Err(invalid("invalid respawn timer"));
+                }
                 return Ok("0 ttl 3\n".into());
             }
             return Ok("wait ttl 3\n".into());
@@ -244,7 +421,7 @@ impl Reader {
         if character == 0 {
             return Ok("0 ttl 3\n".into());
         }
-        if self.ptr(character)? != self.base + 0x3db1388 {
+        if self.ptr(character)? != self.vtable(7) {
             return Err(invalid("unexpected character type"));
         }
         let proto = self.ptr(character + 0x48)?;
@@ -252,9 +429,7 @@ impl Reader {
             + self.f64(force + 0x588)?
             + self.f32(character + 0x348)?;
         let ratio = self.f32(character + 0x80)?;
-        if max <= 0. || ratio > 10. {
-            return Err(invalid("invalid character health"));
-        }
+        health(max, ratio)?;
         let (shield, max_shield, battery) = self.equipment(character)?;
         let mut line = format!("{:.3}/{max:.3}", ratio * max);
         if max_shield > 0. {
@@ -270,7 +445,7 @@ impl Reader {
             let name = self.label(prototype)?;
             let trigger = self.ptr(tech + 0x10)?;
             let progress = if trigger == 0 {
-                let units = self.ptr(manager + 0x98)?;
+                let units = self.word(manager + 0x98)?;
                 let progress = self.f64(manager + 0x70)?;
                 if units > 0 {
                     Some(progress / units as f64)
@@ -279,18 +454,18 @@ impl Reader {
                 }
             } else {
                 let vt = self.ptr(trigger)?;
-                if vt == self.base + 0x3faf268 {
+                if vt == self.vtable(8) {
                     let descriptor = self.ptr(trigger + 0x10)?;
                     let target = u32::from_le_bytes(self.read(descriptor + 0x30)?);
                     let current = u32::from_le_bytes(self.read(trigger + 0x18)?);
                     (target > 0).then(|| f64::from(current) / f64::from(target))
-                } else if vt == self.base + 0x3faf178 {
+                } else if vt == self.vtable(9) {
                     let descriptor = self.ptr(trigger + 0x10)?;
                     let target = self.f64(descriptor + 0x18)?;
                     (target > 0.)
                         .then(|| self.f64(trigger + 0x18).map(|v| v / target))
                         .transpose()?
-                } else if self.ptr(vt + 0x38)? == self.base + 0x25d3360 {
+                } else if self.ptr(vt + 0x38)? == self.address(10) {
                     // One-shot triggers report zero until the technology completes.
                     Some(0.)
                 } else {
@@ -298,6 +473,7 @@ impl Reader {
                 }
             };
             if let Some(progress) = progress {
+                fraction(progress)?;
                 line.push_str(&format!(
                     " research {:.3} technology {name}",
                     (progress * 100.).clamp(0., 100.)
@@ -320,9 +496,64 @@ impl Reader {
         Ok(line)
     }
 }
+fn fraction(value: f64) -> io::Result<()> {
+    if value.is_finite() && (0.0..=1.001).contains(&value) {
+        Ok(())
+    } else {
+        Err(invalid("invalid resource fraction"))
+    }
+}
+fn health(maximum: f64, ratio: f64) -> io::Result<()> {
+    if !maximum.is_finite() || !(0.001..=1e9).contains(&maximum) {
+        return Err(invalid("invalid character maximum health"));
+    }
+    number(ratio)?;
+    if ratio * maximum > 1e9 {
+        return Err(invalid("implausible character health"));
+    }
+    Ok(())
+}
+fn bounded_pool(current: f64, maximum: f64, limit: f64) -> io::Result<()> {
+    number(current)?;
+    number(maximum)?;
+    if maximum > limit || current > limit || (maximum == 0. && current != 0.) {
+        return Err(invalid("invalid equipment pool"));
+    }
+    Ok(())
+}
+#[derive(Default)]
+struct Guard {
+    failures: u8,
+    disabled: bool,
+}
+impl Guard {
+    fn observe(&mut self, snapshot: io::Result<String>) -> io::Result<String> {
+        match snapshot {
+            Ok(line) => {
+                self.failures = 0; // menus/loading are valid states, not failures
+                Ok(line)
+            }
+            Err(e) => {
+                self.failures = self.failures.saturating_add(1);
+                if self.failures >= 10 {
+                    self.disabled = true;
+                    return Err(e);
+                }
+                Ok("wait ttl 3\n".into())
+            }
+        }
+    }
+}
 fn number(v: f64) -> io::Result<f64> {
     if v.is_finite() && (0.0..=1e18).contains(&v) {
         Ok(v)
+    } else {
+        Err(invalid("invalid numeric telemetry"))
+    }
+}
+fn finite(value: f64) -> io::Result<f64> {
+    if value.is_finite() && value.abs() <= 1e18 {
+        Ok(value)
     } else {
         Err(invalid("invalid numeric telemetry"))
     }
@@ -370,6 +601,7 @@ fn find_game(ancestor: u32) -> Option<u32> {
                 .ok()
                 .as_deref()
                 == Some("factorio\n")
+            && native_game(pid) // skip shell scripts named factorio before their exec
             && descendant(pid, ancestor)
         {
             return Some(pid);
@@ -401,13 +633,13 @@ fn run() -> io::Result<i32> {
     let args: Vec<OsString> = env::args_os().skip(1).collect();
     if args.first().is_some_and(|s| s == "--version") {
         println!(
-            "g13map-factorio {} (native 2.1.21)",
+            "g13map-factorio {} (native; tested 2.1.21)",
             env!("CARGO_PKG_VERSION")
         );
         return Ok(0);
     }
     if args.first().is_some_and(|s| s == "--help") || args.is_empty() {
-        println!("g13map-factorio GAME [ARGS...]\nSteam: g13map-factorio %command%\nRead-only diagnostic: g13map-factorio --pid PID [--once]\nSupported: native Linux x86-64 Factorio 2.1.21 build 87673. No mods or game writes.");
+        println!("g13map-factorio GAME [ARGS...]\nSteam: g13map-factorio %command%\nRead-only diagnostic: g13map-factorio --pid PID [--once]\nNative Linux x86-64; tested 2.1.21 build 87673. Other builds are tried with validated readings. No mods or game writes.");
         return Ok(0);
     }
     if args[0] == "--pid" {
@@ -442,6 +674,7 @@ fn run() -> io::Result<i32> {
     // Telemetry failure must never prevent the game from running or replace its exit status.
     let mut child = Command::new(&args[0]).args(&args[1..]).spawn()?;
     let mut reader = None;
+    let mut guard = Guard::default();
     let mut next_scan = Instant::now();
     let mut warned = false;
     let mut last_line = String::new();
@@ -450,7 +683,7 @@ fn run() -> io::Result<i32> {
         if let Some(status) = child.try_wait()? {
             return Ok(status.code().unwrap_or(1));
         }
-        if reader.is_none() && Instant::now() >= next_scan {
+        if reader.is_none() && !guard.disabled && Instant::now() >= next_scan {
             next_scan = Instant::now() + Duration::from_secs(1);
             if let Some(pid) = find_game(process::id()) {
                 match Reader::open(pid) {
@@ -467,10 +700,18 @@ fn run() -> io::Result<i32> {
                 }
             }
         }
-        let line = reader
-            .as_ref()
-            .and_then(|r| r.snapshot().ok())
-            .unwrap_or_else(|| "wait ttl 3\n".into());
+        let line = if let Some(r) = &reader {
+            match guard.observe(r.snapshot()) {
+                Ok(line) => line,
+                Err(e) => {
+                    eprintln!("g13map-factorio: telemetry stopped after repeated invalid readings: {e}; game continues");
+                    reader = None;
+                    "wait ttl 3\n".into()
+                }
+            }
+        } else {
+            "wait ttl 3\n".into()
+        };
         if line != last_line || last_write.elapsed() >= Duration::from_secs(1) {
             if let Err(e) = publish(&path, &line) {
                 if !warned {
@@ -497,6 +738,64 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
+    fn launch_script_named_factorio_is_not_the_native_game() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = env::temp_dir().join(format!("g13-factorio-launcher-{}", process::id()));
+        fs::create_dir(&dir).unwrap();
+        let script = dir.join("factorio");
+        fs::write(&script, "#!/bin/sh\nsleep 1\n").unwrap();
+        fs::set_permissions(&script, fs::Permissions::from_mode(0o700)).unwrap();
+        let mut child = Command::new(&script).spawn().unwrap();
+        let name = fs::read_to_string(format!("/proc/{}/comm", child.id())).unwrap();
+        let native = native_game(child.id());
+        child.wait().unwrap();
+        fs::remove_file(script).unwrap();
+        fs::remove_dir(dir).unwrap();
+        assert_eq!(name, "factorio\n");
+        assert!(!native);
+    }
+    #[test]
+    fn unknown_elf_resolves_moved_symbols_and_checks_section_bounds() {
+        let mut elf = vec![0; 400];
+        elf[..6].copy_from_slice(b"\x7fELF\x02\x01");
+        elf[18..20].copy_from_slice(&62u16.to_le_bytes());
+        elf[40..48].copy_from_slice(&64u64.to_le_bytes());
+        elf[58..60].copy_from_slice(&64u16.to_le_bytes());
+        elf[60..62].copy_from_slice(&3u16.to_le_bytes());
+        elf[132..136].copy_from_slice(&2u32.to_le_bytes());
+        elf[152..160].copy_from_slice(&256u64.to_le_bytes());
+        elf[160..168].copy_from_slice(&48u64.to_le_bytes());
+        elf[168..172].copy_from_slice(&2u32.to_le_bytes());
+        elf[184..192].copy_from_slice(&24u64.to_le_bytes());
+        elf[196..200].copy_from_slice(&3u32.to_le_bytes());
+        elf[216..224].copy_from_slice(&304u64.to_le_bytes());
+        let names = b"\0global\0_ZTV9Character\0";
+        elf[224..232].copy_from_slice(&(names.len() as u64).to_le_bytes());
+        elf[304..304 + names.len()].copy_from_slice(names);
+        for (at, name, address) in [(256, 1u32, GLOBAL + 4096), (280, 8, FALLBACK.0[7] + 8192)] {
+            elf[at..at + 4].copy_from_slice(&name.to_le_bytes());
+            elf[at + 6..at + 8].copy_from_slice(&1u16.to_le_bytes());
+            elf[at + 8..at + 16].copy_from_slice(&address.to_le_bytes());
+        }
+        let path = env::temp_dir().join(format!("g13-factorio-symbols-{}", process::id()));
+        let f = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .unwrap();
+        fs::remove_file(path).unwrap();
+        f.write_all_at(&elf, 0).unwrap();
+        assert!(build_id(&f).is_err()); // no known ID required to use symbol data
+        let (layout, found) = resolve_layout(&f).unwrap();
+        assert_eq!(found, 2);
+        assert_eq!(layout.0[0], GLOBAL + 4096);
+        assert_eq!(layout.0[7], FALLBACK.0[7] + 8192);
+        assert_eq!(layout.0[3], FALLBACK.0[3]);
+        f.write_all_at(&u64::MAX.to_le_bytes(), 40).unwrap();
+        assert!(resolve_layout(&f).is_err()); // reject overflow/truncation before allocating
+    }
+    #[test]
     fn unsafe_lengths_and_values_fail_closed() {
         assert!(vector_count(10, 9, 8, 10).is_err());
         assert!(vector_count(1, 10, 8, 10).is_err());
@@ -507,13 +806,38 @@ mod tests {
         assert!(number(-1.).is_err());
     }
     #[test]
-    fn elf_gate_rejects_unrelated_executables() {
+    fn elf_reader_rejects_unrelated_processes() {
         let exe = File::open("/proc/self/exe").unwrap();
         assert_ne!(build_id(&exe).unwrap(), BUILD_ID);
         assert!(Reader::open(process::id())
             .err()
             .unwrap()
             .to_string()
-            .contains("unsupported Factorio build"));
+            .contains("expected a native Factorio process"));
+    }
+    #[test]
+    fn junk_values_stop_telemetry_but_wait_and_transient_reads_do_not() {
+        assert!(health(250., 0.6).is_ok());
+        assert!(health(0., 0.6).is_err());
+        assert!(health(1e10, 0.6).is_err());
+        assert!(health(250., 3.).is_ok()); // modded overheal is not junk
+        assert!(health(1e8, 2.).is_ok());
+        assert!(health(250., 1e10).is_err());
+        assert!(fraction(f64::NAN).is_err());
+        assert!(bounded_pool(30., 150., 1e9).is_ok());
+        assert!(bounded_pool(300., 150., 1e9).is_ok()); // overcharged equipment
+        assert!(bounded_pool(1e10, 150., 1e9).is_err());
+        let mut guard = Guard::default();
+        for _ in 0..9 {
+            assert!(guard.observe(Err(invalid("changing player"))).is_ok());
+        }
+        for _ in 0..100 {
+            guard.observe(Ok("wait ttl 3\n".into())).unwrap();
+        }
+        for _ in 0..9 {
+            assert!(guard.observe(Err(invalid("junk"))).is_ok());
+        }
+        assert!(guard.observe(Err(invalid("junk"))).is_err());
+        assert!(guard.disabled);
     }
 }

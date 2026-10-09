@@ -142,8 +142,10 @@ folder, a `WINEDLLOVERRIDES` launch option for Proton, the DLL in `BepInEx/plugi
 
 The [native observer](../contrib/factorio-health/README.md) uses a read-only external
 Rust reader with a launch wrapper; it requires no Factorio mod or console commands.
-The first supported build is Linux x86-64 experimental 2.1.21 (87673), verified by
-ELF build ID. Use `g13map-factorio %command%` in Steam and Health mode `feed`.
+The tested build is Linux x86-64 experimental 2.1.21 (87673). Other native builds
+are attempted automatically, using ELF symbols and validated readings; persistent
+junk disables telemetry for that launch. Use `g13map-factorio %command%` in Steam
+and Health mode `feed`.
 It supplies health, equipment shields, suit battery charge, current research, and
 base-attack alerts. BAT has a small gauge; the research line becomes ATTACK while
 alerts are active. A 300 ms full-LCD flash repeats at most once every six seconds.
