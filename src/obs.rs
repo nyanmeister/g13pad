@@ -1036,7 +1036,8 @@ impl Panel {
             .checked
             .is_none_or(|t| t.elapsed() > Duration::from_secs(1))
         {
-            self.children.retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+            self.children
+                .retain_mut(|c| matches!(c.try_wait(), Ok(None)));
             self.running = running();
             self.checked = Some(std::time::Instant::now());
         }
