@@ -659,6 +659,40 @@ among them, native windows not. A login session on a Wayland compositor was not 
 the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
 scan) is the same one the X11 source uses for `DISPLAY`.
 
+### 0.2.42 — the glass matched by eye — 2026-10-08
+
+The glass table grew from an exact-match list into a model: matched pairs, a `lit`
+setting, and a `fit` (the linear-light monitor colour of each LED alone, least squares
+from the pairs; an LED value is linear light, the LEDs add, the result is encoded for the
+monitor). A listed colour is shown as matched, any other through the fit, and without a
+fit as it is, so an old two-line file reads as before. `g13map glass` is the course that
+fills it: the three LEDs alone, all three, then every colour the profiles and the meter
+use, each set on the pad while the window shows the LCD through the working model.
+
+- Unit tests (7 in glass.rs): a made-up pad (a 3x3 mix) is recovered from seven generated
+  pairs to within 0.02 per weight, and four colours it never listed come out within 2 of
+  its own values; two pairs, or three blues, give no fit; the identity fit maps LED 128 to
+  188 (linear light, not a byte copy); the file round-trips. One wrong assumption caught
+  by the suite: the first draft of that identity test expected byte identity.
+- The course on Xvfb :99, against a scratch config (copies of the profiles and the meter
+  file) and a stand-in pipe reader that rewrites the keys file on `rgb` (so the "pad shows
+  X instead" warning clears as the real driver's state file would): 12 steps. Dragging the
+  picker on red, green and blue recorded three matches and solved a fit; step 4 (white)
+  came up predicted (202 190 218 from those three arbitrary matches, "misses one by at
+  most 0"), Confirm recorded it; step 5 (profile browsing, 0 77 127) came up predicted;
+  Save wrote the file with the pairs, `lit 0.55` and the nine-number `fit`;
+  `g13map glass fit` re-solved the same numbers; SIGTERM closed the window the ordinary
+  way and the pipe received the backlight found at start (`rgb 19 0 127`). Before the
+  handler, a kill skipped `on_exit` and left the pad on the last step's colour.
+- The LCD window (`g13map obs --lcd 2`) on :99 with that file: the background pixel read
+  91 86 131, the hand-computed prediction for 19 0 127 through the saved fit; appending a
+  pair for 19 0 127 turned it 255 255 0 within a second, removing the line turned it back.
+- The OBS source: the C side parses `lit` and `fit` and applies the same formula; its
+  check against a real OBS render is recorded after the install below (a headless run
+  before it loaded the installed 0.2.41 plugin first and the new one registered as a
+  duplicate, so that render proved nothing about the new code).
+- Not exercised here: the course against the real pad, which is the owner's eyes by design.
+
 ### 0.2.41 — the OBS source plugin — 2026-10-08
 
 Asked for the pad as a source like the other overlays, not a window on a visible

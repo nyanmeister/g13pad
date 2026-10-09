@@ -13,6 +13,8 @@ mod application;
 pub mod art;
 #[cfg(feature = "editor")]
 mod board;
+#[cfg(feature = "editor")]
+mod calibrate;
 mod cli;
 mod daemon;
 mod draw;

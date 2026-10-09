@@ -10,6 +10,7 @@
 #include <util/platform.h>
 #include <util/dstr.h>
 #include <jansson.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -71,6 +72,11 @@ struct g13 {
 	struct glass_entry *glass;
 	size_t nglass;
 	time_t glass_mtime;
+	// From the same file: how far lit pixels sit toward white, and the fit (the
+	// linear-light monitor colour of each LED alone) for colours not in the table.
+	float lit;
+	float fit[9];
+	bool have_fit;
 };
 
 // ---- paths, mirroring g13map's rules ----
@@ -111,6 +117,8 @@ static void glass_load(struct g13 *s)
 	bfree(s->glass);
 	s->glass = NULL;
 	s->nglass = 0;
+	s->lit = LIT;
+	s->have_fit = false;
 	char *text = mtime ? os_quick_read_utf8_file(path.array) : NULL;
 	if (!text) {
 		// The built-in pairs, the README GIF's: green and orange as the glass shows them.
@@ -126,6 +134,23 @@ static void glass_load(struct g13 *s)
 			char *hash = strchr(line, '#');
 			if (hash)
 				*hash = 0;
+			float f[9];
+			if (sscanf(line, " lit %f", &f[0]) == 1) {
+				if (f[0] >= 0.0f && f[0] <= 1.0f)
+					s->lit = f[0];
+				continue;
+			}
+			if (sscanf(line, " fit %f %f %f %f %f %f %f %f %f", &f[0], &f[1], &f[2], &f[3], &f[4],
+				   &f[5], &f[6], &f[7], &f[8]) == 9) {
+				bool finite = true;
+				for (int i = 0; i < 9; i++)
+					finite = finite && isfinite(f[i]);
+				if (finite) {
+					memcpy(s->fit, f, sizeof f);
+					s->have_fit = true;
+				}
+				continue;
+			}
 			int v[6];
 			if (sscanf(line, "%d %d %d %d %d %d", &v[0], &v[1], &v[2], &v[3], &v[4], &v[5]) != 6)
 				continue;
@@ -150,6 +175,15 @@ static void glass_load(struct g13 *s)
 	s->lcd_dirty = s->have_lcd;
 }
 
+// Linear light to an sRGB byte, clipped to the monitor's range (as g13map's glass.rs).
+static uint8_t to_srgb(float l)
+{
+	l = l < 0.0f ? 0.0f : l > 1.0f ? 1.0f : l;
+	float c = l <= 0.0031308f ? 12.92f * l : 1.055f * powf(l, 1.0f / 2.4f) - 0.055f;
+	return (uint8_t)(c * 255.0f + 0.5f);
+}
+
+// Matched, else through the fit (an LED value is linear light; the LEDs add), else as it is.
 static void glass_shown(const struct g13 *s, const uint8_t led[3], uint8_t out[3])
 {
 	memcpy(out, led, 3);
@@ -159,6 +193,14 @@ static void glass_shown(const struct g13 *s, const uint8_t led[3], uint8_t out[3
 			return;
 		}
 	}
+	if (!s->have_fit)
+		return;
+	for (int c = 0; c < 3; c++) {
+		float l = 0.0f;
+		for (int k = 0; k < 3; k++)
+			l += s->fit[c * 3 + k] * (led[k] / 255.0f);
+		out[c] = to_srgb(l);
+	}
 }
 
 // The frame as the glass shows it: the backlight colour, lit pixels tinted toward white.
@@ -167,7 +209,7 @@ static void compose_lcd(struct g13 *s)
 	uint8_t bg[3], lit[3];
 	glass_shown(s, s->backlight, bg);
 	for (int i = 0; i < 3; i++)
-		lit[i] = (uint8_t)(bg[i] + (255.0f - bg[i]) * LIT + 0.5f);
+		lit[i] = (uint8_t)(bg[i] + (255.0f - bg[i]) * s->lit + 0.5f);
 	for (int y = 0; y < LCD_H; y++) {
 		for (int x = 0; x < LCD_W; x++) {
 			bool on = (s->lcd[x + (y / 8) * LCD_W] >> (y % 8)) & 1;

@@ -45,6 +45,9 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map watch                        run the profile/LCD watcher
   g13map obs [OPTIONS]                OBS overlay window: the pad with keys lit as pressed,
                                       the stick, the LCD (g13map obs --help for options)
+  g13map glass                        match the glass's colours by eye, for those windows
+                                      and the OBS source (~/.config/g13map/glass)
+  g13map glass fit                    re-solve that file's fit after editing it by hand
   g13map detach-pointer               isolate the G13 source pointer under X11
   g13map --version                    print version, without hardware or a display
 
@@ -296,6 +299,8 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
         ["apply"] => apply(),
         ["watch"] => modes::watch(),
         ["obs", rest @ ..] => launch_obs(rest),
+        ["glass"] => launch_obs(&["--calibrate"]),
+        ["glass", "fit"] => crate::glass::refit_file(),
         ["layout"] => serde_json::to_string_pretty(&keys::layout_map()).map_err(|e| e.to_string()),
         ["detach-pointer"] => session::detach_pointer().map(|d| d.to_string()),
         ["--version"] | ["version"] => Ok(format!("g13pad {} (g13map)", env!("CARGO_PKG_VERSION"))),

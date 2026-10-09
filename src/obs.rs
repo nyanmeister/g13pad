@@ -541,6 +541,8 @@ pub struct State {
     pub backlight: Rgb,
     /// The frame on the glass, when the daemon has written one.
     pub lcd: Option<lcd::Bitmap>,
+    /// When `~/.config/g13map/glass` last changed: a window redraws through the new table.
+    pub glass_stamp: Option<std::time::SystemTime>,
 }
 
 impl Default for State {
@@ -550,6 +552,7 @@ impl Default for State {
             stick: (128, 128),
             backlight: [0, 0, 255],
             lcd: None,
+            glass_stamp: None,
         }
     }
 }
@@ -599,6 +602,7 @@ struct Overlay {
     lcd_texture: egui::TextureHandle,
     lcd_shown: Option<(lcd::Bitmap, Rgb)>,
     glass: Glass,
+    glass_stamp: Option<std::time::SystemTime>,
     state: Arc<Mutex<State>>,
     scale: f32,
     background: [f32; 4],
@@ -608,6 +612,11 @@ struct Overlay {
 
 impl Overlay {
     fn refresh_lcd(&mut self, state: &State) {
+        if state.glass_stamp != self.glass_stamp {
+            self.glass_stamp = state.glass_stamp;
+            self.glass = Glass::load();
+            self.lcd_shown = None;
+        }
         let Some(frame) = &state.lcd else { return };
         if self
             .lcd_shown
@@ -701,20 +710,31 @@ impl eframe::App for Overlay {
     }
 }
 
-/// Polls the daemon's state files; a change repaints.
-fn watch(state: Arc<Mutex<State>>, ctx: egui::Context) {
+/// Polls the daemon's state files (and the glass table, four times a second); a change
+/// repaints.
+pub(crate) fn watch(state: Arc<Mutex<State>>, ctx: egui::Context) {
     let (keys, lcd) = (state_path("keys"), state_path("lcd"));
     thread::spawn(move || {
         let (mut last_keys, mut last_lcd) = (String::new(), Vec::new());
+        let mut stamp = Glass::stamp();
+        let mut tick = 0u32;
         loop {
             let text = fs::read_to_string(&keys).unwrap_or_default();
             let frame = fs::read(&lcd).unwrap_or_default();
-            if text != last_keys || frame != last_lcd {
+            tick = tick.wrapping_add(1);
+            let restamp = tick.is_multiple_of(25) && {
+                let now = Glass::stamp();
+                let changed = now != stamp;
+                stamp = now;
+                changed
+            };
+            if text != last_keys || frame != last_lcd || restamp {
                 last_keys = text;
                 last_lcd = frame;
                 if let Ok(mut s) = state.lock() {
                     *s = State::parse(&last_keys);
                     s.lcd = lcd::Bitmap::from_lpbm(&last_lcd).ok();
+                    s.glass_stamp = stamp;
                 }
                 ctx.request_repaint();
             }
@@ -732,6 +752,7 @@ pub const USAGE: &str =
   --lcd [N]          the LCD alone, N pixels per LCD pixel (default 4): a second window,
                      \"G13 LCD\", to place and scale on its own
   --dump DIR         write the built-in sheet and layout to DIR for repainting, and exit
+  --calibrate        instead, the window that matches the glass's colours by eye (g13map glass)
 The window is borderless, titled \"G13 overlay\" (class g13map-obs), for an OBS window
 capture; keys light as the pad reports them, whatever the active profile binds, the
 stick cap travels, and the LCD shows the frame on the glass in the backlight's colour
@@ -753,6 +774,7 @@ pub fn run(args: &[String]) -> Result<String, String> {
         match arg.as_str() {
             "--version" => return Ok(format!("g13pad {} (g13map-obs)", env!("CARGO_PKG_VERSION"))),
             "--help" | "-h" => return Ok(USAGE.into()),
+            "--calibrate" => return crate::calibrate::run(),
             "--dump" => return dump(Path::new(value(&mut it, arg)?)),
             "--asset" => asset_dir = Some(PathBuf::from(value(&mut it, arg)?)),
             "--scale" => {
@@ -839,6 +861,7 @@ pub fn run(args: &[String]) -> Result<String, String> {
                 lcd_texture,
                 lcd_shown: None,
                 glass: Glass::load(),
+                glass_stamp: Glass::stamp(),
                 state,
                 scale,
                 background,
@@ -952,6 +975,7 @@ mod tests {
 pub struct Running {
     pub overlay: Option<u32>,
     pub lcd: Option<u32>,
+    pub calibrate: Option<u32>,
 }
 
 pub fn running() -> Running {
@@ -975,7 +999,9 @@ pub fn running() -> Running {
         if !first.ends_with(b"g13map-obs") {
             continue;
         }
-        if args.iter().any(|a| *a == b"--lcd") {
+        if args.iter().any(|a| *a == b"--calibrate") {
+            r.calibrate.get_or_insert(pid);
+        } else if args.iter().any(|a| *a == b"--lcd") {
             r.lcd.get_or_insert(pid);
         } else {
             r.overlay.get_or_insert(pid);
@@ -1138,13 +1164,30 @@ impl Panel {
                             Err(e) => e,
                         };
                     }
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "Backlight colours on the glass: {}",
-                            crate::config_dir().join("glass").display()
-                        ))
-                        .weak(),
-                    );
+                    match self.running.calibrate {
+                        Some(pid) => {
+                            if ui.button("Stop matching").clicked() {
+                                stop(pid);
+                                self.checked = None;
+                            }
+                        }
+                        None => {
+                            if ui
+                                .button("Match the glass…")
+                                .on_hover_text("A course of backlight colours to match by eye against the pad; writes ~/.config/g13map/glass, which the windows and the OBS source draw through")
+                                .clicked()
+                            {
+                                self.status = match launch(&["--calibrate".to_string()]) {
+                                    Ok(child) => {
+                                        self.children.push(child);
+                                        String::new()
+                                    }
+                                    Err(e) => e,
+                                };
+                                self.checked = None;
+                            }
+                        }
+                    }
                 });
                 if !self.status.is_empty() {
                     ui.label(&self.status);

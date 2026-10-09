@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.41 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.42 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 find_package(Threads REQUIRED)
@@ -326,7 +326,7 @@ if(G13PAD_BUILD_OBS)
   if(libobs_FOUND AND JANSSON_FOUND)
     add_library(g13pad-obs MODULE obs/g13pad-obs.c)
     set_target_properties(g13pad-obs PROPERTIES PREFIX "" C_STANDARD 11 C_EXTENSIONS ON)
-    target_link_libraries(g13pad-obs PRIVATE OBS::libobs PkgConfig::JANSSON)
+    target_link_libraries(g13pad-obs PRIVATE OBS::libobs PkgConfig::JANSSON m)
     target_compile_definitions(g13pad-obs PRIVATE
       G13PAD_OBS_SHEET_DIR="${CMAKE_INSTALL_FULL_DATADIR}/g13pad/obs"
       G13PAD_VERSION="${PROJECT_VERSION}")
