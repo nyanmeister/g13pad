@@ -533,3 +533,49 @@ and bit 3), other message types are ignored, a page-supplied shield wins and a m
 change forgets the hook's value. `g13map health source DIR [sp|mp]` picks the module
 by the mods' `gameinfo.txt` `type` keys (all `singleplayer_only` → sp, else mp) unless
 told; the Rust tests cover both and the override.
+
+## Check history by version, 0.2.4 to 0.2.16
+
+Moved from the README on 2026-10-08; the text is as it stood there.
+
+The physical test pad is connected to a server and passed through to its Arch-Virtual VM,
+isolating driver faults, generated input and GUI tests from the working desktop.
+Optional [host-side USB reconnect rules](docs/vm-usb.md) refresh a stale live attachment
+after a physical replug; these files are not installed by the desktop package.
+Version 0.2.4 was hardware-verified there, including fresh graphical login and five driver
+restarts with analog active. The VM now runs 0.2.9-1, retaining the stick-zone command crash
+and watcher FIFO startup fixes, with a native XFCE Generic Monitor applet. Icon and text
+clicks opened the editor; driver stop/recovery changed its grey/cyan status correctly.
+A user-assisted jstest capture on 0.2.6 confirmed both physical stick axes across their
+full joystick-interface range, return to adapter centre, and L3 press/release.
+After the 0.2.7 workspace/build changes, VM checks repeated missing-driver startup,
+five driver restarts, left/right/keyboard mapping transitions and an installed-editor
+check. A new physical jstest capture confirmed both axes and L3, with unchanged saved
+configuration and no automatic service restarts during a 150-second health check.
+Version 0.2.8 unifies CLI, editor and watcher profile transitions without constructing
+synthetic saved profiles for unbinds. Installed VM checks verified CLI apply, M-key-driven
+left/right/keyboard transitions, driver restart recovery and restoration of the saved
+profile/runtime mapping. Host USB reconnect automation passed a physical replug while
+the guest still ran 0.2.7; its driver, adapter and watcher recovered automatically.
+Version 0.2.10 adds built-in looping LCD animations drawn in code (0.2.11: tesseracts; 0.2.12: pixel-scrolling digital rain, calmer skyline windows; 0.2.13: digital rain as endless ribbons, no reset; 0.2.14: aquarium fish take breaks, a pufferfish stays; 0.2.15: waves gull rests, fish jump; 0.2.16: scenes never overwrite kept text, keep is all-or-nothing) (**Animations…** in the
+editor, `g13map-anim` in a terminal) behind the `art` feature, with a test that every loop
+closes. Kept pictures and profiles are unchanged; a scene is kept like any other picture.
+
+Version 0.2.9 separates the CLI/watcher from the editor and adds saved-profile configuration
+commands, a device icon, a retraced board, and Waybar/plain-text panel output. The packaged
+CLI is 739,504 bytes; the optional editor is 9,197,104 bytes. Installed VM profile/mode and
+restart checks passed again. Native LXQt/XFCE icon and text clicks, connected/disconnected
+rendering, and editor controls were checked on private displays. Three driver/converter
+fuzz targets completed 100,000 inputs each with ASan, UBSan and leak checks enabled.
+Waybar JSON and plain text were format-tested; native Waybar and GNOME/KDE integrations
+were not exercised. Full editor builds still compile GUI dependencies.
+Missing-driver startup and five further restarts passed on 0.2.5-2.
+The development desktop was updated from 0.2.3 to 0.2.9 after comparing its actual saved profiles
+on a private display. Saved files, calibration, runtime mapping and panel settings were
+preserved; installed CLI/editor/native LXQt checks passed. The pad remains routed to the
+VM, so the desktop's driver/watcher wait for it and its analog adapter is stopped. No physical
+0.2.9 check on the desktop is claimed. Its temporary migration access bridge was removed after
+login credentials were verified. Earlier user-assisted
+checks confirmed right-stick/R3 and restored left-stick/L3 mapping, LCD error restoration,
+and recovery after physical reconnect. Automated mocks do not establish physical gameplay
+or cross-distribution results.
