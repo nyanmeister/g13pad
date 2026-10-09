@@ -4,13 +4,13 @@
 # shellcheck disable=SC2034,SC2154
 # Build from a local committed source archive; no public release URL exists yet.
 pkgname=g13pad
-pkgver=0.2.52
+pkgver=0.2.55
 pkgrel=1
 pkgdesc='Logitech G13 driver, profile editor, LCD and analog-stick integration'
 arch=('x86_64')
 license=('GPL-3.0-or-later' 'OFL-1.1' 'Ubuntu-font-1.0' 'MIT')
 depends=('libusb' 'libevdev' 'log4cpp' 'systemd' 'sudo' 'libglvnd' 'libxkbcommon' 'libxkbcommon-x11' 'libx11' 'libxcursor' 'libxi' 'libxrandr')
-makedepends=('cmake' 'ninja' 'rust' 'obs-studio' 'jansson' 'lib32-glibc')
+makedepends=('cmake' 'ninja' 'rust' 'obs-studio' 'jansson' 'lib32-glibc' 'lua')
 optdepends=('obs-studio: the G13 pad as an OBS source (g13pad-obs)' 'xboxdrv: analog stick controller' 'xorg-xinput: isolate the source pointer in an existing X11 session' 'zenity: graphical image picker' 'fontconfig: installed font selection and international label fallback' 'ttf-dejavu: broad Latin/Greek/Cyrillic/Hebrew label coverage' 'lxqt-panel: optional panel applet' 'xfce4-genmon-plugin: optional XFCE panel applet')
 conflicts=('g13-git')
 provides=('g13')

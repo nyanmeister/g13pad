@@ -1,5 +1,115 @@
 # Validation record
 
+## 0.2.55 — seasonal fortress backlight — 2026-10-09
+
+The DFHack collector reads and validates `df.global.cur_season`. Fortress feeds
+can carry spring/summer/autumn/winter; older feeds without a season remain
+readable with their previous urgency colours. Normal seasonal RGB values are
+spring (255, 0, 120), summer (33, 234, 0), fall (249, 28, 0), and winter
+(0, 188, 163). Existing health issues do not hide them. A new urgent-event flash uses the configured alarm colour
+for 300 ms, then restores the season; the six-second cooldown still applies.
+
+- Seven fortress regressions passed, including all four colours through parsed
+  feed records, invalid/duplicate seasons, round trips, exact 300 ms restoration,
+  persistent-problem baselines, season changes, and alert cooldown behavior.
+  Offline Lua checks, syntax, formatting, and strict release workspace/all-targets
+  Clippy passed.
+- An isolated watcher/driver pipe capture sent all four exact requested RGB
+  commands while the synthetic fortress had an existing infection. Native DF
+  53.16 / DFHack53.16-r2 read-only checks confirmed the live season is winter and
+  the collector emits it. No calendar, weather, game state, or focus was changed.
+- The final package from `b5ba8d4` passed all 46 checks in 173.57 seconds,
+  including the full Rust suite and existing game adapters and driver proofs.
+- Installed `g13pad 0.2.55-1`; actual executable versions and installed/running
+  hashes match the tested package. Both services are active, the development
+  override is removed, the pad is connected, and the live collector matches the
+  packaged script and publishes winter. The owner confirmed season colour with
+  a brief alert override as the desired behavior.
+
+## 0.2.54 — grouped fortress display, hospitals and moods — 2026-10-09
+
+The fortress overview uses a 9x9 dwarf icon, grouped care/infection, unique
+impaired-person counts with walking/hand breakdowns, clothing/rags, and `8°C`
+temperature notation. The detail line rotates health, hospital shortages,
+strange-mood requirements, and freezing observations. A versioned phase counter
+holds the final visible portion of each marquee before the next message.
+
+- Six fortress regressions passed, covering v1 compatibility and bounded v2
+  fields, deduplicated limb-count constraints, actual degree/icon glyph pixels,
+  Unicode width, stable overview, end hold and same-text phase restart, event
+  cooldowns, and preservation of edited installation files. Offline Lua checks
+  passed hospital target/empty/request handling, mood quantities and completion,
+  detail timing, and urgent-event baseline/persistence/improvement.
+- The final package from `7a6d860` passed all 46 checks, including the full Rust
+  suite, Lua collector details, driver proofs, and existing game adapters.
+  Formatting passed; strict release workspace/all-targets Clippy passed before
+  the final timing-only adjustment. An isolated watcher/driver capture confirmed
+  both alternating messages hold their initial frames for one second and their
+  final frames for at least one second before advancing.
+- DF 53.16 / DFHack 53.16-r2 read-only checks matched the live 116-person
+  fortress and hospital supply counters. Temporary native job/item/reference
+  allocations, never linked into the world, passed zero-based collection-index,
+  BAR/CLOTH unit, silk/specific-metal/bone, complete-material, and unclaimed
+  workshop checks. There was no active mood in the live fortress; this establishes
+  native structure handling rather than a naturally occurring live mood.
+- The owner approved the pixel mockup and confirmed the compact temperature
+  on the physical G13, then requested a pause at the end of each detail phase.
+  No game save, unit, inventory, job, hospital target, weather, or temperature
+  was changed by the collector or fixtures.
+- In the live 116-person fortress, 100 read-only snapshots took 627 ms
+  (6.27 ms each); routine collection runs once every two seconds.
+- Installed `g13pad 0.2.54-1` on the physical desktop. Both executable versions
+  and installed/running driver/watcher hashes match the tested package; the
+  development watcher override was removed. The live collector matches the
+  installed script, remains active, and publishes the native 116-person feed.
+
+Hospital stock goals and fortress-wide healthcare requests do not establish
+patient assignment, staffing, water access, or the cause of a blocked treatment.
+Mood details show requirements not yet collected, not a guarantee about stocks
+or path availability. Later DFHack versions are attempted with API errors
+producing waiting data.
+
+## 0.2.53 — DFHack fortress overview — 2026-10-09
+
+DFHack supplies a read-only fixed overview of citizens/residents needing care,
+infection and limb impairment, worn/tattered clothing, and sampled outdoor
+weather/temperature. A separate bounded `fort 1` feed renders counts and a
+scrolling detail line, with no player HP or heartbeat. New/worsening urgent cases
+and freezing transitions can flash the full LCD for 300 ms at least six seconds apart.
+
+- All 45 CMake/package checks passed against the final committed source, including
+  the Lua severity comparison and stale alert-counter guard. Live synthetic-record
+  checks passed for worsening, persistence, and improvement. Rust formatting and
+  strict full-workspace, all-target Clippy passed. Five fortress regression tests cover bounded/expired
+  records, preservation of edited installation files and symlinks, death-hold
+  replacement, urgency colours, stable overview/marquee bounds, and flash timing.
+- Copied DF 53.16 / DFHack 53.16-r2 fortresses passed actual healthcare request,
+  impaired limb, infected wound and clothing wear/deduplication checks. Cached
+  scans measured approximately 2.4 ms for 66 citizens and 1.8 ms for 46 residents/citizens
+  on the test machine. Sampling is bounded; this is not a large-fort benchmark.
+- Private game tests passed pause heartbeat, actual world unload to title and
+  loading another save without restarting the feeder, simulation-off settings,
+  cold/freezing/ice observations, injected API failure/wait/recovery, idempotent
+  start, and stop preserving a newer game's feed. Rendering via a fake daemon
+  produced three 100 ms full-panel frames for a new infection and retained the
+  cooldown across leaving/re-entering the profile. Pixel previews were inspected.
+- Normal Steam launch automatically loaded the separate startup file and
+  selected the `dwarfort` profile. The owner confirmed the physical reader catches;
+  the live 116-person snapshot matched the read-only DFHack inspection. The test
+  copy's globally named process initially blocked DFHack's launcher; after its
+  verified exit, the owner confirmed normal launch works. Production save data
+  was not changed by fixtures or diagnostics.
+- The complete 0.2.53 package was installed on the development desktop. Actual
+  installed versions and running driver/watcher hashes matched the tested package;
+  both services were active and the pad connected. The temporary development
+  watcher override was removed. The live DFHack collector matched the packaged
+  script and continued publishing the same fortress after the service restarts.
+
+These checks establish native Linux and the tested DFHack API. Later versions are
+attempted, with API errors producing waiting data. Outdoor tile sampling is a
+current observation, not a forecast or a guarantee about a particular water body.
+Care requests do not establish soap, crutch, bucket, or hospital supply shortages.
+
 ## 0.2.52 — Factorio restarts, vehicles and research — 2026-10-09
 
 Factorio mod synchronization can exec the game with the same process ID. The

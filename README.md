@@ -56,12 +56,17 @@ rules put it on the game's windows and the profile's own picture returns when th
 comes off. `g13map health demo` runs the states on your own panel. See
 [the health meter](docs/health-meter.md) and, for adding a game, [AGENTS.md](AGENTS.md).
 
+[Dwarf Fortress with DFHack](contrib/df-health/README.md) has a fixed fortress
+overview: care, impaired limbs, worn clothing, weather and temperature. Its detail
+line scrolls hospital shortages and strange-mood requirements, while the backlight
+follows the calendar season. The collector reads the fortress without changing it.
+
 ## Install
 
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.41.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.55.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -136,6 +141,7 @@ g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs
 g13map health source DIR            # Source engine game: install the LCD module + page
 g13map-goldsrc %command%             # GoldSource handler for native Half-Life/mods
 g13map-factorio %command%            # read-only native Factorio observer, no game mod
+g13map health dfhack DIR             # Dwarf Fortress + DFHack: fortress LCD overview
 g13map --version
 g13map panel xfce                   # XFCE Generic Monitor status and editor button
 g13map panel waybar                 # Waybar custom-module JSON
@@ -313,6 +319,7 @@ scripts stay with the owner's maintenance notes; this README describes the conso
   text and the built-in animations, i3 window rules, M-key profile modes.
 - **Codex (GPT-6, OpenAI)**: driver consolidation and the imported fixes, packaging,
   services and permissions, the lean CLI split, the analog adapter, native game-health
-  observers, Factorio vehicle gauges and gear animation, research marquee, validation records.
+  observers, Factorio vehicle gauges and gear animation, research marquee, DFHack
+  fortress overview and seasonal backlight, validation records.
 
 Commits carry the assistant and model that wrote them.

@@ -23,5 +23,11 @@ licenses as well as this project's GPLv3 source. See the Free Software Foundatio
 [compatibility explanation](https://www.gnu.org/licenses/license-compatibility.en.html).
 
 The neutral LCD logo is original rendered text, not the upstream branded bitmap.
-Upstream product photographs, game artwork and sample bind files are omitted. Logitech
+Upstream product photographs and sample bind files are omitted. Logitech
 and Xbox names identify hardware/protocol compatibility; this project is independent.
+
+The fortress LCD's 9x9 dwarf sprite is a monochrome adaptation of Bachsau's
+[Dwarf Fortress Icon](https://commons.wikimedia.org/wiki/File:Dwarf_Fortress_Icon.svg),
+dedicated to the public domain under
+[CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/). The icon is included
+for population identification; it does not imply endorsement by the game's authors.

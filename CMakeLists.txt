@@ -1,7 +1,22 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.52 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.55 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
+install(DIRECTORY contrib/df-health/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/df-health)
+if(BUILD_TESTING)
+  find_program(G13PAD_LUAC luac)
+  if(G13PAD_LUAC)
+    add_test(NAME dfhack-collector-syntax
+      COMMAND ${G13PAD_LUAC} -p "${CMAKE_CURRENT_SOURCE_DIR}/contrib/df-health/g13-lcd.lua")
+  endif()
+  find_program(G13PAD_LUA lua)
+  if(G13PAD_LUA)
+    add_test(NAME dfhack-collector-details
+      COMMAND ${G13PAD_LUA} "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-dfhack.lua"
+        "${CMAKE_CURRENT_SOURCE_DIR}/contrib/df-health/g13-lcd.lua")
+  endif()
+endif()
 install(DIRECTORY contrib/terraria-health/
   DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/terraria-health
   USE_SOURCE_PERMISSIONS)

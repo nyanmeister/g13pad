@@ -297,3 +297,60 @@ owns a monotonic six-second cooldown so clearing/reappearing alerts cannot retri
 it early. Check actual text glyphs too: the old small font contained only style
 and Terraria letters, turning BAT/ATTACK/research names into dashes. An exported
 frame caught that despite passing compilation and unrelated meter tests.
+
+## Dwarf Fortress: DFHack is the boundary
+
+`contrib/df-health/g13-lcd.lua` is a read-only DFHack script, feeding a bounded
+`fort 2` record into a separate fixed overview (older `fort 1` records still work).
+Do not invent player HP for fortress counts. `getCitizens(false, true)` includes living citizens and residents,
+including insane citizens; excluding residents made a native population of 112
+read 66. Count affected wearers, not worn items; babies are excluded from clothes.
+DF 53.16 settings are `d_init.feature.flags.TEMPERATURE/WEATHER`. Missing fields
+must produce waiting/error data, never a fabricated all-clear. Inspect actual
+wound, syndrome, health-request and limb fields in a copied fortress before relying
+on schema alone. Surface samples are observations, not a freeze forecast.
+
+Use a frame timer with elapsed-ms gates: simulation ticks stop while paused,
+and repeat-util's world-unload handling cancels registered tasks. Validate pause,
+title unload and another save load on the real DFHack boundary. Independent
+startup files must start with `dfhack` and end with `.init`; reversed naming never
+autoloads. Urgent events compare severity, so healing an infection into a less
+urgent care request does not flash again. Preserve the LCD cooldown across reader
+threads/profile changes.
+
+The Steam DFHack launcher runs `pidof -s dwarfort` before launching: an isolated
+copied game on Xvfb still blocks the user's ordinary Steam launch. Stop our
+confirmed private PID and verify exit before inviting a live check. SIGTERM was
+ignored by the private DF 53.16 process; checking exit mattered. On a private
+50 Hz display, immediate xdotool down/up clicks were missed; a 200 ms press worked.
+The copied STANDARD renderer was blank under Xvfb; current init defaults with
+AUTO rendered correctly. These were private-test findings, not a reason to
+overwrite working live preferences.
+
+Hospital supplies are the abstract hospital location's `contents.count_*` and
+`desired_*`, not fortress-wide stock totals. Select existing locations with an
+active linked civzone. Soap/plaster/thread/cloth use internal quantity units;
+show EMPTY/LOW rather than label them as item counts. Global care requests do
+not establish a patient's assignment to the hospital or a treatment-block cause.
+DF 53.16 inorganic raws are `world.raws.inorganics.all`, not a direct vector.
+
+Strange-mood requirements come from the native job item flags/materials, with
+collected refs indexed by zero-based `job_item_idx`. BAR units are 150 and CLOTH
+units 10000. A Stocks count cannot prove material availability or access. Test
+temporary native job objects without linking them into the world; clear pointer
+vectors before explicitly deleting allocated items and refs.
+
+Stopped script imports must not replace a live collector's state-change handler;
+register it only when starting. For rotating marquee messages, a detail phase
+counter lets the renderer hold the final visible section and restart even when
+the next phase repeats the same text. Count Unicode characters, not UTF-8 bytes,
+when measuring the degree glyph's width. Use absolute `dfhack-run` paths from the
+source checkout; its working directory is not the game's directory.
+
+Calendar seasons are `df.global.cur_season`: 0 spring, 1 summer, 2 autumn, 3 winter.
+Read and validate the native value; never change the user's calendar for a colour
+test. Seasonal backlights use the requested RGB values even with persistent health
+issues; new-alert flashes briefly use the alarm colour, then return to the season.
+The colour override follows the same drawn-frame flash state and six-second
+cooldown, so separate clocks cannot make the LCD and backlight disagree. Older
+fortress feeds without a season retain their previous urgency colours.

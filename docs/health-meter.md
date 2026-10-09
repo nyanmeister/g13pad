@@ -40,6 +40,15 @@ profile has the meter.
 
 ## The feed
 
+Dwarf Fortress with DFHack uses a [fixed fortress overview](../contrib/df-health/README.md):
+citizens needing care, infections, impaired limbs, worn/tattered clothing, weather,
+surface temperature, and a scrolling alert/detail line. Install with
+`g13map health dfhack DIR` and use health mode `feed` for the game's profile.
+Its versioned `fort 2` feed renders the grouped overview directly; older `fort 1`
+records remain readable. The scrolling detail line includes hospital supply
+shortages and strange-mood workshop/material requirements. The backlight follows
+the in-game season, with a brief alarm-colour override during urgent-event flashes.
+
 The [Terraria handler](../contrib/terraria-health/README.md) provides a client-only
 tModLoader mod and a separate observer for native Linux and Proton vanilla Terraria.
 It supplies `mana CURRENT/MAX`, `defense VALUE`, and

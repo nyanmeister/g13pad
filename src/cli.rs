@@ -42,6 +42,7 @@ const HELP: &str = "g13map — Logitech G13 configuration
                                        (singleplayer: with armour; multiplayer: health only)
   g13map health source DIR remove      take them out again
   g13map health source-res             that page file, for a game set up by hand
+  g13map health dfhack DIR [remove]    Dwarf Fortress: install/remove the DFHack LCD script
   g13map layout                       print active X11 layout's physical key labels
   g13map watch                        run the profile/LCD watcher
   g13map obs [OPTIONS]                OBS overlay window: the pad with keys lit as pressed,
@@ -340,6 +341,8 @@ fn health(args: &[&str]) -> Result<String, String> {
             None => Err(format!("a game's kind is sp or mp, not '{kind}'")),
         },
         ["source-res"] => Ok(meter::SOURCE_RES.to_string()),
+        ["dfhack", dir] => meter::dfhack_install(std::path::Path::new(dir)),
+        ["dfhack", dir, "remove"] => meter::dfhack_remove(std::path::Path::new(dir)),
         [value, ..] => {
             let line = args.join(" ");
             let now = std::time::SystemTime::now();
@@ -351,7 +354,7 @@ fn health(args: &[&str]) -> Result<String, String> {
                 )),
             }
         }
-        _ => Err("usage: g13map health VALUE[/MAX] [WORD VALUE...] | wait | off | demo | cs2 [PORT] | cs2-config [PORT] | source DIR [sp|mp|remove] | source-res".into()),
+        _ => Err("usage: g13map health VALUE[/MAX] [WORD VALUE...] | wait | off | demo | cs2 [PORT] | cs2-config [PORT] | source DIR [sp|mp|remove] | source-res | dfhack DIR [remove]".into()),
     }
 }
 

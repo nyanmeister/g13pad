@@ -36,11 +36,18 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+#[path = "fortress.rs"]
+mod fortress;
+pub use fortress::Fortress;
+pub use fortress::{dfhack_install, dfhack_remove};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::large_enum_variant)] // bounded Copy labels; avoid per-frame heap ownership
 pub enum State {
     /// Connected, no health yet.
     Wait,
+    /// Fortress-wide counts, rather than a player's health percentage.
+    Fortress(Fortress),
     /// Health and shield, both in percent (health may exceed 100), whether the head
     /// is covered too (CS2's helmet; asked 2026-10-08): the shield bar is solid then,
     /// and whatever else the game has to show.
@@ -179,7 +186,7 @@ impl State {
     /// The health, if there is one to show.
     pub fn pct(self) -> Option<u32> {
         match self {
-            State::Wait => None,
+            State::Wait | State::Fortress(_) => None,
             State::Health { pct, .. } => Some(pct),
         }
     }
@@ -682,6 +689,9 @@ fn percent(text: &str) -> Option<u32> {
 /// A feed line, given when it was written: the state, or nothing for off, expired, or a
 /// line that does not parse (a broken feeder is no feeder).
 pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> {
+    if text.split_whitespace().next() == Some("fort") {
+        return Fortress::parse(text, written, now).map(State::Fortress);
+    }
     let mut words = text.split_whitespace();
     let mut state = match words.next()? {
         "wait" => State::Wait,
@@ -693,7 +703,7 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
         match key {
             "shield" => match &mut state {
                 State::Health { shield, .. } => *shield = percent(value)?,
-                State::Wait => return None,
+                _ => return None,
             },
             "helmet" => match (&mut state, value) {
                 (State::Health { helmet, .. }, "on") => *helmet = true,
@@ -758,6 +768,8 @@ pub fn read() -> Option<State> {
 /// Writes the feed (atomically: beside, then renamed) or, for `None`, removes every
 /// feed file: no game.
 pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> {
+    let ttl =
+        ttl.or_else(|| matches!(state, Some(State::Fortress(_))).then(|| Duration::from_secs(6)));
     let p = path()?;
     let Some(state) = state else {
         for p in paths() {
@@ -771,6 +783,7 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
     };
     let mut line = match state {
         State::Wait => "wait".to_string(),
+        State::Fortress(fort) => fort.to_line(),
         State::Health {
             pct,
             shield,
@@ -918,7 +931,7 @@ const V1_OUTLINE: &[&str] = &[
 
 /// Letters the feed may put on the panel, including arbitrary research names.
 #[rustfmt::skip]
-const LETTERS: [(char, [&str; 7]); 31] = [
+const LETTERS: [(char, [&str; 7]); 34] = [
     ('A', [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
     ('B', ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]),
     ('C', [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."]),
@@ -950,6 +963,9 @@ const LETTERS: [(char, [&str; 7]); 31] = [
     ('/', ["....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."]),
     (' ', [".....", ".....", ".....", ".....", ".....", ".....", "....."]),
     ('%', ["##..#", "##..#", "...#.", "..#..", ".#...", "#..##", "#..##"]),
+    ('(', ["...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."]),
+    (')', [".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."]),
+    ('°', [".###.", ".#.#.", ".###.", ".....", ".....", ".....", "....."]),
 ];
 
 /// The 5x7 glyph for `c`: a digit, a letter from `LETTERS`, or the dash.
@@ -981,7 +997,7 @@ fn text(bm: &mut Bitmap, x: i32, y: i32, text: &str, scale: i32) -> i32 {
             }
         }
     }
-    (text.len() as i32 * 6 - 1) * scale
+    (text.chars().count() as i32 * 6 - 1) * scale
 }
 
 /// The level timer as `m:ss`, or `h:mm:ss` past an hour (a hard boss can take three).
@@ -1139,6 +1155,7 @@ fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool, notches: &[i32], c
 /// `SCROLL` columns a tick with new columns from the beat clock on the right. A pure
 /// function of the ticks and states it was given, so tests can draw it without a clock.
 pub struct Meter {
+    fortress: fortress::Display,
     attack_flash: Option<Instant>,
     lift: [i32; W],
     /// Columns since the current beat began.
@@ -1157,6 +1174,7 @@ pub struct Meter {
 impl Default for Meter {
     fn default() -> Self {
         Meter {
+            fortress: fortress::Display::default(),
             attack_flash: None,
             lift: [0; W],
             u: 0,
@@ -1179,6 +1197,11 @@ impl Meter {
     fn frame_at(&mut self, state: State, now: Instant) -> Bitmap {
         let mut bm = Bitmap::blank();
         self.tick = self.tick.wrapping_add(1);
+        if let State::Fortress(fort) = state {
+            self.dead = 0;
+            self.fortress.draw(&mut bm, fort, now);
+            return bm;
+        }
         // A drop to zero always holds the dark flatline for the whole hold, whatever the
         // feed says meanwhile (asked 2026-10-07); only then does the next state show.
         let zero =
@@ -1190,6 +1213,7 @@ impl Meter {
         };
         match state {
             _ if self.holding() => self.alive(&mut bm, 0, 0, false, Extra::NONE),
+            State::Fortress(fort) => self.fortress.draw(&mut bm, fort, now),
             State::Wait => self.waiting(&mut bm),
             State::Health {
                 pct, shield, extra, ..
@@ -1255,6 +1279,20 @@ impl Meter {
     /// the resting colour while waiting, red once a flatline has turned into the search
     /// for a pulse.
     pub fn colour(&self, state: State, rest: [u8; 3]) -> [u8; 3] {
+        if let State::Fortress(fort) = state {
+            if let Some(season) = fort.season {
+                return if self.fortress.is_flashing() {
+                    self.tuning.alarm().rgb
+                } else {
+                    season.rgb()
+                };
+            }
+            return match fort.severity {
+                2 => self.tuning.alarm().rgb,
+                1 => self.tuning.rgb_at(60),
+                _ => rest,
+            };
+        }
         if self.holding() {
             return self.tuning.rgb_at(0);
         }
@@ -1630,10 +1668,14 @@ fn run(shared: &Mutex<Shared>, stop: &AtomicBool) {
     // attack clock across those threads so leaving/re-entering a game profile
     // cannot bypass the six-second limit. Preview/test meters keep their own clocks.
     static LAST_ATTACK_FLASH: Mutex<Option<Instant>> = Mutex::new(None);
+    static LAST_FORTRESS_FLASH: Mutex<Option<Instant>> = Mutex::new(None);
     let mut meter = Meter {
         attack_flash: *LAST_ATTACK_FLASH.lock().unwrap_or_else(|e| e.into_inner()),
         ..Meter::default()
     };
+    meter.fortress.last_flash = *LAST_FORTRESS_FLASH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut t0 = Instant::now();
     let mut n = 0u32;
     // The colour on the device: the profile's until the meter writes one. Waiting alone
@@ -1683,6 +1725,9 @@ fn run(shared: &Mutex<Shared>, stop: &AtomicBool) {
         }
     }
     *LAST_ATTACK_FLASH.lock().unwrap_or_else(|e| e.into_inner()) = meter.attack_flash;
+    *LAST_FORTRESS_FLASH
+        .lock()
+        .unwrap_or_else(|e| e.into_inner()) = meter.fortress.last_flash;
     // The resting colour as it is now: the profile that ends the meter set it just
     // before stopping us (found 2026-10-07: the old profile's olive came back over
     // the new one's purple).
