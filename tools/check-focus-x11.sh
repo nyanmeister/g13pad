@@ -5,7 +5,7 @@
 # default; G13PAD_TEST_WM names another, e.g. xfwm4). Private config, FIFOs and runtime
 # directory; nothing reaches the live desktop. Usage: check-focus-x11.sh OUTPUT_DIRECTORY
 set -eu
-if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-focus-x11-check 0.2.37'; exit 0; fi
+if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-focus-x11-check 0.2.38'; exit 0; fi
 [ "$#" -eq 1 ] || { printf '%s\n' 'usage: check-focus-x11.sh OUTPUT_DIRECTORY' >&2; exit 2; }
 out=$(mkdir -p "$1" && realpath "$1")
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)

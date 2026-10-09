@@ -61,7 +61,7 @@ comes off. `g13map health demo` runs the states on your own panel. See
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.37.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.38.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.

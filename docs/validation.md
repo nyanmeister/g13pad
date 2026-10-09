@@ -658,3 +658,14 @@ So KDE Plasma and GNOME on Wayland follow their X11 clients only: Steam and Prot
 among them, native windows not. A login session on a Wayland compositor was not exercised;
 the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
 scan) is the same one the X11 source uses for `DISPLAY`.
+
+### 0.2.38 — sway's native windows through the i3 IPC — 2026-10-08
+
+A live sway login on the test VM (lightdm autologin, the pad attached): the watcher
+found the session from the user manager's `SWAYSOCK` and took the i3 path, but listed
+nothing and switched nothing. sway's native Wayland windows have no X11 window id and no
+`window_properties`; they carry `app_id`. The tree walk and the focus event now accept
+either, the app id standing in for the class (as the Wayland source does). After the
+fix, `g13map focus windows` from an SSH session with no display variables listed the
+foot windows, and the real `g13map-watch.service` switched `keys`/`default` with each
+`swaymsg [app_id=...] focus`, the pad's backlight following.

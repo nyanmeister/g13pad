@@ -303,12 +303,14 @@ fn read_msg<R: Read>(r: &mut R) -> io::Result<(u32, Vec<u8>)> {
     Ok((ty, payload))
 }
 
-/// WM_CLASS class, else its instance (i3 gives both under `window_properties`).
+/// WM_CLASS class, else its instance (i3 gives both under `window_properties`); a native
+/// Wayland window under sway has neither, only its `app_id`, which stands in for the class.
 fn class_of(container: &Value) -> Option<String> {
     let props = &container["window_properties"];
     props["class"]
         .as_str()
         .or_else(|| props["instance"].as_str())
+        .or_else(|| container["app_id"].as_str())
         .filter(|s| !s.is_empty())
         .map(String::from)
 }
@@ -319,7 +321,8 @@ fn walk(node: &Value, workspace: &str, out: &mut Vec<Win>) {
     } else {
         workspace
     };
-    if !node["window"].is_null() {
+    // An X11 window has an id; a native Wayland window under sway has an app_id instead.
+    if !node["window"].is_null() || node["app_id"].is_string() {
         if let Some(class) = class_of(node) {
             out.push(Win {
                 class,
@@ -416,7 +419,9 @@ mod tests {
                  "floating_nodes":[{"type":"floating_con","nodes":[
                     {"type":"con","window":3,"name":"eyes","focused":false,
                      "window_properties":{"instance":"xeyes"}}]}]},
-                {"type":"workspace","name":"3","nodes":[{"type":"con","window":null,"nodes":[]}]}]}]}"#,
+                {"type":"workspace","name":"3","nodes":[{"type":"con","window":null,"nodes":[]},
+                    {"type":"con","window":null,"name":"foot","focused":false,"app_id":"foot",
+                     "nodes":[]}]}]}]}"#,
         )
         .unwrap();
         let mut out = vec![];
@@ -431,6 +436,7 @@ mod tests {
                 ("URxvt".into(), "2".into(), false),
                 ("g13map".into(), "2".into(), true),
                 ("xeyes".into(), "2".into(), false),
+                ("foot".into(), "3".into(), false),
             ]
         );
         let ev: Value = serde_json::from_str(
@@ -438,5 +444,12 @@ mod tests {
         )
         .unwrap();
         assert_eq!(class_of(&ev["container"]).as_deref(), Some("floorp"));
+        // sway: a native Wayland window has no window_properties, only an app_id.
+        let ev: Value = serde_json::from_str(
+            r#"{"change":"focus","container":{"window":null,"app_id":"Eyes"}}"#,
+        )
+        .unwrap();
+        assert_eq!(class_of(&ev["container"]).as_deref(), Some("Eyes"));
+        assert_eq!(class_of(&serde_json::json!({"app_id":""})), None);
     }
 }

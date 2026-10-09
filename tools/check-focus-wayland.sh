@@ -8,7 +8,7 @@
 # focused window gives it back.
 # Usage: check-focus-wayland.sh OUTPUT_DIRECTORY
 set -eu
-if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-focus-wayland-check 0.2.37'; exit 0; fi
+if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-focus-wayland-check 0.2.38'; exit 0; fi
 [ "$#" -eq 1 ] || { printf '%s\n' 'usage: check-focus-wayland.sh OUTPUT_DIRECTORY' >&2; exit 2; }
 out=$(mkdir -p "$1" && realpath "$1")
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
