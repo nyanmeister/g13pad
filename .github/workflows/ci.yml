@@ -42,10 +42,11 @@ jobs:
       - name: Versions of the built executables
         run: |
           for b in build/g13d build/pbm2lpbm build/rust/release/g13map build/rust/release/g13map-editor \
-                   build/rust/release/g13map-anim build/rust/release/g13pad-analog \
-                   build/g13map-goldsrc; do "$b" --version; done
+                   build/rust/release/g13map-anim build/rust/release/g13pad-analog; do "$b" --version; done
       - name: Stage an installation tree
-        run: DESTDIR="$PWD/stage" cmake --install build
+        run: |
+          DESTDIR="$PWD/stage" cmake --install build
+          stage/usr/bin/g13map-goldsrc --version
       - uses: actions/upload-artifact@v4
         with:
           name: g13pad-linux-x86_64
