@@ -354,3 +354,36 @@ issues; new-alert flashes briefly use the alarm colour, then return to the seaso
 The colour override follows the same drawn-frame flash state and six-second
 cooldown, so separate clocks cannot make the LCD and backlight disagree. Older
 fortress feeds without a season retain their previous urgency colours.
+
+Adventure mode uses the controlled unit from `dfhack.world.getAdventurer()` and a
+separate bounded `adv 1` feed. Core/extra party lists and pet lists hold historical
+figure IDs; resolve units and deduplicate, excluding the controlled character.
+PetOwner alone misses companions' pets. Missing/inactive party members are unknown,
+not healthy. Body-part names are `name_singular[0].value`; wounds contain native
+zero-based `body_part_id` and `unit_wound_layerst` parts. Creature physiology uses
+`caste_raw_flags.HAS_BLOOD`; there is no NOBLOOD flag in this schema.
+
+Native blood_count is signed: combat can overshoot zero (observed -26 on a killed
+party pet). Validate its bounded signed value, clamp the displayed percentage to
+0..100, and preserve DEAD status; rejecting negative blood blanked the entire feed.
+Adventure waking can leave counters.unconscious=-1 (observed on primary1309 after
+sleep). Accept that specific signed sentinel and use >0 for KO; retain ordinary
+sleep detection separately. Include post-sleep local-map return in regressions.
+
+Urgency is categorical, using named colour bands; do not manufacture HP from wounds
+or reuse HP percentage thresholds for blood. Exertion and sleepiness are distinct.
+Normal sleep must not trigger the injury-KO rule. Baseline/control switches do not
+flash; new serious party incidents can flash without changing the player's sustained
+colour. Diagnostic reads must restore alert/session/detail/recovery state, including
+mutable recovery tables. Keep fortress seasons independent from Adventure colours.
+
+Travel is Adventure with a loaded world but no local map; getAdventurer() and the
+local unit vectors are empty. Resolve adventure.player_id to a nemesis record and
+match that nemesis in adventure.player_army_id. army_nemesisst retains live hunger,
+thirst and sleepiness plus eats/drinks/sleeps/is_sleeping/on_watch flags; it has no
+current blood, wounds, limbs or exertion. The separate travel 1 view must identify
+health as unavailable, never replay cached READY/health. Count party HF identities
+present in that army, not every army member or historical dead party entry. Reset
+view/subject baselines across local/travel changes; include adventure_view in the
+diagnostic save/restore. No map alone is insufficient: validate the player army and
+matching current nemesis, and wait during loading/unloading without that identity.

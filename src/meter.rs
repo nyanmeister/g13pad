@@ -36,10 +36,16 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 
+#[path = "adventure.rs"]
+mod adventure;
 #[path = "fortress.rs"]
 mod fortress;
+#[path = "travel.rs"]
+mod travel;
+pub use adventure::Adventure;
 pub use fortress::Fortress;
 pub use fortress::{dfhack_install, dfhack_remove};
+pub use travel::Travel;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[allow(clippy::large_enum_variant)] // bounded Copy labels; avoid per-frame heap ownership
@@ -48,6 +54,10 @@ pub enum State {
     Wait,
     /// Fortress-wide counts, rather than a player's health percentage.
     Fortress(Fortress),
+    /// The controlled adventurer's condition, separate from traditional HP.
+    Adventure(Adventure),
+    /// Live needs and membership while the local Adventure map is unloaded.
+    Travel(Travel),
     /// Health and shield, both in percent (health may exceed 100), whether the head
     /// is covered too (CS2's helmet; asked 2026-10-08): the shield bar is solid then,
     /// and whatever else the game has to show.
@@ -186,7 +196,7 @@ impl State {
     /// The health, if there is one to show.
     pub fn pct(self) -> Option<u32> {
         match self {
-            State::Wait | State::Fortress(_) => None,
+            State::Wait | State::Fortress(_) | State::Adventure(_) | State::Travel(_) => None,
             State::Health { pct, .. } => Some(pct),
         }
     }
@@ -689,6 +699,12 @@ fn percent(text: &str) -> Option<u32> {
 /// A feed line, given when it was written: the state, or nothing for off, expired, or a
 /// line that does not parse (a broken feeder is no feeder).
 pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> {
+    if text.split_whitespace().next() == Some("travel") {
+        return Travel::parse(text, written, now).map(State::Travel);
+    }
+    if text.split_whitespace().next() == Some("adv") {
+        return Adventure::parse(text, written, now).map(State::Adventure);
+    }
     if text.split_whitespace().next() == Some("fort") {
         return Fortress::parse(text, written, now).map(State::Fortress);
     }
@@ -768,8 +784,13 @@ pub fn read() -> Option<State> {
 /// Writes the feed (atomically: beside, then renamed) or, for `None`, removes every
 /// feed file: no game.
 pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> {
-    let ttl =
-        ttl.or_else(|| matches!(state, Some(State::Fortress(_))).then(|| Duration::from_secs(6)));
+    let ttl = ttl.or_else(|| {
+        matches!(
+            state,
+            Some(State::Fortress(_) | State::Adventure(_) | State::Travel(_))
+        )
+        .then(|| Duration::from_secs(6))
+    });
     let p = path()?;
     let Some(state) = state else {
         for p in paths() {
@@ -784,6 +805,8 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
     let mut line = match state {
         State::Wait => "wait".to_string(),
         State::Fortress(fort) => fort.to_line(),
+        State::Adventure(adv) => adv.to_line(),
+        State::Travel(travel) => travel.to_line(),
         State::Health {
             pct,
             shield,
@@ -931,7 +954,7 @@ const V1_OUTLINE: &[&str] = &[
 
 /// Letters the feed may put on the panel, including arbitrary research names.
 #[rustfmt::skip]
-const LETTERS: [(char, [&str; 7]); 34] = [
+const LETTERS: [(char, [&str; 7]); 36] = [
     ('A', [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
     ('B', ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]),
     ('C', [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."]),
@@ -966,6 +989,8 @@ const LETTERS: [(char, [&str; 7]); 34] = [
     ('(', ["...#.", "..#..", ".#...", ".#...", ".#...", "..#..", "...#."]),
     (')', [".#...", "..#..", "...#.", "...#.", "...#.", "..#..", ".#..."]),
     ('°', [".###.", ".#.#.", ".###.", ".....", ".....", ".....", "....."]),
+    ('?', [".###.", "#...#", "....#", "...#.", "..#..", ".....", "..#.."]),
+    ('+', [".....", "..#..", "..#..", "#####", "..#..", "..#..", "....."]),
 ];
 
 /// The 5x7 glyph for `c`: a digit, a letter from `LETTERS`, or the dash.
@@ -1202,6 +1227,16 @@ impl Meter {
             self.fortress.draw(&mut bm, fort, now);
             return bm;
         }
+        if let State::Adventure(adv) = state {
+            self.dead = 0;
+            adv.draw(&mut self.fortress, &mut bm, now);
+            return bm;
+        }
+        if let State::Travel(travel) = state {
+            self.dead = 0;
+            travel.draw(&mut self.fortress, &mut bm, now);
+            return bm;
+        }
         // A drop to zero always holds the dark flatline for the whole hold, whatever the
         // feed says meanwhile (asked 2026-10-07); only then does the next state show.
         let zero =
@@ -1214,6 +1249,8 @@ impl Meter {
         match state {
             _ if self.holding() => self.alive(&mut bm, 0, 0, false, Extra::NONE),
             State::Fortress(fort) => self.fortress.draw(&mut bm, fort, now),
+            State::Adventure(adv) => adv.draw(&mut self.fortress, &mut bm, now),
+            State::Travel(travel) => travel.draw(&mut self.fortress, &mut bm, now),
             State::Wait => self.waiting(&mut bm),
             State::Health {
                 pct, shield, extra, ..
@@ -1279,6 +1316,16 @@ impl Meter {
     /// the resting colour while waiting, red once a flatline has turned into the search
     /// for a pulse.
     pub fn colour(&self, state: State, rest: [u8; 3]) -> [u8; 3] {
+        if let State::Travel(travel) = state {
+            return travel.colour(&self.tuning);
+        }
+        if let State::Adventure(adv) = state {
+            return if adv.severity != 4 && self.fortress.is_flashing() {
+                self.tuning.alarm().rgb
+            } else {
+                adv.colour(&self.tuning)
+            };
+        }
         if let State::Fortress(fort) = state {
             if let Some(season) = fort.season {
                 return if self.fortress.is_flashing() {

@@ -49,6 +49,13 @@ records remain readable. The scrolling detail line includes hospital supply
 shortages and strange-mood workshop/material requirements. The backlight follows
 the in-game season, with a brief alarm-colour override during urgent-event flashes.
 
+The same collector automatically switches to an Adventure display for the controlled
+character: named conditions, exertion, blood, limb function, and affected ally/pet
+counts. Its colours follow categorical urgency; blood is labelled separately from
+HP. Travel shows live food, water and sleep needs plus party membership, with local
+health explicitly unavailable. Returning to the local map restores the injury view.
+See the [Adventure and travel details](../contrib/df-health/README.md#adventure-mode).
+
 The [Terraria handler](../contrib/terraria-health/README.md) provides a client-only
 tModLoader mod and a separate observer for native Linux and Proton vanilla Terraria.
 It supplies `mana CURRENT/MAX`, `defense VALUE`, and

@@ -340,7 +340,7 @@ fn count(n: u32) -> String {
 
 // 9x9 monochrome adaptation of Bachsau's CC0 dwarf icon:
 // https://commons.wikimedia.org/wiki/File:Dwarf_Fortress_Icon.svg
-const DWARF: &[&str] = &[
+pub(super) const DWARF: &[&str] = &[
     "..#####..",
     ".#.....#.",
     ".#.#.#.#.",
@@ -357,14 +357,20 @@ impl Display {
         self.flash_active
     }
     pub(super) fn draw(&mut self, bm: &mut Bitmap, f: Fortress, now: Instant) {
-        if self.session != Some(f.session) {
-            self.session = Some(f.session);
-            self.alert = f.alert;
+        self.begin(f.session, f.alert, f.severity, now);
+        self.overview(bm, f);
+        self.detail(bm, f.detail, f.detail_phase, now);
+        self.finish(bm, now);
+    }
+    pub(super) fn begin(&mut self, session: u64, alert: u64, severity: u8, now: Instant) {
+        if self.session != Some(session) {
+            self.session = Some(session);
+            self.alert = alert;
             self.flash = None; // First snapshot is a baseline, not a newly observed event.
             self.detail = Label::EMPTY;
-        } else if f.alert > self.alert {
-            self.alert = f.alert;
-            if f.severity > 0
+        } else if alert > self.alert {
+            self.alert = alert;
+            if severity > 0
                 && self
                     .last_flash
                     .is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_secs(6))
@@ -373,6 +379,8 @@ impl Display {
                 self.last_flash = Some(now);
             }
         }
+    }
+    fn overview(&self, bm: &mut Bitmap, f: Fortress) {
         let weather = match f.weather {
             Weather::Unknown => "WX --".into(),
             Weather::Off => "WX OFF".into(),
@@ -419,12 +427,20 @@ impl Display {
             text(bm, 0, y, &row, 1);
         }
         bm.line(0, 34, W as i32 - 1, 34);
-        if f.detail != self.detail || f.detail_phase != self.detail_phase {
-            self.detail = f.detail;
-            self.detail_phase = f.detail_phase;
+    }
+    pub(super) fn detail(
+        &mut self,
+        bm: &mut Bitmap,
+        detail: Label,
+        phase: Option<u64>,
+        now: Instant,
+    ) {
+        if detail != self.detail || phase != self.detail_phase {
+            self.detail = detail;
+            self.detail_phase = phase;
             self.started = Some(now);
         }
-        let detail = f.detail.as_str().replace('_', " ").to_uppercase();
+        let detail = detail.as_str().replace('_', " ").to_uppercase();
         let length = detail.len() as u64 * 6;
         if length <= W as u64 {
             text(bm, 0, 36, &detail, 1);
@@ -435,7 +451,7 @@ impl Display {
             let elapsed = now
                 .saturating_duration_since(self.started.unwrap_or(now))
                 .as_millis();
-            let phase_ms = if f.detail_phase.is_some() {
+            let phase_ms = if phase.is_some() {
                 elapsed.min(u128::from(1000 + end_offset * 50))
             } else {
                 // Older feeders have no phase counter: repeat with a 1s end pause.
@@ -444,6 +460,8 @@ impl Display {
             let offset = (phase_ms.saturating_sub(1000) / 50).min(u128::from(end_offset)) as i32;
             text(bm, -offset, 36, &detail, 1);
         }
+    }
+    pub(super) fn finish(&mut self, bm: &mut Bitmap, now: Instant) {
         self.flash_active = self
             .flash
             .is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(300));

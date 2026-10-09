@@ -1,6 +1,7 @@
-# Dwarf Fortress fortress overview
+# Dwarf Fortress LCD overview
 
-Requires DFHack. The collector reads the loaded fortress; it changes no units,
+Requires DFHack. The collector reads the loaded fortress or adventure, including
+the travelling party; it changes no units,
 items, jobs, weather, or temperatures. Tested with DF 53.16 and DFHack 53.16-r2.
 It attempts to run on later versions. An incompatible API produces a waiting
 feed and a DFHack error rather than invented healthy counts.
@@ -125,3 +126,79 @@ g13map health dfhack "/path/to/Dwarf Fortress" remove
 
 Removal preserves edited files. For a different release, back up the old
 managed files and remove them before installing the new copies.
+
+## Adventure mode
+
+The same collector automatically selects the controlled adventurer. Core and
+hired companions are separate from party pets; changing the controlled party
+member changes the main subject. Party members that cannot be inspected are
+marked with `?`, never counted as healthy. Travel switches to live needs and party
+membership while local health is unavailable; unresolved loading states wait.
+
+```text
+[dwarf] GUKI         READY
+BLOOD 100%   RESTED
+WALK OK      HANDS OK
+ALLY 0/1     PETS 0/23
+--------------------------
+NO ACTIVE CONDITIONS
+```
+
+ALLY and PETS show affected/total; only affected members enter the scrolling
+line. The top right gives the most serious condition; exertion remains visible
+beside the blood value. Body-part wound and working-limb details rotate below.
+Large party counts abbreviate to `99+`. A `?` means the total includes members
+whose condition is unavailable; the detail line gives those counts.
+
+Adventure colour follows the controlled character, using the existing named
+health bands. Fortress seasonal colours remain unchanged. This is a categorical
+urgency policy, not a combined HP score:
+
+- Green: ready or ordinary sleep with no concerns.
+- Yellow: minor wounds, blood loss, significant pain, nausea, dizziness, mild
+  exertion, reduced limb function or hunger/thirst/sleepiness.
+- Orange: stun, windedness, paralysis, infection, illness, fever or heavy exertion.
+- Red: suffocation, burning or unconsciousness outside ordinary sleep.
+- Off: observed death.
+
+Exertion uses 2000/4000/6000 breakpoints: TIRED (yellow), VERY TIRED (orange),
+EXHAUSTED (orange). These are DFHack effective-skill breakpoints; colours are
+our presentation policy. Blood is remaining/max blood, with `--` for zero maximum
+or creatures without the HAS_BLOOD raw flag. Any deficit is a caution; this first version deliberately
+has no unverified critical-blood percentage threshold. Scars and established limb
+loss do not imply an immediate threat. Sleep is distinct from exertion.
+
+Urgency increases immediately and drops after two stable seconds. The displayed
+condition remains the reason for the held colour during that recovery interval.
+New serious player/ally/pet conditions briefly flash the LCD and alarm colour,
+with the existing 300ms duration and six-second cooldown. The player's sustained
+colour then returns. Persistent problems and switching characters establish a
+baseline rather than repeating alerts. Companion and pet problems do not determine
+the player's sustained colour.
+
+## Adventure travel
+
+Travel unloads the local units. The LCD switches to live travelling-army data:
+
+```text
+[dwarf] ELANA        TRAVEL
+FOOD OK       WATER OK
+SLEEP OK      WALKING
+ALLY 3        PETS 4
+--------------------------
+HEALTH UNAVAILABLE WHILE...
+```
+
+`DUE` marks hunger, thirst, or sleepiness at the same 172800 need-counter threshold
+used in the local Adventure view. `--` means that the traveller's physiology does
+not require that need. Activity includes walking, sneaking, sleeping, waiting,
+working, composing, and keeping watch. Counts include party members in the current
+travelling army, deduplicated and excluding the controlled character. These counts
+describe membership, not health. The detail line rotates need reminders, the health
+availability notice, and current world position with the same marquee end pauses.
+
+Travel uses blue while no need is due and yellow when one is due. Blood, wounds,
+limb function, and exertion are unavailable here and are never replayed as current
+from the last local snapshot. Returning to the local map restores the condition
+display and its normal health colours. Loading screens and unresolved travel
+identities still wait. The bounded `travel 1` feed is separate from `adv 1`.

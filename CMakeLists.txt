@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.55 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.60 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 install(DIRECTORY contrib/df-health/
