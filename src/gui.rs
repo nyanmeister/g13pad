@@ -92,6 +92,9 @@ struct App {
     analog_checked: Instant,
     gamepad_open: bool,
     gamepad_edit: Mapping,
+    /// The OBS overlay windows and their options.
+    obs_open: bool,
+    obs: crate::obs::Panel,
 }
 
 pub fn run(name: String) -> Result<String, String> {
@@ -175,6 +178,8 @@ impl App {
             analog_checked: Instant::now(),
             gamepad_open: false,
             gamepad_edit: Mapping::default(),
+            obs_open: false,
+            obs: crate::obs::Panel::default(),
         };
         app.board.layout = app.layout.clone();
         app.select(Some("G1"));
@@ -479,6 +484,13 @@ impl App {
             }
             return;
         }
+        if self.obs_open
+            && ctx.input(|i| i.key_pressed(Key::Escape))
+            && !ctx.egui_wants_keyboard_input()
+        {
+            self.obs_open = false;
+            return;
+        }
         // With the picture window open, Escape closes it and nothing else.
         if let Some(a) = &mut self.adjust {
             if ctx.input(|i| i.key_pressed(Key::Escape)) && !ctx.egui_wants_keyboard_input() {
@@ -541,6 +553,13 @@ impl App {
                 .clicked()
             {
                 self.windows_open = !self.windows_open;
+            }
+            if ui
+                .selectable_label(self.obs_open, "OBS…")
+                .on_hover_text("Overlay windows for OBS: the pad with keys lit as pressed, the LCD")
+                .clicked()
+            {
+                self.obs_open = !self.obs_open;
             }
             if ui
                 .button("Delete")
@@ -892,6 +911,7 @@ impl eframe::App for App {
         self.windows_window(&ctx);
         self.gamepad_window(&ctx);
         self.animations_window(&ctx);
+        self.obs.window(&ctx, &mut self.obs_open);
     }
 }
 

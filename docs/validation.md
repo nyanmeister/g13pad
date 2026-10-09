@@ -659,6 +659,23 @@ among them, native windows not. A login session on a Wayland compositor was not 
 the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
 scan) is the same one the X11 source uses for `DISPLAY`.
 
+### 0.2.40 — the editor's OBS panel — 2026-10-08
+
+Asked for the OBS options in the editor. **OBS…** in the top bar opens a panel: the pad
+overlay and the LCD window as Open/Stop toggles (found by their command lines under
+`/proc`, so windows started elsewhere count too), the scale sliders, the chroma-key
+background, "Write sheet for repainting" and the glass table's path. Started windows
+outlive the editor; while it lives it reaps them (the first build left a zombie after
+Stop, which `pgrep` still counted).
+
+- On Xvfb :99 against `tools/fakedaemon.pl` with a scratch config: OBS… opened the
+  panel; Open started `g13map-obs --scale 1` (the window appeared, titled "G13
+  overlay"); Stop ended it and a second later no process remained; "Write sheet for
+  repainting" wrote `g13.png` and `g13.json` into the scratch config's `obs/` and
+  said so in the panel.
+- Limit: a window started by the panel, with the editor then closed and reopened, is
+  shown as running and stoppable by its command line; not exercised.
+
 ### 0.2.39 — the OBS overlay and the driver's state files — 2026-10-08
 
 Asked for an OBS asset of the pad in the style of the input-overlay plugin's presets.

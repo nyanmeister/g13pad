@@ -61,7 +61,7 @@ comes off. `g13map health demo` runs the states on your own panel. See
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.39.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.40.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -222,6 +222,8 @@ frame on the glass in the backlight's colour. Add it to OBS as a window capture
 monitor's is fine, and a fullscreen game may cover it). `g13map obs --lcd 4` is the LCD
 alone as a second window ("G13 LCD"), to place and scale on its own; `--scale`,
 `--background RRGGBB` (chroma key instead of transparency) and `--help` have the rest.
+The editor's **OBS…** button (0.2.40) opens and closes both windows with the same options
+and writes the sheet below.
 
 The picture is a sprite sheet in the plugin's own shape (`assets/obs/g13.png` with
 `g13.json`; each key's sprite, its pressed twin 3 px below). `g13map obs --dump DIR`

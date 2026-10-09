@@ -944,3 +944,211 @@ mod tests {
         assert!(state_path("lcd").to_string_lossy().ends_with("_lcd"));
     }
 }
+
+// ---- the editor's OBS panel: the windows as toggles, the options beside them ----
+
+/// The overlay processes found on this machine, by their command lines.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Running {
+    pub overlay: Option<u32>,
+    pub lcd: Option<u32>,
+}
+
+pub fn running() -> Running {
+    let mut r = Running::default();
+    let Ok(procs) = fs::read_dir("/proc") else {
+        return r;
+    };
+    for entry in procs.flatten() {
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|n| n.parse::<u32>().ok())
+        else {
+            continue;
+        };
+        let Ok(cmdline) = fs::read(entry.path().join("cmdline")) else {
+            continue;
+        };
+        let args: Vec<&[u8]> = cmdline.split(|b| *b == 0).collect();
+        let Some(first) = args.first() else { continue };
+        if !first.ends_with(b"g13map-obs") {
+            continue;
+        }
+        if args.iter().any(|a| *a == b"--lcd") {
+            r.lcd.get_or_insert(pid);
+        } else {
+            r.overlay.get_or_insert(pid);
+        }
+    }
+    r
+}
+
+/// Starts `g13map-obs` beside this binary. The child outlives the editor (init reaps it
+/// then); while the editor lives, the panel reaps it, or it lingers as a zombie.
+pub fn launch(args: &[String]) -> Result<std::process::Child, String> {
+    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
+    let overlay = exe.with_file_name("g13map-obs");
+    std::process::Command::new(&overlay)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map_err(|e| format!("cannot start {}: {e}", overlay.display()))
+}
+
+pub fn stop(pid: u32) {
+    let _ = std::process::Command::new("kill")
+        .arg(pid.to_string())
+        .status();
+}
+
+pub struct Panel {
+    pub scale: u32,
+    pub lcd_px: u32,
+    pub chroma: bool,
+    pub chroma_rgb: [u8; 3],
+    status: String,
+    running: Running,
+    checked: Option<std::time::Instant>,
+    children: Vec<std::process::Child>,
+}
+
+impl Default for Panel {
+    fn default() -> Self {
+        Panel {
+            scale: 1,
+            lcd_px: UNIT as u32,
+            chroma: false,
+            chroma_rgb: [0, 255, 0],
+            status: String::new(),
+            running: Running::default(),
+            checked: None,
+            children: vec![],
+        }
+    }
+}
+
+impl Panel {
+    fn refresh(&mut self) {
+        if self
+            .checked
+            .is_none_or(|t| t.elapsed() > Duration::from_secs(1))
+        {
+            self.children.retain_mut(|c| matches!(c.try_wait(), Ok(None)));
+            self.running = running();
+            self.checked = Some(std::time::Instant::now());
+        }
+    }
+
+    fn start(&mut self, lcd: bool) {
+        let mut args = vec![];
+        if lcd {
+            args.extend(["--lcd".to_string(), self.lcd_px.to_string()]);
+        } else {
+            args.extend(["--scale".to_string(), self.scale.to_string()]);
+        }
+        if self.chroma {
+            let [r, g, b] = self.chroma_rgb;
+            args.extend(["--background".to_string(), format!("{r:02x}{g:02x}{b:02x}")]);
+        }
+        self.status = match launch(&args) {
+            Ok(child) => {
+                self.children.push(child);
+                String::new()
+            }
+            Err(e) => e,
+        };
+        self.checked = None;
+    }
+
+    /// The OBS window: the two overlay windows as toggles, their options, the sheet.
+    pub fn window(&mut self, ctx: &egui::Context, open: &mut bool) {
+        if !*open {
+            return;
+        }
+        self.refresh();
+        ctx.request_repaint_after(Duration::from_secs(1));
+        let mut still_open = *open;
+        egui::Window::new("OBS overlay")
+            .open(&mut still_open)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(
+                    egui::RichText::new(
+                        "Windows for OBS to capture: the pad with its keys lit as pressed, the stick and the LCD; or the LCD alone. \
+                         In OBS add a Window Capture (Xcomposite) and pick \"G13 overlay\" or \"G13 LCD\". \
+                         The windows outlive the editor; keep them on a visible workspace.",
+                    )
+                    .weak(),
+                );
+                ui.add_space(6.0);
+                egui::Grid::new("obs-grid").num_columns(3).spacing([12.0, 8.0]).show(ui, |ui| {
+                    ui.label("Pad overlay");
+                    ui.add(egui::Slider::new(&mut self.scale, 1..=8).text("× scale"));
+                    match self.running.overlay {
+                        Some(pid) => {
+                            if ui.button("Stop").clicked() {
+                                stop(pid);
+                                self.checked = None;
+                            }
+                        }
+                        None => {
+                            if ui.button("Open").clicked() {
+                                self.start(false);
+                            }
+                        }
+                    }
+                    ui.end_row();
+                    ui.label("LCD alone");
+                    ui.add(egui::Slider::new(&mut self.lcd_px, 1..=16).text("px per LCD pixel"));
+                    match self.running.lcd {
+                        Some(pid) => {
+                            if ui.button("Stop").clicked() {
+                                stop(pid);
+                                self.checked = None;
+                            }
+                        }
+                        None => {
+                            if ui.button("Open").clicked() {
+                                self.start(true);
+                            }
+                        }
+                    }
+                    ui.end_row();
+                });
+                ui.horizontal(|ui| {
+                    ui.checkbox(&mut self.chroma, "Opaque background to chroma-key")
+                        .on_hover_text("Instead of a transparent window (for a capture that drops alpha)");
+                    ui.add_enabled_ui(self.chroma, |ui| {
+                        ui.color_edit_button_srgb(&mut self.chroma_rgb);
+                    });
+                });
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui
+                        .button("Write sheet for repainting")
+                        .on_hover_text("g13.png + g13.json into ~/.config/g13map/obs; a repainted copy there is drawn instead of the built-in one")
+                        .clicked()
+                    {
+                        self.status = match dump(&crate::config_dir().join("obs")) {
+                            Ok(msg) => msg,
+                            Err(e) => e,
+                        };
+                    }
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Backlight colours on the glass: {}",
+                            crate::config_dir().join("glass").display()
+                        ))
+                        .weak(),
+                    );
+                });
+                if !self.status.is_empty() {
+                    ui.label(&self.status);
+                }
+            });
+        *open = still_open;
+    }
+}
