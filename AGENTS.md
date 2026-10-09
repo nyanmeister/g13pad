@@ -251,3 +251,27 @@ took, for the next thing that wants to show the pad or the glass on a monitor:
   anything reaches the glass.
 - Log the feed while playing (a loop that records the file on change with a timestamp):
   it tells whether an oddity is the game, the feeder or the panel.
+
+## Factorio: observe a verified native executable
+
+`src/factorio_main.rs` is a read-only external Rust observer and launch wrapper,
+not a Factorio mod. Linux ships function symbols and line DWARF, but not the game
+class layouts: gdb's initial indexing is costly and does not recover those types.
+Derive fields from named accessors, gate every layout by ELF build ID, and verify
+it in a private scenario before enabling a new build. Read `/proc/PID/mem` only;
+never loosen ptrace policy or install a privileged observer. The production
+wrapper is the game's ancestor, including Steam's runtime wrappers.
+
+The equipment vector contains every equipped item. Classify shield/battery
+objects before reading their fields; an empty armor inventory has no grid. Health
+is a ratio multiplied by the effective maximum (quality and force/character
+bonuses). Use the local player's force, and retain their character controller
+while remote view is active. Research can be science or a trigger; craft-item and
+craft-fluid triggers have separate counters. Experimental 2.1 makes
+`current_research` read-only: the fixture queues it with `add_research`.
+
+The attack signal is `entity_under_attack`, not every alert category. Its renderer
+owns a monotonic six-second cooldown so clearing/reappearing alerts cannot retrigger
+it early. Check actual text glyphs too: the old small font contained only style
+and Terraria letters, turning BAT/ATTACK/research names into dashes. An exported
+frame caught that despite passing compilation and unrelated meter tests.

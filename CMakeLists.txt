@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.46 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.47 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 install(DIRECTORY contrib/terraria-health/
@@ -272,8 +272,9 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
   endif()
   # Cargo owns freshness (including include_bytes! assets and manifest changes).
   # Separate package selections keep adapter/driver work out of the GUI dependency graph.
-  foreach(component cli editor anim obs adapter)
+  foreach(component cli editor anim obs factorio adapter)
     set(rust_features)
+    set(rust_test_args)
     if(component STREQUAL "editor")
       set(rust_package g13map)
       set(rust_binary g13map-editor)
@@ -292,6 +293,13 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
       set(rust_binary g13map-obs)
       set(rust_test obs-tests)
       set(component_enabled ${G13PAD_BUILD_EDITOR})
+    elseif(component STREQUAL "factorio")
+      set(rust_package g13map)
+      set(rust_binary g13map-factorio)
+      set(rust_test factorio-tests)
+      list(APPEND rust_test_args --bin g13map-factorio)
+      set(component_enabled ${G13PAD_BUILD_CLI})
+      list(APPEND rust_features --no-default-features)
     elseif(component STREQUAL "cli")
       set(rust_package g13map)
       set(rust_binary g13map)
@@ -323,7 +331,7 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
         add_test(NAME ${rust_test} COMMAND ${CARGO_EXECUTABLE} test -p ${rust_package}
           --manifest-path "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml"
           --target-dir "${G13PAD_CARGO_TARGET_DIR}" --profile ${G13PAD_RUST_TEST_PROFILE}
-          ${rust_features} ${cargo_args} -j ${G13PAD_RUST_JOBS})
+          ${rust_features} ${rust_test_args} ${cargo_args} -j ${G13PAD_RUST_JOBS})
         # Application fixtures export process-global G13MAP_* variables.
         set_tests_properties(${rust_test} PROPERTIES TIMEOUT 300 ENVIRONMENT "RUST_TEST_THREADS=1")
       endif()

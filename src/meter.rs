@@ -55,6 +55,13 @@ pub enum State {
 /// is drawn for a word that is absent (asked 2026-10-08, for ULTRAKILL's V1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Extra {
+    /// Factorio suit battery charge, percent.
+    pub battery: Option<u8>,
+    /// Current research progress and its prototype name (one feed word).
+    pub research: Option<u8>,
+    pub technology: Label,
+    /// Active base-attack alerts. The renderer owns the six-second cooldown.
+    pub attack: Option<u32>,
     /// `mana CURRENT/MAX`: the current and effective maximum mana.
     pub mana: Option<Resource>,
     /// `defense VALUE`: damage mitigation, not an armour pool.
@@ -77,6 +84,10 @@ pub struct Extra {
 
 impl Extra {
     pub const NONE: Extra = Extra {
+        battery: None,
+        research: None,
+        technology: Label::EMPTY,
+        attack: None,
         mana: None,
         defense: None,
         breath: None,
@@ -87,6 +98,35 @@ impl Extra {
         dash: None,
         rail: None,
     };
+}
+
+/// Bounded ASCII label in the Copy feed state. Underscores render as spaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Label([u8; 32]);
+impl Default for Label {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+impl Label {
+    pub const EMPTY: Self = Self([0; 32]);
+    fn parse(s: &str) -> Option<Self> {
+        if s.is_empty()
+            || s.len() > 32
+            || !s
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
+        {
+            return None;
+        }
+        let mut label = Self::EMPTY;
+        label.0[..s.len()].copy_from_slice(s.as_bytes());
+        Some(label)
+    }
+    fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.0[..self.0.iter().position(|c| *c == 0).unwrap_or(32)])
+            .unwrap_or("")
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -621,11 +661,16 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 (State::Health { helmet, .. }, "off") => *helmet = false,
                 _ => return None,
             },
-            "cap" | "rank" | "style" | "time" | "dash" | "rail" | "mana" | "defense" | "breath" => {
+            "cap" | "rank" | "style" | "time" | "dash" | "rail" | "mana" | "defense" | "breath"
+            | "battery" | "research" | "technology" | "attack" => {
                 let State::Health { extra, .. } = &mut state else {
                     return None;
                 };
                 match key {
+                    "battery" => extra.battery = Some(percent(value)?.min(100) as u8),
+                    "research" => extra.research = Some(percent(value)?.min(100) as u8),
+                    "technology" => extra.technology = Label::parse(value)?,
+                    "attack" => extra.attack = Some(value.parse::<u32>().ok()?.min(999)),
                     "cap" => extra.cap = Some(percent(value)?),
                     "rank" => extra.rank = Some(RANKS.iter().position(|r| *r == value)? as u8),
                     "style" => extra.style = Some(percent(value)?.min(100) as u8),
@@ -722,6 +767,18 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
             if let Some(b) = extra.breath {
                 s.push_str(&format!(" breath {}/{}", b.current, b.maximum));
             }
+            if let Some(b) = extra.battery {
+                s.push_str(&format!(" battery {b}"));
+            }
+            if let Some(r) = extra.research {
+                s.push_str(&format!(" research {r}"));
+            }
+            if !extra.technology.as_str().is_empty() {
+                s.push_str(&format!(" technology {}", extra.technology.as_str()));
+            }
+            if let Some(a) = extra.attack {
+                s.push_str(&format!(" attack {a}"));
+            }
             s
         }
     };
@@ -812,9 +869,9 @@ const V1_OUTLINE: &[&str] = &[
     ".....#####.....",
 ];
 
-/// Letters the feed may put on the panel: the style ranks.
+/// Letters the feed may put on the panel, including arbitrary research names.
 #[rustfmt::skip]
-const LETTERS: [(char, [&str; 7]); 17] = [
+const LETTERS: [(char, [&str; 7]); 31] = [
     ('A', [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
     ('B', ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]),
     ('C', [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."]),
@@ -829,6 +886,20 @@ const LETTERS: [(char, [&str; 7]); 17] = [
     ('F', ["#####", "#....", "#....", "####.", "#....", "#....", "#...."]),
     ('I', ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####"]),
     ('R', ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"]),
+    ('G', [".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".###."]),
+    ('H', ["#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
+    ('J', ["..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##.."]),
+    ('K', ["#...#", "#..#.", "#.#..", "##...", "#.#..", "#..#.", "#...#"]),
+    ('L', ["#....", "#....", "#....", "#....", "#....", "#....", "#####"]),
+    ('N', ["#...#", "##..#", "##..#", "#.#.#", "#..##", "#..##", "#...#"]),
+    ('O', [".###.", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."]),
+    ('Q', [".###.", "#...#", "#...#", "#...#", "#.#.#", "#..#.", ".##.#"]),
+    ('T', ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.."]),
+    ('V', ["#...#", "#...#", "#...#", "#...#", "#...#", ".#.#.", "..#.."]),
+    ('W', ["#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#"]),
+    ('X', ["#...#", "#...#", ".#.#.", "..#..", ".#.#.", "#...#", "#...#"]),
+    ('Y', ["#...#", "#...#", ".#.#.", "..#..", "..#..", "..#..", "..#.."]),
+    ('Z', ["#####", "....#", "...#.", "..#..", ".#...", "#....", "#####"]),
     ('/', ["....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."]),
     (' ', [".....", ".....", ".....", ".....", ".....", ".....", "....."]),
     ('%', ["##..#", "##..#", "...#.", "..#..", ".#...", "#..##", "#..##"]),
@@ -987,6 +1058,7 @@ fn bars(bm: &mut Bitmap, fill: i32, shield: i32, solid: bool, notches: &[i32], c
 /// `SCROLL` columns a tick with new columns from the beat clock on the right. A pure
 /// function of the ticks and states it was given, so tests can draw it without a clock.
 pub struct Meter {
+    attack_flash: Option<Instant>,
     lift: [i32; W],
     /// Columns since the current beat began.
     u: i32,
@@ -1002,6 +1074,7 @@ pub struct Meter {
 impl Default for Meter {
     fn default() -> Self {
         Meter {
+            attack_flash: None,
             lift: [0; W],
             u: 0,
             beat_age: None,
@@ -1015,6 +1088,10 @@ impl Default for Meter {
 impl Meter {
     /// Advances one tick in `state` and draws it.
     pub fn frame(&mut self, state: State) -> Bitmap {
+        self.frame_at(state, Instant::now())
+    }
+
+    fn frame_at(&mut self, state: State, now: Instant) -> Bitmap {
         let mut bm = Bitmap::blank();
         self.tick = self.tick.wrapping_add(1);
         // A drop to zero always holds the dark flatline for the whole hold, whatever the
@@ -1035,6 +1112,28 @@ impl Meter {
                 helmet,
                 extra,
             } => self.alive(&mut bm, pct, shield, helmet, extra),
+        }
+        if let State::Health { extra, .. } = state {
+            if extra.attack.unwrap_or(0) > 0 && !self.holding() {
+                if self
+                    .attack_flash
+                    .is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_secs(6))
+                {
+                    self.attack_flash = Some(now);
+                }
+                if self
+                    .attack_flash
+                    .is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(300))
+                {
+                    // Fill the entire visible glass, including the bars. A steady label
+                    // remains between flashes; changing alert counts cannot retrigger it.
+                    for y in 0..H {
+                        for x in 0..W {
+                            bm.set(x, y, true);
+                        }
+                    }
+                }
+            }
         }
         bm
     }
@@ -1179,6 +1278,24 @@ impl Meter {
             text(bm, 88, 19, "AIR", 1);
             gauge(bm, 109, 20, 29, 5, breath.percent());
         }
+        if let Some(battery) = extra.battery {
+            bm.halo(43, 2, 65, 15);
+            text(bm, 43, 2, &format!("BAT {battery}%"), 1);
+            gauge(bm, 43, 11, 65, 6, battery.into());
+        }
+        if let Some(attacks) = extra.attack.filter(|n| *n > 0) {
+            bm.halo(43, 19, 95, 7);
+            text(bm, 43, 19, &format!("ATTACK {attacks}"), 1);
+        } else if let Some(research) = extra.research {
+            let name = extra.technology.as_str();
+            let name = if name.is_empty() { "SCIENCE" } else { name };
+            let label = format!(
+                "{:.9} {research}%",
+                name.replace(['-', '_'], " ").to_uppercase()
+            );
+            bm.halo(43, 19, 95, 7);
+            text(bm, 43, 19, &label, 1);
+        }
         bars(
             bm,
             (BAR_W * pct.min(100) as i32 + 50) / 100,
@@ -1321,7 +1438,14 @@ impl Drop for Live {
 }
 
 fn run(shared: &Mutex<Shared>, stop: &AtomicBool) {
-    let mut meter = Meter::default();
+    // The watcher joins the previous Live thread before starting another. Keep the
+    // attack clock across those threads so leaving/re-entering a game profile
+    // cannot bypass the six-second limit. Preview/test meters keep their own clocks.
+    static LAST_ATTACK_FLASH: Mutex<Option<Instant>> = Mutex::new(None);
+    let mut meter = Meter {
+        attack_flash: *LAST_ATTACK_FLASH.lock().unwrap_or_else(|e| e.into_inner()),
+        ..Meter::default()
+    };
     let mut t0 = Instant::now();
     let mut n = 0u32;
     // The colour on the device: the profile's until the meter writes one. Waiting alone
@@ -1370,6 +1494,7 @@ fn run(shared: &Mutex<Shared>, stop: &AtomicBool) {
             n = 0;
         }
     }
+    *LAST_ATTACK_FLASH.lock().unwrap_or_else(|e| e.into_inner()) = meter.attack_flash;
     // The resting colour as it is now: the profile that ends the meter set it just
     // before stopping us (found 2026-10-07: the old profile's olive came back over
     // the new one's purple).
@@ -1763,6 +1888,80 @@ mod tests {
             .period(100),
             ECG_COLUMNS
         );
+    }
+
+    #[test]
+    fn factorio_attack_flash_has_a_wall_clock_cooldown() {
+        for letter in 'A'..='Z' {
+            assert_ne!(glyph(letter), &GLYPHS[10], "missing LCD letter {letter}");
+        }
+        let written = SystemTime::now();
+        let state = |count| {
+            parse(&format!("150/250 shield 30/150 battery 25 research 37 technology military attack {count} ttl 3"), written, written).unwrap()
+        };
+        let start = Instant::now();
+        let mut m = Meter::default();
+        assert_eq!(m.frame_at(state(2), start).lit(), W * H);
+        assert_eq!(
+            m.frame_at(state(2), start + Duration::from_millis(299))
+                .lit(),
+            W * H
+        );
+        assert!(
+            m.frame_at(state(2), start + Duration::from_millis(300))
+                .lit()
+                < W * H / 2
+        );
+        m.frame_at(state(0), start + Duration::from_secs(1));
+        // Clearing/reappearing or a changed count must not reset the cooldown.
+        assert!(m.frame_at(state(8), start + Duration::from_secs(2)).lit() < W * H / 2);
+        assert!(
+            m.frame_at(state(9), start + Duration::from_millis(5999))
+                .lit()
+                < W * H / 2
+        );
+        assert_eq!(
+            m.frame_at(state(9), start + Duration::from_secs(6)).lit(),
+            W * H
+        );
+        // A replacement Live renderer inherits this timestamp on a profile switch.
+        let mut restarted = Meter {
+            attack_flash: m.attack_flash,
+            ..Meter::default()
+        };
+        assert!(
+            restarted
+                .frame_at(state(2), start + Duration::from_secs(7))
+                .lit()
+                < W * H / 2
+        );
+        assert_eq!(
+            restarted
+                .frame_at(state(2), start + Duration::from_secs(12))
+                .lit(),
+            W * H
+        );
+        assert!(
+            m.frame_at(State::Wait, start + Duration::from_millis(6100))
+                .lit()
+                < W * H / 2
+        );
+        assert_eq!(
+            parse(
+                "100 attack 2 ttl 3",
+                written,
+                written + Duration::from_secs(4)
+            ),
+            None
+        );
+        for line in [
+            "100 attack -1",
+            "wait attack 1",
+            "100 technology bad/name",
+            "100 technology abcdefghijklmnopqrstuvwxyz0123456789",
+        ] {
+            assert!(parse(line, written, written).is_none(), "{line}");
+        }
     }
 
     #[test]
@@ -2278,6 +2477,15 @@ mod dump {
             ("a200", full(100, 200, false)),
             ("a300", full(100, 300, true)),
             ("v1", super::tests::v1_state(72)),
+            (
+                "factorio",
+                parse(
+                    "150/250 shield 30/150 battery 25 research 37 technology military attack 0",
+                    SystemTime::now(),
+                    SystemTime::now(),
+                )
+                .unwrap(),
+            ),
             (
                 "terraria",
                 parse(

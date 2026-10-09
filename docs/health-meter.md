@@ -138,6 +138,17 @@ and the rail charge, each as its own word (below), and `sprite v1` in the profil
 tuning lines puts V1 in the corner. Its README has the install (BepInEx in the game
 folder, a `WINEDLLOVERRIDES` launch option for Proton, the DLL in `BepInEx/plugins/`).
 
+## Factorio
+
+The [native observer](../contrib/factorio-health/README.md) uses a read-only external
+Rust reader with a launch wrapper; it requires no Factorio mod or console commands.
+The first supported build is Linux x86-64 experimental 2.1.21 (87673), verified by
+ELF build ID. Use `g13map-factorio %command%` in Steam and Health mode `feed`.
+It supplies health, equipment shields, suit battery charge, current research, and
+base-attack alerts. BAT has a small gauge; the research line becomes ATTACK while
+alerts are active. A 300 ms full-LCD flash repeats at most once every six seconds.
+Use profile tuning `flash trace` to distinguish personal low-health beats.
+
 ## Other games
 
 A feeder is anything that learns the health and writes the line. Beyond health and
@@ -150,6 +161,9 @@ style S        that rank's own meter, percent, under the letters
 time SECONDS   a level timer under the readout, m:ss or h:mm:ss
 dash D         dashes left, 0–3, as pips under the sprite
 rail R         a weapon charge, percent, as a small gauge beside the pips
+battery B      suit battery charge, percent, with a BAT gauge
+research R     research progress, percent; technology NAME is its bounded ASCII label
+attack N       active base-attack alerts; whole-panel flash, six-second cooldown
 ``` A feeder that rewrites
 its file in place is fine: the watcher keeps the meter through half a second of empty
 reads. Zandronum and GZDoom can log an ACS script's `Log()`

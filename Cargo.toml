@@ -4,7 +4,7 @@ default-members = [".", "crates/g13pad-core", "crates/g13pad-analog"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.46"
+version = "0.2.47"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -24,6 +24,10 @@ default = ["editor", "art"]
 editor = ["dep:eframe", "dep:egui", "dep:read-fonts", "dep:image", "art"]
 # The built-in LCD animations (src/art.rs): the editor's Animations window and g13map-anim.
 art = []
+
+[[bin]]
+name = "g13map-factorio"
+path = "src/factorio_main.rs"
 
 [[bin]]
 name = "g13map-editor"
