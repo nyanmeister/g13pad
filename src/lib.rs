@@ -4,7 +4,7 @@
 //!   g13map           panel output: device mark, G13 plus profile, live tooltip
 //!   g13map edit      the editor window
 //!   g13map apply     send the active profile to the running daemon (login service)
-//!   g13map watch     switch profiles: M-keys (daemon output pipe), i3 focus (user service)
+//!   g13map watch     switch profiles: M-keys (daemon output pipe), window focus (user service)
 //!   g13map import [FILE] [NAME]   copy a bind file into the profiles (default: the daemon's)
 #[cfg(feature = "editor")]
 mod adjust;
@@ -37,6 +37,7 @@ mod session;
 mod test_support;
 #[cfg(feature = "editor")]
 pub mod text_options;
+mod xfocus;
 
 use g13pad_core::gamepad;
 use profile::Profile;

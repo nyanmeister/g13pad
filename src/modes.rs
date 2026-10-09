@@ -4,7 +4,7 @@
 //! daemon reports the presses through its output FIFO (`bind M1 >M1;`, the `;` because the
 //! daemon writes the text with no separator) and `g13map watch` reads them and switches.
 //! The owner's design (asked 2026-09-29): additive, up to seven profiles besides the default.
-//! `watch` also follows i3 focus changes (`focus`): the window's rule is the base, a lit sum
+//! `watch` also follows window focus changes (`focus`): the window's rule is the base, a lit sum
 //! overrides it, MR clears back to it.
 use crate::focus::{self, Rules};
 use crate::profile::Profile;
@@ -330,9 +330,10 @@ impl Out {
     }
 }
 
-/// `g13map watch`: switches profiles on M-key presses (the daemon's output FIFO) and on i3
-/// focus changes (its IPC socket), whichever is on. Also restores temporary LCD errors
-/// and follows driver reconnects, including profiles with a static LCD.
+/// `g13map watch`: switches profiles on M-key presses (the daemon's output FIFO) and on
+/// window focus changes (i3's IPC socket, else the X11 root window), whichever is on. Also
+/// restores temporary LCD errors and follows driver reconnects, including profiles with a
+/// static LCD.
 pub fn watch() -> Result<String, String> {
     let mut modes = Modes::load();
     let mut rules = Rules::load();

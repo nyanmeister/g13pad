@@ -47,6 +47,17 @@ icon/text launch actions and connected/disconnected rendering. Review screenshot
 successful process launch alone does not establish appearance parity. Convert XFCE
 XWD captures locally with ImageMagick when the test machine lacks it.
 
+Window rules without i3 have a check of their own, on a private Xvfb display under an EWMH
+window manager (openbox unless `G13PAD_TEST_WM` names another, such as `xfwm4`):
+
+```sh
+G13PAD_TEST_BINARY=build/rust/release/g13map sh tools/check-focus-x11.sh build/focus-review
+```
+
+It requires Xvfb, the window manager, xterm, xdotool, xprop and Perl, and exercises
+`g13map focus windows` and a `g13map watch` switching profiles by focus against the
+stand-in daemon pipes; nothing touches the live display.
+
 For a before/after check with real configuration copies, use
 `tools/check-local-comparison.sh OLD_BIN_DIR NEW_BIN_DIR CONFIG_COPY OUTPUT_DIRECTORY`.
 It compares Norman layout JSON, 30 disconnected panel polls, and editor screenshots

@@ -537,7 +537,7 @@ impl App {
             }
             if ui
                 .selectable_label(self.windows_open, "Windows…")
-                .on_hover_text("Profiles by focused i3 window")
+                .on_hover_text("Profiles by focused window (i3, or any X11 window manager)")
                 .clicked()
             {
                 self.windows_open = !self.windows_open;
@@ -1785,7 +1785,7 @@ fn evdev_name(k: Key) -> Option<&'static str> {
     })
 }
 
-/// Profiles by focused window: the Windows… panel over i3's window list.
+/// Profiles by focused window: the Windows… panel over the window manager's list.
 impl App {
     fn windows_window(&mut self, ctx: &egui::Context) {
         if !self.windows_open {

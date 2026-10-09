@@ -579,3 +579,35 @@ login credentials were verified. Earlier user-assisted
 checks confirmed right-stick/R3 and restored left-stick/L3 mapping, LCD error restoration,
 and recovery after physical reconnect. Automated mocks do not establish physical gameplay
 or cross-distribution results.
+
+## 0.2.36 — window rules on any X11 window manager — 2026-10-08
+
+Window rules (profiles by focused window) had one source, i3's IPC socket. A second source
+reads the EWMH root-window properties (`_NET_ACTIVE_WINDOW`, `_NET_CLIENT_LIST`,
+`_NET_WM_DESKTOP`, `_NET_DESKTOP_NAMES`, `_NET_SUPPORTING_WM_CHECK`) over a connection
+made by hand from the user manager's `DISPLAY` and `XAUTHORITY`, so the watcher started by
+systemd at login follows XFCE, KDE, GNOME on X11, MATE, Openbox and the rest. i3 (and
+sway, whose `SWAYSOCK` is now a candidate) keep the IPC path; the watcher logs which it
+found (`window focus: Xfwm4 on display :0`). `g13map focus windows` lists the manager's
+windows with classes from a terminal. The CLI grew from 921,088 to 1,052,968 bytes (x11rb,
+already in the lock through the editor's windowing).
+
+Checks, 2026-10-08 (`tools/check-focus-x11.sh`: private Xvfb, two xterms of different
+class, stand-in daemon pipes, `focus windows` then a `watch` switching eyes/default/eyes):
+
+- Development desktop: openbox on `:98`, pass. The live i3 session's `focus windows`
+  (the i3 path) lists its windows unchanged.
+- The XFCE VM (0.2.9 installed, the development binary beside it): xfwm4 on `:98`, pass;
+  `focus windows` from an SSH session with no `DISPLAY`/`XAUTHORITY` listed the live
+  session's windows; the real `g13map-watch.service` run through a systemd drop-in with a
+  rule for the window focused at the time logged `window focus: Xfwm4 on display :0` and
+  tried the switch (the pad is not attached to the VM, so the daemon pipe refused it).
+  Drop-in and rule removed afterwards.
+
+Found on the way: a display manager's `~/.Xauthority` holds several entries for `:0`
+(an Internet pair beside the local one on the VM); taking the first gave "Invalid
+MIT-MAGIC-COOKIE-1 key", so the local entry for this host is tried first and the others
+after it. On a headless display openbox ignores a `_NET_ACTIVE_WINDOW` request
+(`xdotool windowactivate`) but honours `XSetInputFocus` (`windowfocus`); the check uses
+the latter. Not checked: KWin, Mutter, Marco and the others beyond their EWMH compliance;
+Wayland compositors other than sway are not followed.

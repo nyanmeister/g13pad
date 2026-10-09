@@ -69,8 +69,10 @@ desktop has exported `DISPLAY`, `XAUTHORITY` or `I3SOCK` (they never reach
 `graphical-session.target`). So the login apply unit cannot detach the pointer itself; it
 reports that, and the watcher does it once the user manager's environment has a display,
 for up to five minutes. The watcher finds i3's socket the same way, falling back to
-`$XDG_RUNTIME_DIR/i3/ipc-socket.*`, so window rules work from the first login. Nothing
-assumes `:0`; a session that never exports a display gets a journal line, not a guess.
+`$XDG_RUNTIME_DIR/i3/ipc-socket.*`; without i3 it opens the X display named there, with
+the authority file beside it, so window rules work from the first login on XFCE and the
+other X11 desktops too. Nothing assumes `:0`; a session that never exports a display gets
+a journal line, not a guess.
 
 ## Calibration and troubleshooting
 
@@ -153,8 +155,9 @@ For Waybar, add a custom module (JSON format, interval in seconds):
 
 Add `custom/g13pad` to a modules list. The JSON includes `connected`/`disconnected` CSS
 classes; choose colours to match your bar. This adapter has format/escaping checks;
-native Waybar rendering has not been tested. Window rules still target i3, and physical
-keyboard-label translation still targets X11; panel support does not extend those features.
+native Waybar rendering has not been tested. Window rules follow i3, sway or any X11 window
+manager, and physical keyboard-label translation targets X11; panel support does not extend
+those features.
 For Polybar, i3blocks or tint2 command items, use `g13map panel text`, a 30-second poll and
 `g13map edit` as the click action where supported. That adapter reports the same profile
 and connection in plain text; these bars do not share LXQt/XFCE's native icon/tooltip contract.

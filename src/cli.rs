@@ -24,7 +24,8 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map modes on|off|show             enable/disable/show M-Sum profile switching
   g13map modes set SUM NAME            assign a saved profile to sum 0–7
   g13map modes clear SUM               restore that sum's fallback
-  g13map focus on|off|show             enable/disable/show i3 window rules
+  g13map focus on|off|show             enable/disable/show window rules (i3, or any X11 WM)
+  g13map focus windows                 the windows the manager lists, focused one starred
   g13map focus set CLASS NAME          assign a saved profile to a window class
   g13map focus clear CLASS             remove a window rule
   g13map panel lxqt|xfce|waybar|text    panel status (no arguments means LXQt)
@@ -202,6 +203,18 @@ fn focus(args: &[&str]) -> Result<String, String> {
     let mut rules = focus::Rules::load();
     match args {
         ["show"] => return Ok(rules.to_text()),
+        ["windows"] => {
+            let wins = focus::windows()?;
+            let mut out = String::new();
+            for w in wins {
+                let mark = if w.focused { "*" } else { " " };
+                out.push_str(&format!(
+                    "{mark} {}\t{}\t{}\n",
+                    w.class, w.workspace, w.title
+                ));
+            }
+            return Ok(out);
+        }
         ["on"] => rules.on = true,
         ["off"] => rules.on = false,
         ["set", class, name] => {
@@ -217,10 +230,12 @@ fn focus(args: &[&str]) -> Result<String, String> {
             rules.set(class, Some(name));
         }
         ["clear", class] => rules.set(class, None),
-        _ => return Err("usage: g13map focus on|off|show|set CLASS NAME|clear CLASS".into()),
+        _ => {
+            return Err("usage: g13map focus on|off|show|windows|set CLASS NAME|clear CLASS".into())
+        }
     }
     rules.save()?;
-    Ok("saved i3 rules; g13map-watch.service follows changes".into())
+    Ok("saved window rules; g13map-watch.service follows changes".into())
 }
 
 fn use_profile(name: &str) -> Result<String, String> {

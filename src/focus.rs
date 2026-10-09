@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-//! Profiles by focused window. i3 reports focus changes over its IPC socket; the focused
-//! window's WM_CLASS class (`firefox`, `kitty`, `steam`) looks up a profile in
-//! `~/.config/g13map/focus`, and `g13map watch` switches to it. Lit M-keys override the
-//! window's profile while modes are on; MR clears back to it (see `modes`).
+//! Profiles by focused window. The focused window's WM_CLASS class (`firefox`, `kitty`,
+//! `steam`) looks up a profile in `~/.config/g13map/focus`, and `g13map watch` switches to
+//! it. Lit M-keys override the window's profile while modes are on; MR clears back to it
+//! (see `modes`).
 //!
-//! The IPC is spoken directly (i3 4.x): "i3-ipc" + u32 length + u32 type + JSON payload,
-//! both ways; an event reply has the top bit of its type set.
+//! Two sources, the first that answers wins: i3 (and sway, which speaks the same IPC)
+//! reports focus changes over its socket; any other X11 window manager is read through the
+//! EWMH root-window properties (`xfocus`). The i3 IPC is spoken directly (i3 4.x): the magic
+//! "i3-ipc", a u32 length, a u32 type and the JSON payload, both ways; an event reply has
+//! the top bit of its type set.
 use serde_json::Value;
 use std::{
     env, fs,
@@ -67,7 +70,8 @@ impl Rules {
     }
     pub fn to_text(&self) -> String {
         let mut out = String::from(
-            "# g13map: profiles by focused window (i3). `CLASS<TAB>PROFILE`, CLASS being the\n\
+            "# g13map: profiles by focused window (i3, or any X11 window manager).\n\
+             # `CLASS<TAB>PROFILE`, CLASS being the\n\
              # window's WM_CLASS class as the Windows… list shows it.\n",
         );
         out.push_str(if self.on { "on\n" } else { "off\n" });
@@ -99,7 +103,7 @@ impl Rules {
     }
 }
 
-/// A window i3 manages, as the Windows… list shows it.
+/// A window the manager lists, as the Windows… list shows it.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Win {
     pub class: String,
@@ -108,9 +112,15 @@ pub struct Win {
     pub focused: bool,
 }
 
-/// The windows i3 manages now, in tree order.
+/// The windows the manager lists now: i3's tree in order, else the X11 client list.
 pub fn windows() -> Result<Vec<Win>, String> {
-    let mut s = socket()?;
+    match socket() {
+        Ok(s) => i3_windows(s),
+        Err(i3) => crate::xfocus::windows().map_err(|x| format!("no i3 ({i3}); {x}")),
+    }
+}
+
+fn i3_windows(mut s: UnixStream) -> Result<Vec<Win>, String> {
     let timeout = Some(Duration::from_secs(2));
     s.set_read_timeout(timeout).map_err(|e| e.to_string())?;
     s.set_write_timeout(timeout).map_err(|e| e.to_string())?;
@@ -132,23 +142,38 @@ pub fn focused_class() -> Option<String> {
 }
 
 /// Runs for the life of the process: reports the class of every window that takes focus.
-/// Reconnects every few seconds if i3 is not there or goes away.
+/// Reconnects every few seconds if no manager is there or it goes away; the reason is
+/// logged when it changes, not every try.
 pub fn follow(tx: mpsc::Sender<String>) {
+    let mut said = String::new();
     loop {
         // Once connected, report what is focused now: at login the watcher started before
-        // i3, and nothing may change focus for a while.
-        let connected = socket().and_then(|s| {
-            if let Some(c) = focused_class() {
-                let _ = tx.send(c);
+        // the desktop, and nothing may change focus for a while.
+        let connected = match socket() {
+            Ok(s) => {
+                eprintln!("g13map watch: window focus: i3");
+                if let Some(c) = i3_windows(s).ok().and_then(focused) {
+                    let _ = tx.send(c);
+                }
+                socket().and_then(|s| subscribe(s, &tx))
             }
-            subscribe(s, &tx)
-        });
+            Err(i3) => crate::xfocus::follow(&tx).map_err(|x| format!("no i3 ({i3}); {x}")),
+        };
         match connected {
             Ok(()) => return, // the receiver is gone
-            Err(e) => eprintln!("g13map watch: i3: {e}; retrying in 5 s"),
+            Err(e) => {
+                if e != said {
+                    eprintln!("g13map watch: window focus: {e}; retrying every 5 s");
+                    said = e;
+                }
+            }
         }
         thread::sleep(Duration::from_secs(5));
     }
+}
+
+fn focused(wins: Vec<Win>) -> Option<String> {
+    wins.into_iter().find(|w| w.focused).map(|w| w.class)
 }
 
 fn subscribe(mut s: UnixStream, tx: &mpsc::Sender<String>) -> Result<(), String> {
@@ -183,7 +208,7 @@ fn socket() -> Result<UnixStream, String> {
     Err(last.unwrap_or_else(|| "i3 socket not found (is i3 running?)".into()))
 }
 
-/// Where i3's socket may be, most authoritative first: `I3SOCK` as i3 sets it for its
+/// Where i3's socket may be, most authoritative first: `I3SOCK` (or sway's `SWAYSOCK`) as it is set for its
 /// children; `i3 --get-socketpath`, which reads the root window property, given a display
 /// (the process's own or the user manager's, see `session`); `I3SOCK` in the user manager's
 /// environment; and i3 4.21's own `$XDG_RUNTIME_DIR/i3/ipc-socket.PID`, newest first, which
@@ -195,8 +220,10 @@ fn candidates(runtime: Option<&Path>, var: impl Fn(&str) -> Option<String>) -> V
             out.push(p);
         }
     };
-    if let Some(p) = env::var_os("I3SOCK") {
-        add(PathBuf::from(p));
+    for key in ["I3SOCK", "SWAYSOCK"] {
+        if let Some(p) = env::var_os(key) {
+            add(PathBuf::from(p));
+        }
     }
     if let Some(display) = var("DISPLAY") {
         let mut c = Command::new("i3");
@@ -213,8 +240,10 @@ fn candidates(runtime: Option<&Path>, var: impl Fn(&str) -> Option<String>) -> V
             }
         }
     }
-    if let Some(p) = var("I3SOCK") {
-        add(PathBuf::from(p));
+    for key in ["I3SOCK", "SWAYSOCK"] {
+        if let Some(p) = var(key) {
+            add(PathBuf::from(p));
+        }
     }
     if let Some(dir) = runtime {
         let mut found: Vec<(std::time::SystemTime, PathBuf)> = fs::read_dir(dir.join("i3"))

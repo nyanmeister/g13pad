@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "g13map"
-version = "0.2.35"
+version = "0.2.36"
 dependencies = [
  "eframe",
  "egui",
@@ -740,18 +740,19 @@ dependencies = [
  "image",
  "read-fonts",
  "serde_json",
+ "x11rb",
 ]
 
 [[package]]
 name = "g13pad-analog"
-version = "0.2.35"
+version = "0.2.36"
 dependencies = [
  "g13pad-core",
 ]
 
 [[package]]
 name = "g13pad-core"
-version = "0.2.35"
+version = "0.2.36"
 
 [[package]]
 name = "gethostname"

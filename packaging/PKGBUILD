@@ -4,7 +4,7 @@
 # shellcheck disable=SC2034,SC2154
 # Build from a local committed source archive; no public release URL exists yet.
 pkgname=g13pad
-pkgver=0.2.35
+pkgver=0.2.36
 pkgrel=1
 pkgdesc='Logitech G13 driver, profile editor, LCD and analog-stick integration'
 arch=('x86_64')

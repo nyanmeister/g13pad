@@ -130,7 +130,7 @@ What made it work:
 ## Choosing where it shows
 
 The meter is a profile's **Health mode** tick with a reader (`g13map profile health NAME
-feed|cs2|log`; the picture stays kept underneath), so the i3 window rules put it on the
+feed|cs2|log`; the picture stays kept underneath), so the window rules put it on the
 game's windows and nowhere else. Two profiles with the same reader
 hand the meter across a switch; any other picture ends it, and the ending profile's
 own backlight comes back (the meter was once restoring the colour of the profile it
