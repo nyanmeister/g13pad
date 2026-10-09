@@ -36,6 +36,10 @@ chmod +x "$scratch/record.sh"
 actual=$(sh "$source/launch.sh" "$scratch/record.sh" 'argument with spaces' "$scratch/Terraria.exe")
 expected=$(printf '%s\n' 'argument with spaces' "$scratch/Terraria.G13.exe")
 [ "$actual" = "$expected" ] || exit 1
+cp "$scratch/record.sh" "$scratch/Terraria.G13.bin.x86_64"
+actual=$(sh "$source/launch.sh" "$scratch/record.sh" 'native argument with spaces' "$scratch/Terraria")
+expected=$(printf '%s\n' 'native argument with spaces' "$scratch/Terraria.G13.bin.x86_64")
+[ "$actual" = "$expected" ] || exit 1
 printf '\n' >> "$scratch/Terraria.exe"
 if sh "$source/launch.sh" "$scratch/record.sh" "$scratch/Terraria.exe"; then
     echo 'Launcher accepted a stale game copy' >&2; exit 1

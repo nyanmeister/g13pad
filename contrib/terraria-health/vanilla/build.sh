@@ -1,7 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-3.0-or-later
 set -eu
-if [ "${1:-}" = --version ]; then echo 'g13map-terraria-vanilla-build 0.1.0'; exit 0; fi
+if [ "${1:-}" = --version ]; then echo 'g13map-terraria-vanilla-build 0.1.1'; exit 0; fi
 if [ "$#" -ne 2 ]; then echo 'usage: build.sh TERRARIA_DIR EMPTY_OUTPUT_DIR' >&2; exit 2; fi
 game=$(realpath -- "$1")
 out=$(realpath -m -- "$2")
@@ -25,4 +25,10 @@ for root in /usr/share/wine/mono/*/lib/mono/gac /usr/share/steam/compatibilityto
     done
 done
 mono "$out/Patcher.exe" "$@"
+if [ -f "$game/Terraria.bin.x86_64" ]; then
+    cp -- "$game/Terraria.bin.x86_64" "$out/Terraria.G13.bin.x86_64"
+fi
+if [ -f "$game/Terraria.exe.config" ]; then
+    cp -- "$game/Terraria.exe.config" "$out/Terraria.G13.exe.config"
+fi
 sha256sum "$game/Terraria.exe" | cut -d ' ' -f 1 > "$out/original.sha256"

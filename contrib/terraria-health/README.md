@@ -66,9 +66,9 @@ resource parsing, expiry and rendering. Native tModLoader was also checked on th
 physical G13. A Steam GE launch of tModLoader stopped at a black screen before
 loading the mod; use native tModLoader on Linux.
 
-## Vanilla Terraria on Proton
+## Vanilla Terraria on Linux and Proton
 
-The optional `vanilla` observer targets the Windows CLR version of Terraria. It
+The optional `vanilla` observer targets vanilla Terraria's Mono/Windows CLR. It
 uses Mono.Cecil to add an observer call at normal returns from `Main.Update` in a
 **separate executable copy**. It leaves the original `Terraria.exe` intact and
 reads the same player fields through cached reflection, without changing gameplay
@@ -86,19 +86,26 @@ cp /tmp/g13-vanilla-build/G13TerrariaObserver.dll /path/to/Terraria/
 cp /tmp/g13-vanilla-build/original.sha256 /path/to/Terraria/G13Terraria.original.sha256
 ```
 
+For native Linux, also copy the generated `Terraria.G13.bin.x86_64` into the game
+directory. This is a copy of the game's own bundled MonoKickstart runtime; its
+name selects `Terraria.G13.exe`. If the builder emits `Terraria.G13.exe.config`,
+copy that alongside the executable too. Game-provided runtime binaries stay local.
+
 Use a fresh build output directory. Put `vanilla/launch.sh` in your PATH as
 `g13map-terraria`, and set Terraria's Steam Launch Options to
 `g13map-terraria %command%`. The wrapper checks the original executable's hash
-and substitutes the observer copy in Steam's command. After a Terraria update,
+and substitutes the appropriate native or Windows observer copy in Steam's command.
+After a Terraria update or a switch between Steam's Linux and Windows depots,
 rebuild and install the copy; the wrapper refuses a stale copy. Removing the
-launch option restores ordinary Terraria. The three added files can then be removed.
+launch option restores ordinary Terraria. The added handler files can then be removed.
 
 The vanilla observer was compiled for .NET Framework 4 and patched Terraria
 1.4.5.8. `tools/terraria-fixture/VanillaFixture.cs` exercises real observer calls
 through a patched CLR fixture, including both early and final returns, health,
 mana, defense, breath, paused heartbeats, death, and menu transitions. It passed
 under host Mono and GE-Proton's Windows CLR. Vanilla Terraria 1.4.5.8 was also
-verified through its normal Steam GE launch on the physical G13. The wrapper
+verified through its normal Steam native Linux and GE launches on the physical G13.
+Native Linux uses the game's bundled MonoKickstart runtime. The wrapper
 passes `G13MAP_HEALTH_FILE` explicitly because CLR environment filtering can hide
 the host-home variables. Startup and IO diagnostics are written asynchronously to
 `G13Terraria.log` beside the observer copy; the Windows GUI game's console output

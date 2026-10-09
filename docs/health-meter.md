@@ -41,7 +41,7 @@ profile has the meter.
 ## The feed
 
 The [Terraria handler](../contrib/terraria-health/README.md) provides a client-only
-tModLoader mod and a separate observer for vanilla Terraria on Proton.
+tModLoader mod and a separate observer for native Linux and Proton vanilla Terraria.
 It supplies `mana CURRENT/MAX`, `defense VALUE`, and
 `breath CURRENT/MAX` alongside health. Mana has a separate MP gauge and numerical
 readout; defense is labeled DEF, and AIR appears when breath is below its maximum.
