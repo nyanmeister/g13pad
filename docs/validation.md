@@ -611,3 +611,23 @@ after it. On a headless display openbox ignores a `_NET_ACTIVE_WINDOW` request
 (`xdotool windowactivate`) but honours `XSetInputFocus` (`windowfocus`); the check uses
 the latter. Not checked: KWin, Mutter, Marco and the others beyond their EWMH compliance;
 Wayland compositors other than sway are not followed.
+
+Other window managers, the same VM, the same check, 2026-10-08 evening (each on a
+private Xvfb `:98`; the manager's own name as the watcher logged it):
+
+| manager | result | logged as |
+|---|---|---|
+| xfwm4 (XFCE) | pass | Xfwm4 |
+| KWin (Plasma, `kwin_x11` from kwin-x11) | pass, under `dbus-run-session` | KWin |
+| Marco (MATE; needs mate-settings-daemon's schemas) | pass | Metacity (Marco) |
+| Openbox, Fluxbox, IceWM | pass | Openbox, Fluxbox, IceWM 4.1.0 |
+| awesome, bspwm, herbstluftwm | pass | awesome, bspwm, herbstluftwm |
+| i3 | pass through the i3 path (the socket is found on the display) | i3 |
+| Mutter 51 (GNOME) | not an X11 window manager any more (`--x11` is gone) | — |
+
+The check moves focus by both routes, a `_NET_ACTIVE_WINDOW` request and then
+`XSetInputFocus`: i3 and bspwm honour the first and ignore the second, openbox and
+fluxbox on a headless display the reverse. It also waits until the plain xterm is the
+focused window before starting the watcher, since the window mapped last takes focus on
+some managers and not others. GNOME is Wayland-only upstream, so GNOME users are the
+largest group still without window rules.

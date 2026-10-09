@@ -77,12 +77,24 @@ grep -q 'Eyes' "$out/windows.txt" || fail "the Eyes xterm is missing: $(show "$o
 focused=$(grep -c '^\*' "$out/windows.txt" || true)
 [ "$focused" -eq 1 ] || fail "not exactly one focused window: $(show "$out/windows.txt")"
 
-# The watcher follows focus: Eyes brings its profile, the plain xterm (no rule) the
-# default. XSetInputFocus (windowfocus) rather than a _NET_ACTIVE_WINDOW request
-# (windowactivate): openbox on a headless display honours the first and ignores the second.
-# Start from the plain xterm, so the first switch is the Eyes one and not the watcher's own start.
-xdotool windowfocus --sync "$term"
-sleep 0.3
+# Focus moves by both routes, since window managers differ: a _NET_ACTIVE_WINDOW request
+# (windowactivate; what tiling managers such as i3 and bspwm honour) and then
+# XSetInputFocus (windowfocus; what openbox and fluxbox honour on a headless display).
+focus_on() {
+  xdotool windowactivate "$1" 2>/dev/null || true
+  xdotool windowfocus --sync "$1"
+}
+focused_class() { "$binary" focus windows 2>/dev/null | sed -n 's/^\* \([^\t]*\).*/\1/p'; }
+
+# Start from the plain xterm, so the first switch is the Eyes one, not the watcher's own start.
+focus_on "$term"
+for _ in $(seq 30); do
+  [ "$(focused_class)" = XTerm ] && break
+  sleep 0.1
+done
+[ "$(focused_class)" = XTerm ] || fail "could not focus the plain xterm first: $(show "$out/windows.txt")"
+
+# The watcher follows focus: Eyes brings its profile, the plain xterm (no rule) the default.
 "$binary" watch >"$out/watch.log" 2>&1 &
 pids="$pids $!"
 sleep 1
@@ -93,11 +105,11 @@ expect_active() {
   done
   fail "active profile is '$(cat "$G13MAP_CONFIG/active")', expected '$1' after $2; watch.log: $(show "$out/watch.log")"
 }
-xdotool windowfocus --sync "$eyes"
+focus_on "$eyes"
 expect_active eyes "focusing Eyes"
-xdotool windowfocus --sync "$term"
+focus_on "$term"
 expect_active default "focusing the plain xterm"
-xdotool windowfocus --sync "$eyes"
+focus_on "$eyes"
 expect_active eyes "focusing Eyes again"
-grep -q "window 'Eyes'" "$out/watch.log" || fail "the watcher never named the window: $(show "$out/watch.log")"
+grep -q "^window 'Eyes'" "$out/watch.log" || fail "the watcher never named the Eyes window: $(show "$out/watch.log")"
 echo "ok: $wm on $display; focus windows listed both; the watcher switched eyes, default, eyes; output in $out"
