@@ -55,6 +55,12 @@ pub enum State {
 /// is drawn for a word that is absent (asked 2026-10-08, for ULTRAKILL's V1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Extra {
+    /// `mana CURRENT/MAX`: the current and effective maximum mana.
+    pub mana: Option<Resource>,
+    /// `defense VALUE`: damage mitigation, not an armour pool.
+    pub defense: Option<u32>,
+    /// `breath CURRENT/MAX`: remaining air; shown when below maximum.
+    pub breath: Option<Resource>,
     /// `cap C`: the health the bar is capped at, percent (hard damage).
     pub cap: Option<u32>,
     /// `rank R`: a style rank, an index into `RANKS`.
@@ -71,6 +77,9 @@ pub struct Extra {
 
 impl Extra {
     pub const NONE: Extra = Extra {
+        mana: None,
+        defense: None,
+        breath: None,
         cap: None,
         rank: None,
         style: None,
@@ -78,6 +87,34 @@ impl Extra {
         dash: None,
         rail: None,
     };
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Resource {
+    pub current: u32,
+    pub maximum: u32,
+}
+
+impl Resource {
+    fn parse(value: &str) -> Option<Self> {
+        let (current, maximum) = value.split_once('/')?;
+        let current = current.parse::<u32>().ok()?;
+        let maximum = maximum.parse::<u32>().ok()?;
+        if maximum == 0 && current != 0 {
+            return None;
+        }
+        Some(Self { current, maximum })
+    }
+
+    fn percent(self) -> u32 {
+        if self.maximum == 0 {
+            0
+        } else {
+            ((u64::from(self.current) * 100 + u64::from(self.maximum) / 2)
+                / u64::from(self.maximum))
+            .min(100) as u32
+        }
+    }
 }
 
 /// The style ranks a feed may name, lowest first (ULTRAKILL's).
@@ -584,7 +621,7 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 (State::Health { helmet, .. }, "off") => *helmet = false,
                 _ => return None,
             },
-            "cap" | "rank" | "style" | "time" | "dash" | "rail" => {
+            "cap" | "rank" | "style" | "time" | "dash" | "rail" | "mana" | "defense" | "breath" => {
                 let State::Health { extra, .. } = &mut state else {
                     return None;
                 };
@@ -600,12 +637,15 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                         extra.time = Some(s.min(359_999.0) as u32);
                     }
                     "dash" => extra.dash = Some(tenths(value, 3.0)?),
+                    "mana" => extra.mana = Some(Resource::parse(value)?),
+                    "breath" => extra.breath = Some(Resource::parse(value)?),
+                    "defense" => extra.defense = Some(value.parse::<u32>().ok()?.min(999)),
                     _ => extra.rail = Some(percent(value)?.min(100) as u8),
                 }
             }
             "ttl" => {
-                let ttl = value.parse::<f64>().ok().filter(|s| *s > 0.0)?;
-                if now.duration_since(written).unwrap_or_default() > Duration::from_secs_f64(ttl) {
+                let ttl = Duration::try_from_secs_f64(value.parse::<f64>().ok()?).ok()?;
+                if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {
                     return None;
                 }
             }
@@ -672,6 +712,15 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
             }
             if let Some(r) = extra.rail {
                 s.push_str(&format!(" rail {r}"));
+            }
+            if let Some(m) = extra.mana {
+                s.push_str(&format!(" mana {}/{}", m.current, m.maximum));
+            }
+            if let Some(d) = extra.defense {
+                s.push_str(&format!(" defense {d}"));
+            }
+            if let Some(b) = extra.breath {
+                s.push_str(&format!(" breath {}/{}", b.current, b.maximum));
             }
             s
         }
@@ -765,7 +814,7 @@ const V1_OUTLINE: &[&str] = &[
 
 /// Letters the feed may put on the panel: the style ranks.
 #[rustfmt::skip]
-const LETTERS: [(char, [&str; 7]); 8] = [
+const LETTERS: [(char, [&str; 7]); 17] = [
     ('A', [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
     ('B', ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]),
     ('C', [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."]),
@@ -774,6 +823,15 @@ const LETTERS: [(char, [&str; 7]); 8] = [
     ('U', ["#...#", "#...#", "#...#", "#...#", "#...#", "#...#", ".###."]),
     (':', [".....", "..#..", "..#..", ".....", "..#..", "..#..", "....."]),
     ('.', [".....", ".....", ".....", ".....", ".....", "..#..", "..#.."]),
+    ('M', ["#...#", "##.##", "#.#.#", "#...#", "#...#", "#...#", "#...#"]),
+    ('P', ["####.", "#...#", "#...#", "####.", "#....", "#....", "#...."]),
+    ('E', ["#####", "#....", "#....", "####.", "#....", "#....", "#####"]),
+    ('F', ["#####", "#....", "#....", "####.", "#....", "#....", "#...."]),
+    ('I', ["#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####"]),
+    ('R', ["####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#"]),
+    ('/', ["....#", "....#", "...#.", "..#..", ".#...", "#....", "#...."]),
+    (' ', [".....", ".....", ".....", ".....", ".....", ".....", "....."]),
+    ('%', ["##..#", "##..#", "...#.", "..#..", ".#...", "#..##", "#..##"]),
 ];
 
 /// The 5x7 glyph for `c`: a digit, a letter from `LETTERS`, or the dash.
@@ -1099,6 +1157,27 @@ impl Meter {
             let w = s.len() as i32 * 6 - 1;
             bm.halo(rx - w, ry + 16, w, 7);
             text(bm, rx - w, ry + 16, &s, 1);
+        }
+        if let Some(mana) = extra.mana {
+            let label = format!("MP {}/{}", mana.current, mana.maximum);
+            // Keep large modded pools inside this slot without obscuring health.
+            let label = if label.len() > 11 {
+                format!("MP {}%", mana.percent())
+            } else {
+                label
+            };
+            bm.halo(43, 2, 65, 14);
+            text(bm, 43, 2, &label, 1);
+            gauge(bm, 43, 11, 65, 6, mana.percent());
+        }
+        if let Some(defense) = extra.defense {
+            bm.halo(43, 19, 41, 7);
+            text(bm, 43, 19, &format!("DEF {defense}"), 1);
+        }
+        if let Some(breath) = extra.breath.filter(|b| b.current < b.maximum) {
+            bm.halo(88, 19, 50, 7);
+            text(bm, 88, 19, "AIR", 1);
+            gauge(bm, 109, 20, 29, 5, breath.percent());
         }
         bars(
             bm,
@@ -1687,6 +1766,59 @@ mod tests {
     }
 
     #[test]
+    fn terraria_resources_parse_render_and_expire() {
+        let now = SystemTime::now();
+        let line = "240/400 mana 80/200 defense 45 breath 80/200 ttl 3";
+        let state = parse(line, now, now).unwrap();
+        let State::Health {
+            pct, extra, shield, ..
+        } = state
+        else {
+            panic!("expected health");
+        };
+        assert_eq!((pct, shield), (60, 0));
+        assert_eq!(
+            extra.mana,
+            Some(Resource {
+                current: 80,
+                maximum: 200
+            })
+        );
+        assert_eq!(extra.defense, Some(45));
+        assert_eq!(extra.breath.unwrap().percent(), 40);
+        assert_eq!(parse(line, now, now + Duration::from_secs(4)), None);
+        for invalid in [
+            "100 mana -1/200",
+            "100 mana 2/0",
+            "100 mana 20",
+            "wait mana 0/0",
+            "100 breath 1/NaN",
+            "100 defense -4",
+            "100 ttl inf",
+            "100 ttl NaN",
+            "100 ttl 1e300",
+        ] {
+            assert_eq!(parse(invalid, now, now), None, "{invalid}");
+        }
+        assert!(parse("100 mana 0/0", now, now).is_some());
+        let frame = Meter::default().frame(state);
+        let no_mana = parse("240/400 mana 0/200 defense 45 breath 80/200", now, now).unwrap();
+        let empty_frame = Meter::default().frame(no_mana);
+        assert!(
+            lit_in(&frame, 45, 13, 106, 15) > lit_in(&empty_frame, 45, 13, 106, 15),
+            "mana gauge fills"
+        );
+        assert!(lit_in(&frame, 43, 2, 108, 9) > 30, "mana label and values");
+        assert!(lit_in(&frame, 43, 19, 84, 26) > 20, "defense");
+        let full_air = parse("240/400 mana 80/200 defense 45 breath 200/200", now, now).unwrap();
+        let full_frame = Meter::default().frame(full_air);
+        assert!(
+            lit_in(&frame, 88, 19, 138, 26) > lit_in(&full_frame, 88, 19, 138, 26),
+            "low air appears"
+        );
+    }
+
+    #[test]
     fn feed_lines_parse_and_expire() {
         let now = SystemTime::now();
         let p = |t: &str| parse(t, now, now);
@@ -1739,6 +1871,7 @@ mod tests {
                     time: Some(11561),
                     dash: Some(25),
                     rail: Some(80),
+                    ..Extra::NONE
                 },
             })
         );
@@ -1839,6 +1972,7 @@ mod tests {
                 time: Some(11561),
                 dash: Some(25),
                 rail: Some(80),
+                ..Extra::NONE
             },
         }
     }
@@ -2144,6 +2278,15 @@ mod dump {
             ("a200", full(100, 200, false)),
             ("a300", full(100, 300, true)),
             ("v1", super::tests::v1_state(72)),
+            (
+                "terraria",
+                parse(
+                    "240/400 mana 80/200 defense 45 breath 80/200",
+                    SystemTime::now(),
+                    SystemTime::now(),
+                )
+                .unwrap(),
+            ),
         ] {
             let mut m = Meter::default();
             if tag == "v1" {

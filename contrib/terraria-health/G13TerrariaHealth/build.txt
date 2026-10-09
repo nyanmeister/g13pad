@@ -1,0 +1,5 @@
+displayName = G13 Terraria Handler
+author = g13pad contributors
+version = 0.1.0
+side = Client
+buildIgnore = *.csproj, bin/*, obj/*, compile_temp/*

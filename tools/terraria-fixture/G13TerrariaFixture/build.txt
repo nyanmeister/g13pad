@@ -1,0 +1,4 @@
+displayName = G13 Terraria Test Fixture
+author = g13pad contributors
+version = 0.1.0
+side = Client

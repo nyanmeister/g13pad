@@ -32,6 +32,7 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map import [FILE] [NAME]          import a driver bind file
   g13map marquee TEXT [NAME]           keep LCD text
   g13map health VALUE[/MAX] [shield S[/MAX]]  feed the health meter (needs the watcher)
+                                      extras: mana M/MAX defense D breath B/MAX
   g13map health wait|off               game connected without health; no game
   g13map health demo                   a scripted pass through the meter's states
   g13map health cs2 [PORT]             Counter-Strike 2 Game State Integration feed

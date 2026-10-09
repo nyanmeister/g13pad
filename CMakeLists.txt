@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.45 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.46 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
+install(DIRECTORY contrib/terraria-health/
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/terraria-health
+  USE_SOURCE_PERMISSIONS)
+install(PROGRAMS contrib/terraria-health/vanilla/launch.sh
+  DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME g13map-terraria)
 find_package(Threads REQUIRED)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(USB REQUIRED IMPORTED_TARGET libusb-1.0)
@@ -225,6 +230,9 @@ if(G13PAD_SANITIZER)
   endforeach()
 endif()
 if(BUILD_TESTING)
+  add_test(NAME terraria-vanilla-observer
+    COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-terraria-vanilla.sh")
+  set_tests_properties(terraria-vanilla-observer PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
   add_test(NAME driver-version COMMAND g13d --version)
   add_test(NAME pbm-version COMMAND pbm2lpbm --version)
   add_test(NAME pbm-conversion COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-pbm.sh" $<TARGET_FILE:pbm2lpbm>)

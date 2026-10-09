@@ -1,0 +1,2 @@
+Shows the local player's health on the Logitech G13 through g13pad's health feed.
+Client-only telemetry: no items, world data, or gameplay changes.

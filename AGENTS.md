@@ -119,6 +119,24 @@ not the final fix. Test actual Steam argv plus inherited overlay, not only a
 wrapper inside a pre-established container with `LD_PRELOAD` cleared. The new
 constructor/chaining fixtures catch the old observer on both architectures.
 
+## Terraria: distinguish the two runtimes
+
+`contrib/terraria-health` contains a client-only tModLoader mod (.NET 8) and a
+separate vanilla Windows CLR observer (.NET Framework 4). Native tModLoader may
+use `dotnet` as its window class; Proton uses the Steam application class. The
+editor owns the LCD while open, so close it before judging the live meter.
+
+Read player fields after the game's update, including effective health/mana
+maxima, and publish from a separate timer so actual paused updates keep a live
+heartbeat. The vanilla patcher preserves the original executable and branch
+targets at all normal returns, widening short branches. Cecil needs both embedded
+game assemblies and Wine Mono's XNA/FNA metadata to rewrite the assembly. Test
+with `tools/check-terraria-vanilla.sh`; never install the gameplay fixture mods
+into ordinary saves. A stale executable copy must be rejected after game updates.
+Pass the host feed path explicitly through `G13MAP_HEALTH_FILE`: .NET Framework's
+environment can hide HOME/WINEHOMEDIR even when the host process has them. Windows
+GUI console handles can discard errors; log asynchronously beside the copy.
+
 ## Unity games: BepInEx (ULTRAKILL)
 
 `contrib/ultrakill-health` is the model: a BepInEx 5 plugin, one `MonoBehaviour` whose
