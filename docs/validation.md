@@ -679,9 +679,13 @@ pipes and `g13map obs` draws the pad in its own transparent window from them.
 - On the VM (anarchy-virtual, XFCE, the pad attached) with the new `g13d` through a
   `g13.service` drop-in: `/run/g13d/g13-0_keys` held `stick 128 128`, `backlight 0 80
   160`, `keys` and `g13-0_lcd` the 960-byte logo at once after the restart; the
-  overlay on the live display drew the logo in that blue. Limit: no key was pressed
-  on the pad during the check (nobody at it), so a live press lighting a sprite rests
-  on the proof's bit order and the same write path the LCD file took.
+  overlay on the live display drew the logo in that blue. Then on Triad with the pad
+  back and 0.2.39 installed: every key lit on the window as pressed, the backlight
+  button included, the stick cap followed the stick and its click, and the LCD box
+  showed the glass (his words: "Every key that can be pressed lights up, including the
+  LED key, very impressive! The little LCD looks nice, too."). The state file recorded
+  139 changes in a minute: all 22 G-keys, M1–M3, MR, L1–L4, BD, LIGHT, LEFT, TOP, a
+  chord (M1 MR), 45 stick positions.
 - Not exercised: OBS itself capturing the window (the capture composites alpha as
   any depth-32 window); i3 unmaps windows on hidden workspaces, so the overlay has to
   stay on a visible one.
