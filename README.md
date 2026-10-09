@@ -312,6 +312,7 @@ scripts stay with the owner's maintenance notes; this README describes the conso
 - **Claude (Fable 5.1, Anthropic)**: the `g13map` editor, CLI and watcher, LCD pictures,
   text and the built-in animations, i3 window rules, M-key profile modes.
 - **Codex (GPT-6, OpenAI)**: driver consolidation and the imported fixes, packaging,
-  services and permissions, the lean CLI split, the analog adapter, validation records.
+  services and permissions, the lean CLI split, the analog adapter, native game-health
+  observers, Factorio vehicle gauges and gear animation, research marquee, validation records.
 
 Commits carry the assistant and model that wrote them.

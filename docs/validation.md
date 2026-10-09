@@ -1,5 +1,41 @@
 # Validation record
 
+## 0.2.52 — Factorio restarts, vehicles and research — 2026-10-09
+
+Factorio mod synchronization can exec the game with the same process ID. The
+observer now detects retirement of the old memory address space and reopens the
+game, including after telemetry was disabled for invalid readings. Persistent
+junk in the same address space still stops telemetry. Vehicle health becomes the
+primary gauge, with character HP secondary and suit shields/battery remaining
+personal. Riding uses three turning gears with cracks at orange health or below;
+long research names marquee while their percentage stays fixed.
+
+- All 44 package checks passed, including the reader's same-PID exec regression.
+  Rust formatting and strict Clippy passed. Regenerated dependency notices match
+  the committed inventory; only workspace release versions changed in Cargo.lock.
+- A private native Factorio 2.1.21 scenario passed actual mod-disable and
+  "Sync mods and load" restarts. The vehicle fixture matched the game's health
+  values for damaged cars, a tank passenger, a rare car, a legendary spider in
+  normal and remote view, and a locomotive, plus returning on foot and death.
+- Rendering checks cover stable vehicle vitals, no heartbeat or false character
+  death hold while riding, long-uptime animation, orange-band boundaries and
+  repairs, visible cracks throughout rotation, and clipped research names with
+  fixed progress. Native pixel previews were inspected.
+- The owner confirmed normal Steam mod-sync recovery, switching to a different
+  save with different mods, and the vehicle gauge on the physical G13. The gear
+  motion was approved; wider cracks were selected after the first version was
+  too subtle on the LCD. The 300 ms base-attack flash retains six-second spacing.
+- The complete 0.2.52 package was installed on the development desktop. Actual
+  installed versions and running driver/watcher hashes were checked; the pad was
+  connected. The temporary development watcher override was removed. The live
+  game kept its 0.2.50 observer, whose reader logic is unchanged; its next normal
+  launch uses the packaged 0.2.52 observer.
+
+These checks cover the native Linux x86-64 reader and the tested game version.
+They do not establish Windows/Proton, ARM64 or future native-build compatibility.
+New native builds are attempted with validated readings; production saves, mods
+and executables were not modified by the tests.
+
 ## Development desktop 0.2.9 comparison and upgrade — 2026-10-02
 
 At the owner's request compared installed 0.2.3 against the verified 0.2.9 package,

@@ -15,8 +15,8 @@ use std::{
 const BUILD_ID: &str = "60910b0b4f9cff6de7cf1a5a089334784f7945f8";
 const GLOBAL: u64 = 0x4255870;
 #[derive(Clone, Copy, Debug, PartialEq)]
-struct Layout([u64; 11]);
-const SYMBOLS: [&str; 11] = [
+struct Layout([u64; 17]);
+const SYMBOLS: [&str; 17] = [
     "global",
     "_ZN13PrototypeListI16QualityPrototypeE16indexToPrototypeE",
     "_ZN13PrototypeListI18EquipmentPrototypeE16indexToPrototypeE",
@@ -28,10 +28,16 @@ const SYMBOLS: [&str; 11] = [
     "_ZTV26CraftItemTechnologyTrigger",
     "_ZTV27CraftFluidTechnologyTrigger",
     "_ZNK17TechnologyTrigger11getProgressEv",
+    "_ZTV3Car",
+    "_ZTV10Locomotive",
+    "_ZTV10CargoWagon",
+    "_ZTV10FluidWagon",
+    "_ZTV14ArtilleryWagon",
+    "_ZTV13SpiderVehicle",
 ];
 const FALLBACK: Layout = Layout([
     GLOBAL, 0x425faf0, 0x425f310, 0x3f97738, 0x3e7fab8, 0x3e80718, 0x3d7e330, 0x3db1378, 0x3faf258,
-    0x3faf168, 0x25d3360,
+    0x3faf168, 0x25d3360, 0x3da8458, 0x3e0e0b0, 0x3daecf0, 0x3ddf298, 0x3d97540, 0x3e5bd10,
 ]);
 
 fn native_header(f: &File) -> io::Result<[u8; 64]> {
@@ -78,7 +84,7 @@ fn resolve_layout(f: &File) -> io::Result<(Layout, usize)> {
     let stride = u16::from_le_bytes(h[58..60].try_into().unwrap());
     let count = u16::from_le_bytes(h[60..62].try_into().unwrap());
     let mut layout = FALLBACK;
-    let mut resolved = [false; 11];
+    let mut resolved = [false; SYMBOLS.len()];
     if count == 0 {
         return Ok((layout, 0)); // stripped build: try the previous layout
     }
@@ -191,6 +197,7 @@ fn build_id(f: &File) -> io::Result<String> {
 }
 struct Reader {
     mem: File,
+    image: u64,
     base: u64,
     layout: Layout,
 }
@@ -213,7 +220,7 @@ impl Reader {
         let id = build_id(&exe).unwrap_or_else(|_| "unidentified".into());
         let (layout, found) = resolve_layout(&exe)?;
         if id != BUILD_ID {
-            eprintln!("g13map-factorio: trying unverified build {id}; resolved {found}/11 symbols, validating readings");
+            eprintln!("g13map-factorio: trying unverified build {id}; resolved {found}/{} symbols, validating readings", SYMBOLS.len());
         }
         let ino = exe.metadata()?.ino();
         let maps = fs::read_to_string(format!("/proc/{pid}/maps"))?;
@@ -230,11 +237,22 @@ impl Reader {
         let base = mapping
             .checked_sub(image_origin(&exe)?)
             .ok_or_else(|| invalid("invalid executable origin"))?;
+        let mem = File::open(format!("/proc/{pid}/mem"))?;
+        if bytes::<4>(&mem, mapping)? != *b"\x7fELF" {
+            return Err(invalid("executable mapping changed while opening reader"));
+        }
         Ok(Self {
-            mem: File::open(format!("/proc/{pid}/mem"))?,
+            mem,
+            image: mapping,
             base,
             layout,
         })
+    }
+    fn retired(&self) -> bool {
+        // /proc/PID/mem pins an address space, not a PID. After exit or exec it
+        // returns EOF, even if Factorio restarted with the same PID and binary.
+        // Other read errors must still go through the invalid-reading guard.
+        matches!(self.mem.read_at(&mut [0u8; 1], self.image), Ok(0))
     }
     fn read<const N: usize>(&self, at: u64) -> io::Result<[u8; N]> {
         if !(0x10000..0x0000_8000_0000_0000).contains(&at) || at.checked_add(N as u64).is_none() {
@@ -290,7 +308,7 @@ impl Reader {
             return Err(invalid("invalid prototype name characters"));
         }
         Ok(s.chars()
-            .take(32)
+            .take(256)
             .map(|c| {
                 if c.is_ascii_alphanumeric() || "-_.".contains(c) {
                     c
@@ -431,7 +449,29 @@ impl Reader {
         let ratio = self.f32(character + 0x80)?;
         health(max, ratio)?;
         let (shield, max_shield, battery) = self.equipment(character)?;
-        let mut line = format!("{:.3}/{max:.3}", ratio * max);
+        let vehicle = self.ptr(character + 0x550)?;
+        let mut line = if vehicle != 0 {
+            let vt = self.ptr(vehicle)?;
+            if !(11..SYMBOLS.len()).any(|i| vt == self.vtable(i)) {
+                return Err(invalid("unexpected vehicle type"));
+            }
+            if self.byte(vehicle + 0x6e)? & 0x10 != 0 {
+                return Err(invalid("vehicle is being removed"));
+            }
+            let prototype = self.ptr(vehicle + 0x48)?;
+            let vehicle_max =
+                self.f32(prototype + 0x630)? * self.quality(self.byte(vehicle + 0x91)?)?;
+            let vehicle_ratio = self.f32(vehicle + 0x80)?;
+            health(vehicle_max, vehicle_ratio)?;
+            format!(
+                "{:.3}/{vehicle_max:.3} vehicle {} pilot {:.3}/{max:.3}",
+                vehicle_ratio * vehicle_max,
+                self.label(prototype)?,
+                ratio * max
+            )
+        } else {
+            format!("{:.3}/{max:.3}", ratio * max)
+        };
         if max_shield > 0. {
             line.push_str(&format!(" shield {shield:.3}/{max_shield:.3}"));
         }
@@ -488,6 +528,7 @@ impl Reader {
             || self.ptr(game + 0x80)? != player
             || self.ptr(player + 0xbe0)? != active
             || self.ptr(controller + 0x170)? != character
+            || self.ptr(character + 0x550)? != vehicle
             || self.ptr(player + 0x20)? != map
             || self.byte(player + 0x2a)? != force_id
         {
@@ -683,6 +724,13 @@ fn run() -> io::Result<i32> {
         if let Some(status) = child.try_wait()? {
             return Ok(status.code().unwrap_or(1));
         }
+        if reader.as_ref().is_some_and(Reader::retired) {
+            eprintln!("g13map-factorio: game address space ended; waiting for restarted Factorio");
+            reader = None;
+            guard = Guard::default();
+            warned = false;
+            next_scan = Instant::now();
+        }
         if reader.is_none() && !guard.disabled && Instant::now() >= next_scan {
             next_scan = Instant::now() + Duration::from_secs(1);
             if let Some(pid) = find_game(process::id()) {
@@ -700,12 +748,15 @@ fn run() -> io::Result<i32> {
                 }
             }
         }
-        let line = if let Some(r) = &reader {
+        let line = if guard.disabled {
+            "wait ttl 3\n".into()
+        } else if let Some(r) = &reader {
             match guard.observe(r.snapshot()) {
                 Ok(line) => line,
                 Err(e) => {
                     eprintln!("g13map-factorio: telemetry stopped after repeated invalid readings: {e}; game continues");
-                    reader = None;
+                    // Retain the handle to detect a later exec/exit. Do not retry
+                    // junk data within the same address space.
                     "wait ttl 3\n".into()
                 }
             }
@@ -737,6 +788,61 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn restart_process_fixture() {
+        use std::os::unix::process::CommandExt;
+        let Some(dir) = env::var_os("G13_FACTORIO_EXEC_FIXTURE").map(PathBuf::from) else {
+            return;
+        };
+        let phase = env::var("G13_FACTORIO_EXEC_PHASE").unwrap();
+        fs::write(dir.join("phase"), &phase).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !dir.join(format!("release-{phase}")).exists() {
+            assert!(Instant::now() < deadline, "restart fixture timed out");
+            thread::sleep(Duration::from_millis(10));
+        }
+        if phase == "1" {
+            panic!(
+                "exec failed: {}",
+                Command::new(dir.join("factorio"))
+                    .args(["--exact", "tests::restart_process_fixture", "--nocapture"])
+                    .env("G13_FACTORIO_EXEC_PHASE", "2")
+                    .exec()
+            );
+        }
+    }
+    #[test]
+    fn same_pid_exec_and_exit_retire_memory_handle() {
+        let dir = env::temp_dir().join(format!("g13-factorio-exec-{}", process::id()));
+        fs::create_dir(&dir).unwrap();
+        fs::copy(env::current_exe().unwrap(), dir.join("factorio")).unwrap();
+        let mut child = Command::new(dir.join("factorio"))
+            .args(["--exact", "tests::restart_process_fixture", "--nocapture"])
+            .env("G13_FACTORIO_EXEC_FIXTURE", &dir)
+            .env("G13_FACTORIO_EXEC_PHASE", "1")
+            .stdout(process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let phase = |expected: &str| {
+            let deadline = Instant::now() + Duration::from_secs(5);
+            while fs::read_to_string(dir.join("phase")).ok().as_deref() != Some(expected) {
+                assert!(Instant::now() < deadline, "child phase timed out");
+                thread::sleep(Duration::from_millis(10));
+            }
+        };
+        phase("1");
+        let old = Reader::open(child.id()).unwrap();
+        assert!(!old.retired());
+        fs::write(dir.join("release-1"), "").unwrap();
+        phase("2");
+        assert!(old.retired()); // same PID and same executable, a different mm
+        let restarted = Reader::open(child.id()).unwrap();
+        assert!(!restarted.retired());
+        fs::write(dir.join("release-2"), "").unwrap();
+        assert!(child.wait().unwrap().success());
+        assert!(restarted.retired());
+        fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn launch_script_named_factorio_is_not_the_native_game() {
         use std::os::unix::fs::PermissionsExt;

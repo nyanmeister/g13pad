@@ -144,11 +144,19 @@ The [native observer](../contrib/factorio-health/README.md) uses a read-only ext
 Rust reader with a launch wrapper; it requires no Factorio mod or console commands.
 The tested build is Linux x86-64 experimental 2.1.21 (87673). Other native builds
 are attempted automatically, using ELF symbols and validated readings; persistent
-junk disables telemetry for that launch. Use `g13map-factorio %command%` in Steam
+junk disables telemetry for that address space. Mod-sync restarts reopen the reader,
+including a restart that keeps the same PID. Use `g13map-factorio %command%` in Steam
 and Health mode `feed`.
 It supplies health, equipment shields, suit battery charge, current research, and
 base-attack alerts. BAT has a small gauge; the research line becomes ATTACK while
 alerts are active. A 300 ms full-LCD flash repeats at most once every six seconds.
+While riding, vehicle health takes the main gauge and character HP stays beside
+it. Three interlocked gears turn without a heartbeat; cracks appear on entering
+the orange band and remain at lower health (50% and below with default bands).
+Repairs above that band clear the cracks. Select `vehicle tread|gear|scan` in the
+profile's meter tuning file to change the animation; `gear` is the default.
+Long research names marquee after a
+short pause, with their percentage fixed.
 Use profile tuning `flash trace` to distinguish personal low-health beats.
 
 ## Other games

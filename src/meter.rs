@@ -37,6 +37,7 @@ use std::{
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(clippy::large_enum_variant)] // bounded Copy labels; avoid per-frame heap ownership
 pub enum State {
     /// Connected, no health yet.
     Wait,
@@ -55,6 +56,10 @@ pub enum State {
 /// is drawn for a word that is absent (asked 2026-10-08, for ULTRAKILL's V1).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Extra {
+    /// Vehicle prototype name: primary health belongs to the vehicle while riding.
+    pub vehicle: Label,
+    /// Character health, percent, while vehicle health is the primary value.
+    pub pilot: Option<u32>,
     /// Factorio suit battery charge, percent.
     pub battery: Option<u8>,
     /// Current research progress and its prototype name (one feed word).
@@ -84,6 +89,8 @@ pub struct Extra {
 
 impl Extra {
     pub const NONE: Extra = Extra {
+        vehicle: Label::EMPTY,
+        pilot: None,
         battery: None,
         research: None,
         technology: Label::EMPTY,
@@ -102,17 +109,17 @@ impl Extra {
 
 /// Bounded ASCII label in the Copy feed state. Underscores render as spaces.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Label([u8; 32]);
+pub struct Label([u8; 256]);
 impl Default for Label {
     fn default() -> Self {
         Self::EMPTY
     }
 }
 impl Label {
-    pub const EMPTY: Self = Self([0; 32]);
+    pub const EMPTY: Self = Self([0; 256]);
     fn parse(s: &str) -> Option<Self> {
         if s.is_empty()
-            || s.len() > 32
+            || s.len() > 256
             || !s
                 .bytes()
                 .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
@@ -124,7 +131,7 @@ impl Label {
         Some(label)
     }
     fn as_str(&self) -> &str {
-        std::str::from_utf8(&self.0[..self.0.iter().position(|c| *c == 0).unwrap_or(32)])
+        std::str::from_utf8(&self.0[..self.0.iter().position(|c| *c == 0).unwrap_or(256)])
             .unwrap_or("")
     }
 }
@@ -306,6 +313,13 @@ pub fn preview(name: &str) -> Option<Bitmap> {
 /// the watcher within two seconds of a change, so a colour or a timing can be tried
 /// on the glass without a rebuild (asked 2026-10-07). Absent keys keep their defaults;
 /// a line that does not parse is ignored.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VehicleStyle {
+    Tread,
+    Gear,
+    Scan,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Tuning {
     /// The backlight bands, lowest first; never empty, the first starts at 0.
@@ -326,6 +340,7 @@ pub struct Tuning {
     pub readout: [i32; 2],
     /// What beats in the corner: the heart, or V1 for ULTRAKILL (asked 2026-10-08).
     pub sprite: Sprite,
+    pub vehicle: VehicleStyle,
     /// The loopback port the Counter-Strike 2 listener takes.
     pub cs2_port: u16,
     /// The console log a `health log` profile follows; the newest file whose name
@@ -345,6 +360,7 @@ impl Default for Tuning {
             heart: [6, 5],
             readout: [157, 2],
             sprite: Sprite::Heart,
+            vehicle: VehicleStyle::Gear,
             cs2_port: CS2_PORT,
             log_file: crate::state_dir().join("game.log"),
         }
@@ -467,6 +483,14 @@ impl Tuning {
                         _ => t.sprite,
                     }
                 }
+                "vehicle" => {
+                    t.vehicle = match values.first() {
+                        Some(&"tread") => VehicleStyle::Tread,
+                        Some(&"gear") => VehicleStyle::Gear,
+                        Some(&"scan") => VehicleStyle::Scan,
+                        _ => t.vehicle,
+                    }
+                }
                 "cs2_port" => {
                     t.cs2_port = values
                         .first()
@@ -541,6 +565,14 @@ impl Tuning {
             self.cs2_port,
             self.log_file.display()
         ));
+        s.push_str(&format!(
+            "# Vehicle animation: tread, gear or scan.\nvehicle {}\n",
+            match self.vehicle {
+                VehicleStyle::Tread => "tread",
+                VehicleStyle::Gear => "gear",
+                VehicleStyle::Scan => "scan",
+            }
+        ));
         s
     }
     /// The band `pct` falls in: the highest one starting at or below it.
@@ -563,6 +595,13 @@ impl Tuning {
     }
     fn is_alarm(&self, pct: u32) -> bool {
         pct > 0 && self.band_at(pct).from == self.alarm().from
+    }
+    /// Damage starts when entering orange and persists in the lower bands.
+    fn vehicle_damaged(&self, pct: u32) -> bool {
+        self.bands
+            .iter()
+            .find(|b| b.name == "orange")
+            .map_or(pct <= 50, |orange| self.band_at(pct).from <= orange.from)
     }
     /// Notches on the health bar where each band above the alarm begins, up to full.
     fn notches(&self) -> Vec<i32> {
@@ -662,11 +701,13 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 _ => return None,
             },
             "cap" | "rank" | "style" | "time" | "dash" | "rail" | "mana" | "defense" | "breath"
-            | "battery" | "research" | "technology" | "attack" => {
+            | "battery" | "research" | "technology" | "attack" | "vehicle" | "pilot" => {
                 let State::Health { extra, .. } = &mut state else {
                     return None;
                 };
                 match key {
+                    "vehicle" => extra.vehicle = Label::parse(value)?,
+                    "pilot" => extra.pilot = Some(percent(value)?),
                     "battery" => extra.battery = Some(percent(value)?.min(100) as u8),
                     "research" => extra.research = Some(percent(value)?.min(100) as u8),
                     "technology" => extra.technology = Label::parse(value)?,
@@ -740,6 +781,12 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
                 "{pct} shield {shield}{}",
                 if helmet { " helmet on" } else { "" }
             );
+            if !extra.vehicle.as_str().is_empty() {
+                s.push_str(&format!(" vehicle {}", extra.vehicle.as_str()));
+            }
+            if let Some(pilot) = extra.pilot {
+                s.push_str(&format!(" pilot {pilot}"));
+            }
             if let Some(c) = extra.cap {
                 s.push_str(&format!(" cap {c}"));
             }
@@ -986,6 +1033,40 @@ fn gauge(bm: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, fill: u32) {
     }
 }
 
+/// Eight teeth and three cutouts remain legible in the small vehicle icon.
+/// Cracks rotate with the metal, rather than flickering with the heartbeat.
+fn gear(bm: &mut Bitmap, cx: i32, cy: i32, angle: f32, damaged: bool) {
+    use std::f32::consts::TAU;
+    let (sin, cos) = angle.sin_cos();
+    for dy in -6..=6 {
+        for dx in -6..=6 {
+            let radius = ((dx * dx + dy * dy) as f32).sqrt();
+            let theta = (dy as f32).atan2(dx as f32) - angle;
+            let tooth = (theta + TAU / 16.0).rem_euclid(TAU / 8.0) - TAU / 16.0;
+            let edge = 4.4 + 1.6 * (1.0 - (tooth.abs() - 0.11).max(0.0) / 0.13).max(0.0);
+            let hole = (theta + TAU / 6.0).rem_euclid(TAU / 3.0) - TAU / 6.0;
+            let along = dx as f32 * cos + dy as f32 * sin;
+            let across = (-dx as f32 * sin + dy as f32 * cos) * along.signum();
+            let bend = if (2.6..4.1).contains(&along.abs()) {
+                1.0
+            } else {
+                0.0
+            };
+            // A two-pixel-wide zigzag splits the metal all the way through its
+            // rim. Mask this wheel before compositing, so a crack cannot erase
+            // a neighbouring wheel at the interlocking teeth.
+            let crack = damaged && along.abs() > 1.0 && (across - bend).abs() <= 1.0;
+            if radius > 1.25
+                && radius <= edge
+                && !(radius > 2.0 && radius < 3.8 && hole.abs() < 0.22)
+                && !crack
+            {
+                bm.plot(cx + dx, cy + dy);
+            }
+        }
+    }
+}
+
 const BAR_X: i32 = 4;
 const BAR_W: i32 = 152;
 
@@ -1067,6 +1148,8 @@ pub struct Meter {
     /// Ticks at zero health.
     dead: u32,
     tick: u32,
+    research_name: Label,
+    research_started: u32,
     /// The look; the frame thread takes a new one from the file.
     pub tuning: Tuning,
 }
@@ -1080,6 +1163,8 @@ impl Default for Meter {
             beat_age: None,
             dead: 0,
             tick: 0,
+            research_name: Label::EMPTY,
+            research_started: 0,
             tuning: Tuning::default(),
         }
     }
@@ -1096,7 +1181,8 @@ impl Meter {
         self.tick = self.tick.wrapping_add(1);
         // A drop to zero always holds the dark flatline for the whole hold, whatever the
         // feed says meanwhile (asked 2026-10-07); only then does the next state show.
-        let zero = matches!(state, State::Health { pct: 0, .. });
+        let zero =
+            matches!(state, State::Health { pct: 0, extra, .. } if extra.vehicle == Label::EMPTY);
         self.dead = if zero || self.holding() {
             self.dead + 1
         } else {
@@ -1105,6 +1191,11 @@ impl Meter {
         match state {
             _ if self.holding() => self.alive(&mut bm, 0, 0, false, Extra::NONE),
             State::Wait => self.waiting(&mut bm),
+            State::Health {
+                pct, shield, extra, ..
+            } if extra.vehicle != Label::EMPTY => {
+                self.vehicle(&mut bm, pct, shield, extra);
+            }
             State::Health { pct: 0, .. } => self.waiting(&mut bm),
             State::Health {
                 pct,
@@ -1287,14 +1378,8 @@ impl Meter {
             bm.halo(43, 19, 95, 7);
             text(bm, 43, 19, &format!("ATTACK {attacks}"), 1);
         } else if let Some(research) = extra.research {
-            let name = extra.technology.as_str();
-            let name = if name.is_empty() { "SCIENCE" } else { name };
-            let label = format!(
-                "{:.9} {research}%",
-                name.replace(['-', '_'], " ").to_uppercase()
-            );
             bm.halo(43, 19, 95, 7);
-            text(bm, 43, 19, &label, 1);
+            self.research(bm, 43, 19, extra.technology, research);
         }
         bars(
             bm,
@@ -1317,6 +1402,109 @@ impl Meter {
                 }
             }
         }
+    }
+
+    fn vehicle(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, extra: Extra) {
+        // Returning on foot starts a fresh ECG instead of retaining old beats.
+        self.lift.fill(0);
+        self.u = 0;
+        self.beat_age = None;
+        let phase = (self.tick % 48) as i32;
+        match self.tuning.vehicle {
+            VehicleStyle::Tread => {
+                // A steady hull with circulating tread links, independent of HP.
+                bm.line(5, 9, 25, 9);
+                bm.line(5, 16, 25, 16);
+                bm.line(5, 9, 3, 12);
+                bm.line(3, 12, 5, 16);
+                bm.line(25, 9, 27, 12);
+                bm.line(27, 12, 25, 16);
+                bm.line(8, 7, 22, 7);
+                bm.line(8, 7, 8, 9);
+                bm.line(22, 7, 22, 9);
+                bm.line(13, 4, 19, 4);
+                bm.line(13, 4, 13, 7);
+                bm.line(19, 4, 19, 7);
+                bm.line(19, 5, 27, 5);
+                for x in 5..=25 {
+                    if (x + phase / 2) % 4 < 2 {
+                        bm.plot(x, 11);
+                        bm.plot(30 - x, 14);
+                    }
+                }
+            }
+            VehicleStyle::Gear => {
+                let angle = phase as f32 * std::f32::consts::TAU / 48.0;
+                let damaged = self.tuning.vehicle_damaged(pct);
+                // Adjacent wheels counter-rotate; the middle meshes with both.
+                gear(bm, 7, 6, angle, damaged);
+                gear(bm, 16, 12, -angle, damaged);
+                gear(bm, 25, 6, angle, damaged);
+            }
+            VehicleStyle::Scan => {
+                gauge(bm, 3, 2, 26, 18, 0);
+                let step = phase % 48;
+                let x = 4 + if step < 24 { step } else { 47 - step };
+                bm.line(x, 5, x, 16);
+                bm.line(x - 1, 7, x - 1, 14);
+            }
+        }
+        let label = extra
+            .vehicle
+            .as_str()
+            .replace(['-', '_'], " ")
+            .to_uppercase();
+        text(bm, 33, 2, &format!("{label:.13}"), 1);
+        readout(bm, &pct.min(999).to_string(), 157, 2);
+        if let Some(pilot) = extra.pilot {
+            text(bm, 33, 12, &format!("HP {pilot}%"), 1);
+        }
+        text(bm, 3, 23, &format!("SH {shield}%"), 1);
+        if let Some(battery) = extra.battery {
+            text(bm, 75, 12, &format!("BAT {battery}%"), 1);
+        }
+        if let Some(attacks) = extra.attack.filter(|n| *n > 0) {
+            text(bm, 55, 23, &format!("ATTACK {attacks}"), 1);
+        } else if let Some(research) = extra.research {
+            self.research(bm, 55, 23, extra.technology, research);
+        }
+        bars(
+            bm,
+            (BAR_W * pct.min(100) as i32 + 50) / 100,
+            0,
+            false,
+            &self.tuning.notches(),
+            None,
+        );
+    }
+
+    fn research(&mut self, bm: &mut Bitmap, x: i32, y: i32, label: Label, progress: u8) {
+        if label != self.research_name {
+            self.research_name = label;
+            self.research_started = self.tick;
+        }
+        let name = label.as_str();
+        let name = if name.is_empty() { "SCIENCE" } else { name };
+        let name = name.replace(['-', '_'], " ").to_uppercase();
+        const WIDTH: i32 = 53; // nine small glyphs, with progress in a separate slot
+        let length = name.len() as i32 * 6 - 1;
+        if length <= WIDTH {
+            text(bm, x, y, &name, 1);
+        } else {
+            let loop_width = length + 19; // three spaces between copies
+            let cycle = 12 + (loop_width as u32).div_ceil(2);
+            let phase = self.tick.wrapping_sub(self.research_started) % cycle;
+            let offset = phase.saturating_sub(12) as i32 * 2;
+            let mut clipped = Bitmap::blank();
+            text(&mut clipped, -offset, 0, &name, 1);
+            text(&mut clipped, loop_width - offset, 0, &name, 1);
+            for yy in 0..7 {
+                for xx in 0..WIDTH {
+                    bm.put(x + xx, y + yy, clipped.get(xx as usize, yy as usize));
+                }
+            }
+        }
+        text(bm, x + 56, y, &format!("{progress}%"), 1);
     }
 
     /// Connected, waiting for a pulse: a monitor sweep erasing a flat line ahead of its
@@ -1954,14 +2142,130 @@ mod tests {
             ),
             None
         );
-        for line in [
-            "100 attack -1",
-            "wait attack 1",
-            "100 technology bad/name",
-            "100 technology abcdefghijklmnopqrstuvwxyz0123456789",
-        ] {
+        for line in ["100 attack -1", "wait attack 1", "100 technology bad/name"] {
             assert!(parse(line, written, written).is_none(), "{line}");
         }
+        assert!(parse(
+            &format!("100 technology {}", "x".repeat(257)),
+            written,
+            written
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn vehicle_gears_crack_at_orange_and_recover_above_it() {
+        let mut tuning = Tuning::default();
+        assert_eq!(tuning.vehicle, VehicleStyle::Gear);
+        assert!(!tuning.vehicle_damaged(51));
+        for pct in [50, 26, 25, 0] {
+            assert!(tuning.vehicle_damaged(pct));
+        }
+        tuning
+            .bands
+            .iter_mut()
+            .find(|b| b.name == "yellow")
+            .unwrap()
+            .from = 71;
+        assert!(tuning.vehicle_damaged(70));
+        assert!(!tuning.vehicle_damaged(71));
+        tuning.bands.retain(|b| b.from <= 26);
+        assert!(tuning.vehicle_damaged(100)); // orange is the highest band
+        tuning.bands.retain(|b| b.name != "orange");
+        assert!(tuning.vehicle_damaged(50));
+        assert!(!tuning.vehicle_damaged(51)); // no named orange uses the fallback
+        let now = SystemTime::now();
+        let healthy = parse("51 vehicle car pilot 80", now, now).unwrap();
+        let damaged = parse("50 vehicle car pilot 80", now, now).unwrap();
+        let mut m = Meter::default();
+        let first = m.frame(healthy);
+        let later = m.frame(healthy);
+        assert!((0..19).any(|y| (0..33).any(|x| first.get(x, y) != later.get(x, y))));
+        for tick in 0..48 {
+            m.tick = tick;
+            let intact = m.frame(healthy);
+            m.tick = tick;
+            let cracked = m.frame(damaged);
+            let mut removed = 0;
+            for y in 0..19 {
+                for x in 0..33 {
+                    assert!(!cracked.get(x, y) || intact.get(x, y));
+                    removed += usize::from(intact.get(x, y) && !cracked.get(x, y));
+                }
+            }
+            assert!(removed >= 18, "cracks remain visible at phase {tick}");
+            m.tick = tick;
+            let recovered = m.frame(healthy);
+            assert_eq!(intact, recovered);
+        }
+    }
+
+    #[test]
+    fn vehicle_render_does_not_beat_or_latch_vehicle_zero() {
+        let now = SystemTime::now();
+        let state = parse("20 vehicle tank pilot 60 shield 20 battery 100", now, now).unwrap();
+        let State::Health { pct, extra, .. } = state else {
+            panic!("expected vehicle")
+        };
+        assert_eq!(pct, 20);
+        assert_eq!(extra.pilot, Some(60));
+        for style in [VehicleStyle::Tread, VehicleStyle::Gear, VehicleStyle::Scan] {
+            let mut m = Meter::default();
+            m.tuning.vehicle = style;
+            m.tick = i32::MAX as u32; // animations remain safe across the signed boundary
+            let first = m.frame(state);
+            for _ in 0..48 {
+                let frame = m.frame(state);
+                for y in 2..19 {
+                    for x in 33..W {
+                        assert_eq!(first.get(x, y), frame.get(x, y), "vitals stay steady");
+                    }
+                }
+                assert!(m.lift.iter().all(|v| *v == 0));
+                assert_eq!(m.beat_age, None);
+            }
+            m.frame(parse("0 vehicle tank pilot 60", now, now).unwrap());
+            assert_eq!(m.dead, 0);
+            m.frame(State::health(60));
+            assert!(!m.holding());
+        }
+        for line in ["wait vehicle tank", "100 pilot NaN", "100 vehicle bad/name"] {
+            assert!(parse(line, now, now).is_none());
+        }
+    }
+
+    #[test]
+    fn research_marquee_clips_name_and_keeps_percentage_fixed() {
+        let label = Label::parse("advanced_uranium_fuel_processing").unwrap();
+        let mut m = Meter::default();
+        let mut first = Bitmap::blank();
+        m.research(&mut first, 43, 19, label, 37);
+        let mut paused = Bitmap::blank();
+        m.tick = 12;
+        m.research(&mut paused, 43, 19, label, 37);
+        assert_eq!(first, paused);
+        let mut later = Bitmap::blank();
+        m.tick = 24;
+        m.research(&mut later, 43, 19, label, 37);
+        assert_ne!(first, later);
+        for y in 0..H {
+            for x in 0..W {
+                if !(43..96).contains(&x) {
+                    assert_eq!(first.get(x, y), later.get(x, y), "only the name scrolls");
+                }
+            }
+        }
+        let mut changed = Bitmap::blank();
+        m.research(
+            &mut changed,
+            43,
+            19,
+            Label::parse("advanced_solar_power").unwrap(),
+            37,
+        );
+        assert_eq!(m.research_started, 24);
+        assert_eq!(Label::parse(&"x".repeat(256)).unwrap().as_str().len(), 256);
+        assert!(Label::parse(&"x".repeat(257)).is_none());
     }
 
     #[test]
@@ -2110,6 +2414,11 @@ mod tests {
     fn feed_file_round_trip() {
         let _box = Sandbox::new("meter");
         assert_eq!(read(), None);
+        let now = SystemTime::now();
+        let vehicle = parse("60 vehicle tank pilot 150/250 shield 20 battery 25 research 37 technology advanced-oil-processing", now, now).unwrap();
+        write(Some(vehicle), Some(Duration::from_secs(30))).unwrap();
+        assert_eq!(read(), Some(vehicle));
+        write(None, None).unwrap();
         write(
             Some(State::Health {
                 pct: 42,
@@ -2450,6 +2759,33 @@ mod dump {
             }
         }
         fs::write(dir.join(name), bytes).unwrap();
+    }
+    #[test]
+    #[ignore]
+    fn vehicles() {
+        let Some(dir) = std::env::var_os("G13MAP_METER_DUMP") else {
+            return;
+        };
+        for (tag, style, pct) in [
+            ("tread", VehicleStyle::Tread, 60),
+            ("gear", VehicleStyle::Gear, 60),
+            ("scan", VehicleStyle::Scan, 60),
+            ("gear-cracked", VehicleStyle::Gear, 40),
+        ] {
+            let state = parse(&format!("{pct} vehicle tank pilot 80 shield 20 battery 25 research 37 technology military attack 0"), SystemTime::now(), SystemTime::now()).unwrap();
+            let dir = PathBuf::from(&dir).join(tag);
+            fs::create_dir_all(&dir).unwrap();
+            let mut m = Meter::default();
+            m.tuning.vehicle = style;
+            let mut colours = String::new();
+            for i in 0..48 {
+                let bm = m.frame(state);
+                pbm(&dir, &format!("demo-{i:03}.pbm"), &bm);
+                let [r, g, b] = m.colour(state, [0, 0, 0]);
+                colours.push_str(&format!("{r} {g} {b}\n"));
+            }
+            fs::write(dir.join("demo.colours"), colours).unwrap();
+        }
     }
     #[test]
     #[ignore]
