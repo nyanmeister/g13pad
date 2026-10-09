@@ -240,13 +240,14 @@ pub fn run() {
     finish(cli::dispatch(&env::args().skip(1).collect::<Vec<_>>()));
 }
 
-#[cfg(feature = "editor")]
 /// `g13map-obs`: the OBS overlay window (launched by `g13map obs`).
+#[cfg(feature = "editor")]
 pub fn run_obs() {
     let args: Vec<String> = env::args().skip(1).collect();
     finish(obs::run(&args));
 }
 
+#[cfg(feature = "editor")]
 pub fn run_editor() {
     let args: Vec<String> = env::args().skip(1).collect();
     let result = match args.as_slice() {
