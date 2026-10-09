@@ -233,15 +233,16 @@ report 7; the kernel's `hid-lg-g15` driver says the same), so they cannot be lit
 different colours, and the glass only looks paler than the keys because of its diffuser.
 The G13's LEDs are not a monitor's primaries, so `~/.config/g13map/glass` translates
 backlight values to what the glass shows; the source, the overlay window and the
-README's GIF draw through it. `g13map glass` (0.2.42, also the OBS panel's **Match the
+README's GIF draw through it. `g13map glass` (0.2.42, glow 0.2.43; also the OBS panel's **Match the
 glass…**) fills it in by eye: a course of backlight colours (each LED alone, all three,
 then every colour your profiles and the health meter use), each set on the pad while the
 window shows the LCD as the screen will draw it; drag the colour until the two agree and
 step on. Three matches fix a fit (the LEDs add linearly, so the monitor colour of each LED
 alone gives every mix), the later steps start from its prediction, and Save writes the
-file (`R G B  R G B` matched pairs, `lit` for how white a lit pixel is, `fit` for the
-rest), which the windows and the source pick up as soon as it changes. `g13map glass fit`
-re-solves the fit after a hand edit.
+file (`R G B  R G B` matched pairs, `glow` for how many times the background's light a
+lit pixel passes, the same colour brighter and only paler where a channel has no headroom,
+`fit` for the rest), which the windows and the source pick up as soon as it changes.
+`g13map glass fit` re-solves the fit after a hand edit.
 
 Without OBS, or on a machine without the plugin, `g13map obs` (0.2.39) is the same
 picture as a borderless transparent window ("G13 overlay"; `--lcd N` the LCD alone as

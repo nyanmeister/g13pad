@@ -164,7 +164,10 @@ took, for the next thing that wants to show the pad or the glass on a monitor:
   equal to the generator, so regenerate after changing the art.
 - **The glass table** (src/glass.rs, `~/.config/g13map/glass`) is the one place that
   translates LED values to monitor colours; draw the LCD through `Glass::render`
-  rather than inventing colours. The lit tint is 55 % toward white, as the README GIF.
+  rather than inventing colours. A lit pixel is the background's light `glow` times
+  over (2 by default), the same colour brighter, going pale only where a channel has no
+  headroom; the old blend toward white desaturated, which the owner saw at once beside
+  the glass. `g13map glass` is the by-eye course that fills the file.
 - **The OBS plugin** (`obs/g13pad-obs.c`, 0.2.41) is the real answer to "a source like
   the others": libobs C API, `gs_image_file4_init` with `GS_IMAGE_ALPHA_PREMULTIPLY`,
   blend ONE/INVSRCALPHA with sRGB framebuffer like image-source, one

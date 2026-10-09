@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! How the G13's glass looks on a monitor: the LCD is lit by the backlight LEDs, so a
-//! frame drawn to a screen is the backlight colour for a dark pixel and a lighter tint
-//! of it for a lit one. The LEDs are not a monitor's primaries (the red is weak next
-//! to the green and blue: the value that is orange on the glass is nearly red on a
-//! monitor), so `~/.config/g13map/glass` translates LED values to what the glass shows.
+//! frame drawn to a screen is the backlight colour for a dark pixel and the same colour
+//! brighter for a lit one (a clear pixel passes more of the same light). The LEDs are
+//! not a monitor's primaries (the red is weak next to the green and blue: the value that
+//! is orange on the glass is nearly red on a monitor), so `~/.config/g13map/glass`
+//! translates LED values to what the glass shows.
 //!
 //! The file holds colours matched by eye against the pad, one `R G B  R G B` line each
-//! (LED, then monitor), a `lit` line (how far lit pixels sit from the background toward
-//! white) and a `fit` line: the linear-light monitor colour of each LED alone, solved by
+//! (LED, then monitor), a `glow` line (how many times the background's light a lit pixel
+//! passes; it drifts toward white only where a channel has no headroom left, as the eye
+//! sees an over-bright colour) and a `fit` line: the linear-light monitor colour of each LED alone, solved by
 //! least squares from the matched pairs (asked 2026-10-08, `g13map glass`). A listed
 //! colour is shown as matched; any other goes through the fit (LED light adds linearly,
 //! so three independent matches fix the whole gamut); without a fit it is shown as it is.
@@ -22,8 +24,9 @@ pub type Rgb = [u8; 3];
 /// channel `c` as a weight on the red, green and blue LEDs.
 pub type Fit = [[f32; 3]; 3];
 
-/// Lit pixels sit this far from the background toward white, unless the file says.
-pub const LIT: f32 = 0.55;
+/// Lit pixels pass this many times the background's light, unless the file says
+/// (asked 2026-10-08: "the pixels look like a brighter version of the existing colour").
+pub const GLOW: f32 = 2.0;
 
 /// The built-in translation, the one the README's GIF was made with.
 const DEFAULT: &[(Rgb, Rgb)] = &[([0, 255, 0], [0, 150, 0]), ([255, 48, 0], [255, 128, 0])];
@@ -32,7 +35,7 @@ const DEFAULT: &[(Rgb, Rgb)] = &[([0, 255, 0], [0, 150, 0]), ([255, 48, 0], [255
 pub struct Glass {
     /// Matched by eye: LED value, what the monitor shows for it.
     pub table: Vec<(Rgb, Rgb)>,
-    pub lit: f32,
+    pub glow: f32,
     pub fit: Option<Fit>,
 }
 
@@ -40,7 +43,7 @@ impl Default for Glass {
     fn default() -> Self {
         Glass {
             table: DEFAULT.to_vec(),
-            lit: LIT,
+            glow: GLOW,
             fit: None,
         }
     }
@@ -91,17 +94,17 @@ impl Glass {
     pub fn parse(text: &str) -> Glass {
         let mut glass = Glass {
             table: Vec::new(),
-            lit: LIT,
+            glow: GLOW,
             fit: None,
         };
         for line in text.lines() {
             let line = line.split('#').next().unwrap_or("");
             let mut words = line.split_whitespace();
             match words.next() {
-                Some("lit") => {
+                Some("glow") => {
                     if let Some(v) = words.next().and_then(|w| w.parse::<f32>().ok()) {
-                        if (0.0..=1.0).contains(&v) {
-                            glass.lit = v;
+                        if (1.0..=8.0).contains(&v) {
+                            glass.glow = v;
                         }
                     }
                 }
@@ -140,9 +143,9 @@ impl Glass {
             ));
         }
         out.push_str(&format!(
-            "# Lit pixels sit this far from the background toward white (0 to 1).\n\
-             lit {:.2}\n",
-            self.lit
+            "# A lit pixel passes this many times the background's light (1 to 8).\n\
+             glow {:.2}\n",
+            self.glow
         ));
         if let Some(fit) = &self.fit {
             out.push_str(
@@ -247,8 +250,7 @@ impl Glass {
     /// The two colours of a frame under this backlight: dark pixels, lit pixels.
     pub fn pair(&self, led: Rgb) -> (Rgb, Rgb) {
         let bg = self.shown(led);
-        let lit = bg.map(|c| (c as f32 + (255.0 - c as f32) * self.lit).round() as u8);
-        (bg, lit)
+        (bg, glow(bg, self.glow))
     }
 
     /// The frame as the glass would show it, one RGBA pixel per LCD pixel.
@@ -263,6 +265,20 @@ impl Glass {
         }
         out
     }
+}
+
+/// The background's light `times` over, in linear light: the same colour brighter while
+/// every channel fits the monitor; past that the overflow goes to white, so a colour with
+/// no headroom (full blue) reads as a pale version rather than clipping to itself. The
+/// OBS source plugin applies the same formula.
+pub fn glow(bg: Rgb, times: f32) -> Rgb {
+    let l = bg.map(|c| to_linear(c) * times);
+    let m = l[0].max(l[1]).max(l[2]);
+    if m <= 1.0 {
+        return l.map(to_srgb);
+    }
+    let white = 1.0 - 1.0 / m;
+    l.map(|c| to_srgb(c / m * (1.0 - white) + white))
 }
 
 /// `g13map glass fit`: solve the fit from the file's pairs and write it back.
@@ -311,26 +327,36 @@ mod tests {
     }
 
     #[test]
-    fn lit_pixels_tint_toward_white() {
+    fn lit_pixels_are_the_background_brighter() {
+        // Headroom: the same colour, twice the light, no drift toward white.
+        assert_eq!(glow([0, 150, 0], 2.0), [0, 205, 0]);
+        assert_eq!(glow([0, 150, 0], 1.0), [0, 150, 0]);
+        assert_eq!(glow([0, 0, 0], 3.0), [0, 0, 0]);
+        // No headroom: full blue cannot get bluer, so half the overflow is white.
         let (bg, lit) = Glass::default().pair([0, 0, 255]);
         assert_eq!(bg, [0, 0, 255]);
-        assert_eq!(lit, [140, 140, 255]);
+        assert_eq!(lit, [188, 188, 255]);
+        // A mixed colour keeps its hue order while brightening.
+        let [r, g, b] = glow([91, 86, 131], 2.0);
+        assert!(b > r && r > g && b > 131, "{r} {g} {b}");
         let mut frame = Bitmap::blank();
         frame.set(0, 0, true);
         let px = Glass::default().render(&frame, [0, 0, 255]);
-        assert_eq!(&px[..4], &[140, 140, 255, 255]);
+        assert_eq!(&px[..4], &[188, 188, 255, 255]);
         assert_eq!(&px[4..8], &[0, 0, 255, 255]);
         assert_eq!(px.len(), W * H * 4);
-        let dim = Glass::parse("lit 0.2\n");
-        assert_eq!(dim.pair([0, 0, 255]).1, [51, 51, 255]);
+        let dim = Glass::parse("glow 1.5\n");
+        assert_eq!(dim.pair([0, 150, 0]).1, glow([0, 150, 0], 1.5));
     }
 
     #[test]
-    fn lit_and_fit_lines_parse_and_bad_ones_are_ignored() {
-        let g = Glass::parse("lit 2\nlit x\nfit 1 2 3\nfit 1 0 0 0 1 0 0 0 nan\n");
-        assert_eq!((g.lit, g.fit), (LIT, None));
-        let g = Glass::parse("lit 0.3 # tint\nfit 1 0 0  0 1 0  0 0 1\n");
-        assert_eq!(g.lit, 0.3);
+    fn glow_and_fit_lines_parse_and_bad_ones_are_ignored() {
+        let g = Glass::parse(
+            "glow 0.5\nglow 9\nglow x\nlit 0.55\nfit 1 2 3\nfit 1 0 0 0 1 0 0 0 nan\n",
+        );
+        assert_eq!((g.glow, g.fit), (GLOW, None));
+        let g = Glass::parse("glow 3 # bright\nfit 1 0 0  0 1 0  0 0 1\n");
+        assert_eq!(g.glow, 3.0);
         assert_eq!(
             g.fit,
             Some([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]])
@@ -360,7 +386,7 @@ mod tests {
         let truth: Fit = [[0.9, 0.05, 0.0], [0.1, 0.6, 0.1], [0.0, 0.1, 0.9]];
         let oracle = Glass {
             table: vec![],
-            lit: LIT,
+            glow: GLOW,
             fit: Some(truth),
         };
         let leds: [Rgb; 7] = [
@@ -377,7 +403,7 @@ mod tests {
                 .iter()
                 .map(|&led| (led, oracle.predicted(led).unwrap()))
                 .collect(),
-            lit: LIT,
+            glow: GLOW,
             fit: None,
         };
         let fit = g.refit().expect("seven pairs span the LEDs");
@@ -419,11 +445,11 @@ mod tests {
     #[test]
     fn text_round_trips() {
         let mut g =
-            Glass::parse("255 0 0  250 40 10\n0 255 0  30 160 20\n0 0 255  20 40 255\nlit 0.4\n");
+            Glass::parse("255 0 0  250 40 10\n0 255 0  30 160 20\n0 0 255  20 40 255\nglow 2.5\n");
         g.refit().unwrap();
         let back = Glass::parse(&g.to_text());
         assert_eq!(back.table, g.table);
-        assert_eq!(back.lit, g.lit);
+        assert_eq!(back.glow, g.glow);
         let (a, b) = (back.fit.unwrap(), g.fit.unwrap());
         for i in 0..3 {
             for j in 0..3 {

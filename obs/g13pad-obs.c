@@ -27,7 +27,7 @@ OBS_MODULE_USE_DEFAULT_LOCALE("g13pad-obs", "en-US")
 #define KEY_LEN 16
 #define POLL_SECONDS 0.01f
 #define GLASS_SECONDS 2.0f
-#define LIT 0.55f
+#define GLOW 2.0f
 
 #ifndef G13PAD_OBS_SHEET_DIR
 #define G13PAD_OBS_SHEET_DIR "/usr/share/g13pad/obs"
@@ -72,9 +72,10 @@ struct g13 {
 	struct glass_entry *glass;
 	size_t nglass;
 	time_t glass_mtime;
-	// From the same file: how far lit pixels sit toward white, and the fit (the
-	// linear-light monitor colour of each LED alone) for colours not in the table.
-	float lit;
+	// From the same file: how many times the background's light a lit pixel passes,
+	// and the fit (the linear-light monitor colour of each LED alone) for colours not
+	// in the table.
+	float glow;
 	float fit[9];
 	bool have_fit;
 };
@@ -117,7 +118,7 @@ static void glass_load(struct g13 *s)
 	bfree(s->glass);
 	s->glass = NULL;
 	s->nglass = 0;
-	s->lit = LIT;
+	s->glow = GLOW;
 	s->have_fit = false;
 	char *text = mtime ? os_quick_read_utf8_file(path.array) : NULL;
 	if (!text) {
@@ -135,9 +136,9 @@ static void glass_load(struct g13 *s)
 			if (hash)
 				*hash = 0;
 			float f[9];
-			if (sscanf(line, " lit %f", &f[0]) == 1) {
-				if (f[0] >= 0.0f && f[0] <= 1.0f)
-					s->lit = f[0];
+			if (sscanf(line, " glow %f", &f[0]) == 1) {
+				if (f[0] >= 1.0f && f[0] <= 8.0f)
+					s->glow = f[0];
 				continue;
 			}
 			if (sscanf(line, " fit %f %f %f %f %f %f %f %f %f", &f[0], &f[1], &f[2], &f[3], &f[4],
@@ -203,13 +204,38 @@ static void glass_shown(const struct g13 *s, const uint8_t led[3], uint8_t out[3
 	}
 }
 
-// The frame as the glass shows it: the backlight colour, lit pixels tinted toward white.
+// sRGB byte to linear light.
+static float to_linear(uint8_t v)
+{
+	float c = v / 255.0f;
+	return c <= 0.04045f ? c / 12.92f : powf((c + 0.055f) / 1.055f, 2.4f);
+}
+
+// The background's light `times` over (as glass.rs): the same colour brighter while every
+// channel fits the monitor, the overflow going to white past that.
+static void glow(const uint8_t bg[3], float times, uint8_t out[3])
+{
+	float l[3], m = 0.0f;
+	for (int i = 0; i < 3; i++) {
+		l[i] = to_linear(bg[i]) * times;
+		m = l[i] > m ? l[i] : m;
+	}
+	if (m <= 1.0f) {
+		for (int i = 0; i < 3; i++)
+			out[i] = to_srgb(l[i]);
+		return;
+	}
+	float white = 1.0f - 1.0f / m;
+	for (int i = 0; i < 3; i++)
+		out[i] = to_srgb(l[i] / m * (1.0f - white) + white);
+}
+
+// The frame as the glass shows it: the backlight colour, lit pixels the same light brighter.
 static void compose_lcd(struct g13 *s)
 {
 	uint8_t bg[3], lit[3];
 	glass_shown(s, s->backlight, bg);
-	for (int i = 0; i < 3; i++)
-		lit[i] = (uint8_t)(bg[i] + (255.0f - bg[i]) * s->lit + 0.5f);
+	glow(bg, s->glow, lit);
 	for (int y = 0; y < LCD_H; y++) {
 		for (int x = 0; x < LCD_W; x++) {
 			bool on = (s->lcd[x + (y / 8) * LCD_W] >> (y % 8)) & 1;

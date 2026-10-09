@@ -659,6 +659,16 @@ among them, native windows not. A login session on a Wayland compositor was not 
 the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
 scan) is the same one the X11 source uses for `DISPLAY`.
 
+### 0.2.43 — lit pixels as the same light, brighter — 2026-10-08
+
+With the preview beside the glass the owner saw that lit pixels are a brighter version of
+the backlight colour, not a tint toward white (a clear LCD pixel passes more of the same
+light). The `lit` blend became `glow`: the background's linear light times a factor (2 by
+default, a slider in the course), drifting toward white only where a channel has no
+headroom left (full blue at 2x reads 188 188 255; a profile blue such as 91 86 131 keeps
+its hue order). The plugin applies the same formula. Tests pin the three cases; the
+offscreen parity check of 0.2.42 was repeated for the new numbers (recorded below).
+
 ### 0.2.42 — the glass matched by eye — 2026-10-08
 
 The glass table grew from an exact-match list into a model: matched pairs, a `lit`

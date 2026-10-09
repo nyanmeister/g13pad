@@ -261,8 +261,8 @@ impl eframe::App for Calibrate {
                     }
                     ui.add_space(8.0);
                     ui.add(
-                        egui::Slider::new(&mut self.glass.lit, 0.0..=1.0)
-                            .text("lit pixels toward white"),
+                        egui::Slider::new(&mut self.glass.glow, 1.0..=6.0)
+                            .text("lit pixels: times the background's light"),
                     );
                     ui.add_space(8.0);
                     let matches = self.glass.table.len();
