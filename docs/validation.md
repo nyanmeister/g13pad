@@ -752,10 +752,10 @@ pipes and `g13map obs` draws the pad in its own transparent window from them.
   the body (alpha carried). Rewriting the keys file lit G1, G7, G22, M2, L3, BD, LEFT
   and the stick click cyan within a frame, moved the cap to (255, 30), and turned the
   LCD box from blue to the glass table's orange; `--lcd 3` opened the 480x129 LCD window.
-- On the VM (anarchy-virtual, XFCE, the pad attached) with the new `g13d` through a
+- On the test VM (XFCE, the pad attached) with the new `g13d` through a
   `g13.service` drop-in: `/run/g13d/g13-0_keys` held `stick 128 128`, `backlight 0 80
   160`, `keys` and `g13-0_lcd` the 960-byte logo at once after the restart; the
-  overlay on the live display drew the logo in that blue. Then on Triad with the pad
+  overlay on the live display drew the logo in that blue. Then on the desktop with the pad
   back and 0.2.39 installed: every key lit on the window as pressed, the backlight
   button included, the stick cap followed the stick and its click, and the LCD box
   showed the glass (his words: "Every key that can be pressed lights up, including the

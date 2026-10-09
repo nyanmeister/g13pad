@@ -174,7 +174,7 @@ took, for the next thing that wants to show the pad or the glass on a monitor:
   through it. Arch's `obs-studio` package carries the headers and the CMake package
   (`OBS::libobs`).
 - **Testing OBS headless touched the live config once.** `HOME=` alone is not enough:
-  this session exports `XDG_CONFIG_HOME=/home/user/.config`, so an OBS started with a
+  this session exports `XDG_CONFIG_HOME=$HOME/.config`, so an OBS started with a
   scratch HOME loaded and *saved* the real profile and scene collection (restored from
   `Untitled.json.bak`; the ini files were rewritten and could not be checked). Set
   `XDG_CONFIG_HOME`, `XDG_DATA_HOME` and `XDG_CACHE_HOME` to the scratch tree, confirm
