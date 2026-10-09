@@ -171,15 +171,24 @@ unshifted key labels.
 A profile can carry window rules: when a window of a matching class (`firefox`, `steam`,
 the game) has focus, the watcher switches to that profile, and back when it loses focus.
 Under i3 or sway the watcher listens on the IPC socket; under any other X11 window manager
-it reads the focused window from the root window's EWMH properties, which xfwm4 (XFCE),
-KWin, Mutter, Marco, Openbox and the rest all set. The journal says which one it found
-(`window focus: Xfwm4 on display :0`). On Wayland, a compositor that offers the
-foreign-toplevel protocol (sway, labwc, river, wayfire, niri, Hyprland) is followed through
-it, the app id standing in for the class; under KDE Plasma and GNOME, which offer nothing
-to ordinary clients, the X11 clients on their Xwayland (Steam and every Proton game among
-them) are still followed, their native windows not. `g13map focus windows` lists the
-windows the manager knows with their classes and marks the focused one, so a rule can be
-written from a terminal; the editor's **Windows…** panel shows the same list.
+it reads the focused window from the root window's EWMH properties; on Wayland it uses the
+foreign-toplevel protocol where a compositor offers it, the app id standing in for the
+class. The journal says which one it found (`window focus: Xfwm4 on display :0`).
+`g13map focus windows` lists the windows the manager knows with their classes and marks
+the focused one, so a rule can be written from a terminal; the editor's **Windows…** panel
+shows the same list.
+
+Where it works, as checked on a test machine with the pad attached (details in the
+[validation record](docs/validation.md)):
+
+| session | window rules |
+|---|---|
+| X11: i3, XFCE (xfwm4), KDE Plasma (KWin), MATE (Marco), Openbox, Fluxbox, IceWM, awesome, bspwm, herbstluftwm | yes, all checked |
+| Wayland: sway, labwc, wayfire, river 0.3 (`river-classic`), niri | yes, all checked |
+| Wayland: Hyprland | expected (it offers the protocol), not checked: it needs a GPU |
+| Wayland: KDE Plasma, GNOME | X11 clients only (Steam and every Proton game among them), through their Xwayland; native windows are not followed |
+| Wayland: river 0.4 | no (it is a framework that needs a window-manager client) |
+| GNOME on X11 | gone upstream (Mutter 51 has no X11 mode) |
 
 ### Pictures, text and animations
 
