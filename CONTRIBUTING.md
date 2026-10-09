@@ -58,6 +58,13 @@ It requires Xvfb, the window manager, xterm, xdotool, xprop and Perl, and exerci
 `g13map focus windows` and a `g13map watch` switching profiles by focus against the
 stand-in daemon pipes; nothing touches the live display.
 
+The same under a headless Wayland compositor (labwc unless `G13PAD_TEST_COMPOSITOR` names
+sway, wayfire or river; niri nested with `G13PAD_TEST_PARENT=sway`), with foot as the client:
+
+```sh
+G13PAD_TEST_BINARY=build/rust/release/g13map sh tools/check-focus-wayland.sh build/wfocus-review
+```
+
 For a before/after check with real configuration copies, use
 `tools/check-local-comparison.sh OLD_BIN_DIR NEW_BIN_DIR CONFIG_COPY OUTPUT_DIRECTORY`.
 It compares Norman layout JSON, 30 disconnected panel polls, and editor screenshots

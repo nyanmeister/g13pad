@@ -4,11 +4,13 @@
 //! it. Lit M-keys override the window's profile while modes are on; MR clears back to it
 //! (see `modes`).
 //!
-//! Two sources, the first that answers wins: i3 (and sway, which speaks the same IPC)
-//! reports focus changes over its socket; any other X11 window manager is read through the
-//! EWMH root-window properties (`xfocus`). The i3 IPC is spoken directly (i3 4.x): the magic
-//! "i3-ipc", a u32 length, a u32 type and the JSON payload, both ways; an event reply has
-//! the top bit of its type set.
+//! Three sources, the first that answers wins: i3 (and sway, which speaks the same IPC)
+//! reports focus changes over its socket; a Wayland compositor with the foreign-toplevel
+//! protocol lists its toplevels (`wfocus`); any other X11 window manager is read through
+//! the EWMH root-window properties (`xfocus`), which under Xwayland still covers the X11
+//! clients of a compositor without that protocol. The i3 IPC is spoken directly (i3 4.x):
+//! the magic "i3-ipc", a u32 length, a u32 type and the JSON payload, both ways; an event
+//! reply has the top bit of its type set.
 use serde_json::Value;
 use std::{
     env, fs,
@@ -116,7 +118,8 @@ pub struct Win {
 pub fn windows() -> Result<Vec<Win>, String> {
     match socket() {
         Ok(s) => i3_windows(s),
-        Err(i3) => crate::xfocus::windows().map_err(|x| format!("no i3 ({i3}); {x}")),
+        Err(i3) => crate::wfocus::windows()
+            .or_else(|w| crate::xfocus::windows().map_err(|x| format!("no i3 ({i3}); {w}; {x}"))),
     }
 }
 
@@ -157,7 +160,9 @@ pub fn follow(tx: mpsc::Sender<String>) {
                 }
                 socket().and_then(|s| subscribe(s, &tx))
             }
-            Err(i3) => crate::xfocus::follow(&tx).map_err(|x| format!("no i3 ({i3}); {x}")),
+            Err(i3) => crate::wfocus::follow(&tx).or_else(|w| {
+                crate::xfocus::follow(&tx).map_err(|x| format!("no i3 ({i3}); {w}; {x}"))
+            }),
         };
         match connected {
             Ok(()) => return, // the receiver is gone

@@ -631,3 +631,30 @@ fluxbox on a headless display the reverse. It also waits until the plain xterm i
 focused window before starting the watcher, since the window mapped last takes focus on
 some managers and not others. GNOME is Wayland-only upstream, so GNOME users are the
 largest group still without window rules.
+
+## 0.2.37 — window rules on Wayland — 2026-10-08
+
+A third focus source (`src/wfocus.rs`) speaks `wlr-foreign-toplevel-management` over
+wayland-client (in the lock through the editor): every toplevel's app id, title and
+activated state, the app id standing in for the X11 class (an Xwayland window's app id is
+its WM_CLASS class). The socket is `$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY` from the process or
+the user manager, else the newest `wayland-N` there. Order of sources: i3/sway IPC,
+Wayland, X11. The CLI: 1,039,856 → 1,201,672 bytes.
+
+`tools/check-focus-wayland.sh` (a headless compositor in a private runtime directory, foot
+windows of two app ids, the stand-in daemon pipes; focus moves by opening and closing
+windows, which every compositor agrees on) on the test VM, 2026-10-08 evening:
+
+| compositor | result |
+|---|---|
+| labwc, wayfire, sway (through the protocol; the IPC path is not found from outside) | pass |
+| river-classic 0.3 (river 0.4 is a framework needing a window-manager client) | pass |
+| niri, nested inside a headless sway (no headless backend of its own) | pass |
+| Hyprland | not run: crashes without a GPU, headless or nested; implements the protocol upstream |
+| KWin (`kwin_wayland --virtual --xwayland`) | no toplevel protocol for ordinary clients; its Xwayland root carries `_NET_SUPPORTING_WM_CHECK` and `_NET_ACTIVE_WINDOW`, and `focus windows` over X11 listed the X11 client |
+| Mutter 51 (`mutter --headless --wayland`) | the same, with Mutter's Xwayland authority file (`$XDG_RUNTIME_DIR/.mutter-Xwaylandauth.*`, which a GNOME session exports as XAUTHORITY) |
+
+So KDE Plasma and GNOME on Wayland follow their X11 clients only: Steam and Proton games
+among them, native windows not. A login session on a Wayland compositor was not exercised;
+the environment path (`WAYLAND_DISPLAY` in the user manager, else the runtime directory
+scan) is the same one the X11 source uses for `DISPLAY`.

@@ -26,9 +26,9 @@ Here is the editor, opened with `g13map edit`:
 
 Builds and package staging never touch the running system. Everything works on any X11
 desktop: window rules (profile switching by focused window) follow i3 and sway through
-their IPC and every other window manager through the EWMH root-window properties, which
-XFCE's xfwm4, KWin, Mutter, Marco, Openbox and the rest all set. Panel applets exist for
-LXQt, XFCE and Waybar.
+their IPC, every other X11 window manager through the EWMH root-window properties, and
+Wayland compositors through the foreign-toplevel protocol (KDE and GNOME on Wayland: their
+X11 clients only). Panel applets exist for LXQt, XFCE and Waybar.
 
 ## On the LCD
 
@@ -61,7 +61,7 @@ comes off. `g13map health demo` runs the states on your own panel. See
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.36.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.37.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -173,10 +173,13 @@ the game) has focus, the watcher switches to that profile, and back when it lose
 Under i3 or sway the watcher listens on the IPC socket; under any other X11 window manager
 it reads the focused window from the root window's EWMH properties, which xfwm4 (XFCE),
 KWin, Mutter, Marco, Openbox and the rest all set. The journal says which one it found
-(`window focus: Xfwm4 on display :0`). `g13map focus windows` lists the windows the
-manager knows with their classes and marks the focused one, so a rule can be written from
-a terminal; the editor's **Windows…** panel shows the same list. Wayland sessions other
-than sway are not followed yet.
+(`window focus: Xfwm4 on display :0`). On Wayland, a compositor that offers the
+foreign-toplevel protocol (sway, labwc, river, wayfire, niri, Hyprland) is followed through
+it, the app id standing in for the class; under KDE Plasma and GNOME, which offer nothing
+to ordinary clients, the X11 clients on their Xwayland (Steam and every Proton game among
+them) are still followed, their native windows not. `g13map focus windows` lists the
+windows the manager knows with their classes and marks the focused one, so a rule can be
+written from a terminal; the editor's **Windows…** panel shows the same list.
 
 ### Pictures, text and animations
 
@@ -227,8 +230,9 @@ input if its controller input path is inactive.
 
 ## Current limits
 
-Validated on Linux x86_64 with systemd. Window rules need i3, sway or an X11 window
-manager (no other Wayland compositor yet); pointer isolation targets X11/libinput. One G13 and one controlling login session are the initial scope.
+Validated on Linux x86_64 with systemd. Window rules follow i3, any X11 window manager,
+and Wayland compositors with the foreign-toplevel protocol; on KDE Plasma and GNOME under
+Wayland only their X11 (Xwayland) clients. Pointer isolation targets X11/libinput. One G13 and one controlling login session are the initial scope.
 The inherited FIFO protocol requires coordinated writes; unrelated direct writers or
 multiple controlling sessions can bypass the editor's lock. Fresh login/reconnect and
 cross-distribution installation require hardware/environment-specific checks. Native

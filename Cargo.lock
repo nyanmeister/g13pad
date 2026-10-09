@@ -732,7 +732,7 @@ dependencies = [
 
 [[package]]
 name = "g13map"
-version = "0.2.36"
+version = "0.2.37"
 dependencies = [
  "eframe",
  "egui",
@@ -740,19 +740,21 @@ dependencies = [
  "image",
  "read-fonts",
  "serde_json",
+ "wayland-client",
+ "wayland-protocols-wlr",
  "x11rb",
 ]
 
 [[package]]
 name = "g13pad-analog"
-version = "0.2.36"
+version = "0.2.37"
 dependencies = [
  "g13pad-core",
 ]
 
 [[package]]
 name = "g13pad-core"
-version = "0.2.36"
+version = "0.2.37"
 
 [[package]]
 name = "gethostname"

@@ -37,6 +37,7 @@ mod session;
 mod test_support;
 #[cfg(feature = "editor")]
 pub mod text_options;
+mod wfocus;
 mod xfocus;
 
 use g13pad_core::gamepad;
