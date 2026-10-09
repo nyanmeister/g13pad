@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.43 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.45 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 find_package(Threads REQUIRED)
@@ -34,6 +34,93 @@ if(G13PAD_RUST_PROFILE STREQUAL "dev")
   set(rust_output_dir "${G13PAD_CARGO_TARGET_DIR}/debug")
 else()
   set(rust_output_dir "${G13PAD_CARGO_TARGET_DIR}/${G13PAD_RUST_PROFILE}")
+endif()
+
+# Native GoldSource observer, launched explicitly for local/co-op games. The $LIB
+# loader token handles both Arch and Debian/Steam runtime directory conventions.
+option(G13PAD_BUILD_GOLDSRC_HEALTH "Build native GoldSource health handler" ON)
+if(G13PAD_BUILD_GOLDSRC_HEALTH)
+  include(CheckCXXSourceCompiles)
+  set(CMAKE_REQUIRED_FLAGS "-m32")
+  set(CMAKE_REQUIRED_LINK_OPTIONS "-m32")
+  check_cxx_source_compiles("int main() { return 0; }" G13PAD_HAVE_M32)
+  unset(CMAKE_REQUIRED_FLAGS)
+  unset(CMAKE_REQUIRED_LINK_OPTIONS)
+  set(goldsrc_archs x86_64)
+  if(G13PAD_HAVE_M32)
+    list(APPEND goldsrc_archs i386)
+  else()
+    message(WARNING "No 32-bit toolchain: stock GoldSource requires the i386 observer")
+  endif()
+  foreach(arch IN LISTS goldsrc_archs)
+    add_library(goldsrc-${arch} MODULE contrib/goldsrc-health/goldsrc.cpp)
+    set_target_properties(goldsrc-${arch} PROPERTIES PREFIX "" SUFFIX ".so")
+    target_compile_options(goldsrc-${arch} PRIVATE -O2 -fno-exceptions -fno-rtti
+      -fno-stack-protector -fvisibility=hidden -foptimize-sibling-calls)
+    target_compile_definitions(goldsrc-${arch} PRIVATE "G13PAD_VERSION=\"${PROJECT_VERSION}\"")
+    target_link_options(goldsrc-${arch} PRIVATE -Wl,-z,defs -Wl,--as-needed)
+    target_link_libraries(goldsrc-${arch} PRIVATE -Wl,--no-as-needed -l:libdl.so.2 -l:librt.so.1 -Wl,--as-needed)
+    if(arch STREQUAL "i386")
+      target_compile_options(goldsrc-${arch} PRIVATE -m32)
+      target_link_options(goldsrc-${arch} PRIVATE -m32)
+      set(layouts lib32 lib/i386-linux-gnu)
+    else()
+      set(layouts lib lib64 lib/x86_64-linux-gnu)
+    endif()
+    foreach(layout IN LISTS layouts)
+      install(FILES $<TARGET_FILE:goldsrc-${arch}>
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/g13pad/goldsrc-health/${layout}
+        RENAME goldsrc.so COMPONENT goldsrc-health)
+    endforeach()
+    if(BUILD_TESTING)
+      add_library(fake-goldsrc-${arch} MODULE tools/fake-goldsrc.cpp)
+      set_target_properties(fake-goldsrc-${arch} PROPERTIES PREFIX "" OUTPUT_NAME client
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/fake-goldsrc-${arch}")
+      add_executable(check-goldsrc-${arch} tools/check-goldsrc.cpp)
+      target_compile_options(check-goldsrc-${arch} PRIVATE -UNDEBUG)
+      target_link_libraries(check-goldsrc-${arch} PRIVATE ${CMAKE_DL_LIBS})
+      add_library(fake-goldsrc-next-${arch} MODULE tools/fake-goldsrc-lookup.cpp)
+      set_target_properties(fake-goldsrc-next-${arch} PROPERTIES PREFIX "")
+      add_library(fake-goldsrc-interposer-${arch} MODULE tools/fake-goldsrc-interposer.cpp)
+      target_compile_options(fake-goldsrc-interposer-${arch} PRIVATE -O2 -fno-exceptions -foptimize-sibling-calls)
+      target_link_libraries(fake-goldsrc-interposer-${arch} PRIVATE ${CMAKE_DL_LIBS})
+      # SHARED permits a dependent test library; MODULE cannot be linked to.
+      add_library(fake-goldsrc-scope-second-${arch} SHARED tools/fake-goldsrc-lookup.cpp)
+      target_compile_definitions(fake-goldsrc-scope-second-${arch} PRIVATE G13_SECOND)
+      target_link_libraries(fake-goldsrc-next-${arch} PRIVATE -Wl,--no-as-needed
+        fake-goldsrc-scope-second-${arch} -Wl,--as-needed ${CMAKE_DL_LIBS})
+      if(arch STREQUAL "i386")
+        foreach(t fake-goldsrc-i386 check-goldsrc-i386 fake-goldsrc-next-i386 fake-goldsrc-scope-second-i386 fake-goldsrc-interposer-i386)
+          target_compile_options(${t} PRIVATE -m32)
+          target_link_options(${t} PRIVATE -m32)
+        endforeach()
+      endif()
+      foreach(route named table)
+        if(route STREQUAL "table")
+          set(extra table)
+        else()
+          set(extra)
+        endif()
+        add_test(NAME goldsrc-health-${route}-${arch}
+          COMMAND ${CMAKE_COMMAND} -E env "LD_PRELOAD=$<TARGET_FILE:goldsrc-${arch}>"
+          $<TARGET_FILE:check-goldsrc-${arch}> $<TARGET_FILE:fake-goldsrc-${arch}> ${extra})
+        add_test(NAME goldsrc-health-chain-${route}-${arch}
+          COMMAND ${CMAKE_COMMAND} -E env "LD_PRELOAD=$<TARGET_FILE:goldsrc-${arch}>:$<TARGET_FILE:fake-goldsrc-interposer-${arch}>"
+          $<TARGET_FILE:check-goldsrc-${arch}> $<TARGET_FILE:fake-goldsrc-${arch}> ${extra})
+      endforeach()
+      add_test(NAME goldsrc-health-lookup-${arch}
+        COMMAND ${CMAKE_COMMAND} -E env "LD_PRELOAD=$<TARGET_FILE:goldsrc-${arch}>"
+        $<TARGET_FILE:check-goldsrc-${arch}> --lookup $<TARGET_FILE:fake-goldsrc-next-${arch}>)
+      add_test(NAME goldsrc-health-chain-lookup-${arch}
+        COMMAND ${CMAKE_COMMAND} -E env "LD_PRELOAD=$<TARGET_FILE:goldsrc-${arch}>:$<TARGET_FILE:fake-goldsrc-interposer-${arch}>"
+        $<TARGET_FILE:check-goldsrc-${arch}> --lookup $<TARGET_FILE:fake-goldsrc-next-${arch}>)
+      add_test(NAME goldsrc-health-symbols-${arch}
+        COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-goldsrc-symbols.sh" $<TARGET_FILE:goldsrc-${arch}>)
+    endif()
+  endforeach()
+  configure_file(contrib/goldsrc-health/launch.sh.in g13map-goldsrc @ONLY)
+  install(PROGRAMS "${CMAKE_CURRENT_BINARY_DIR}/g13map-goldsrc"
+    DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT goldsrc-health)
 endif()
 
 set(driver_sources g13_action.cpp g13_device.cpp g13_fonts.cpp g13_hotplug.cpp

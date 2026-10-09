@@ -13,7 +13,7 @@ jobs:
       - name: Native build and test dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build pkg-config shellcheck ripgrep perl \
+          sudo apt-get install -y build-essential gcc-multilib g++-multilib cmake ninja-build pkg-config shellcheck ripgrep perl \
             libusb-1.0-0-dev libevdev-dev liblog4cpp5-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcursor-dev libxi-dev \
             libxrandr-dev libgl1-mesa-dev libwayland-dev fontconfig
@@ -42,7 +42,8 @@ jobs:
       - name: Versions of the built executables
         run: |
           for b in build/g13d build/pbm2lpbm build/rust/release/g13map build/rust/release/g13map-editor \
-                   build/rust/release/g13map-anim build/rust/release/g13pad-analog; do "$b" --version; done
+                   build/rust/release/g13map-anim build/rust/release/g13pad-analog \
+                   build/g13map-goldsrc; do "$b" --version; done
       - name: Stage an installation tree
         run: DESTDIR="$PWD/stage" cmake --install build
       - uses: actions/upload-artifact@v4

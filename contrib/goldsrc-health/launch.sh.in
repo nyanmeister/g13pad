@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# A loader-token path selects the right observer for shells, runtimes and clients
+# of either architecture; no wrong-ELF warnings and no replaced game libraries.
+set -eu
+if [ "${1:-}" = --version ]; then
+    printf '%s\n' 'g13map-goldsrc @PROJECT_VERSION@'
+    exit 0
+fi
+if [ "$#" -eq 0 ]; then
+    echo 'usage: g13map-goldsrc COMMAND [ARGS...] (Steam: g13map-goldsrc %command%)' >&2
+    exit 2
+fi
+self=$(readlink -f -- "$0")
+prefix=$(dirname -- "$(dirname -- "$self")")
+modules=${G13MAP_GOLDSRC_DIR:-"$prefix/@CMAKE_INSTALL_LIBDIR@/g13pad/goldsrc-health"}
+if [ ! -f "$modules/lib/goldsrc.so" ] || [ ! -f "$modules/lib32/goldsrc.so" ]; then
+    echo "GoldSource observer modules missing in $modules; install both architectures" >&2
+    exit 1
+fi
+case "$modules" in *:*|*' '*) echo 'module path must not contain spaces or colons (LD_PRELOAD)' >&2; exit 1;; esac
+preload="$modules/\$LIB/goldsrc.so"
+export LD_PRELOAD="$preload${LD_PRELOAD:+:$LD_PRELOAD}"
+# The observer replaces client callbacks; insecure mode prevents VAC-server joins.
+exec "$@" -insecure

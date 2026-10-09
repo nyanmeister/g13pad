@@ -112,6 +112,17 @@ only; singleplayer games (Half-Life 2 and its episodes) get one that also hooks 
 client's `Battery` user message for the shield bar, since armour is on no page token.
 The installer picks by the game's `gameinfo.txt`; its README has the details.
 
+## GoldSource handler (Half-Life and native mods)
+
+The GoldSource handler in `contrib/goldsrc-health` observes the native client's
+health and suit-armour HUD
+messages, writes the usual feed and keeps it alive once a second. Launch Steam's
+Half-Life with `g13map-goldsrc %command%` and use a profile in mode `feed` for
+`hl_linux`. The wrapper adds `-insecure` for singleplayer or trusted co-op; it changes
+callbacks inside the client and is unsuitable for secured servers. It handles both
+the Steam client's export table and individual function exports; Windows/Proton
+clients need a different loader. Its README has the install and verification limits.
+
 ## ULTRAKILL
 
 A Unity game, so the feeder is a BepInEx plugin: `contrib/ultrakill-health` writes V1's

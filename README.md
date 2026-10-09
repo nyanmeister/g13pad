@@ -134,6 +134,7 @@ g13map watch                        # profile switching and LCD playback
 g13map marquee 'Message' NAME        # keep reusable LCD text, no hardware write
 g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs2
 g13map health source DIR            # Source engine game: install the LCD module + page
+g13map-goldsrc %command%             # GoldSource handler for native Half-Life/mods
 g13map --version
 g13map panel xfce                   # XFCE Generic Monitor status and editor button
 g13map panel waybar                 # Waybar custom-module JSON
