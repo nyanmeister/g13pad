@@ -39,7 +39,7 @@ Two of the built-in LCD animations, shown in the panel's own two colours (sample
 video of the glass). The editor's **Animations…** window previews all of them live and
 keeps one with a click:
 
-![The editor with the Animations window open]<img width="992" height="712" alt="image" src="https://github.com/user-attachments/assets/58bd485a-212e-444c-b9c1-937033c7e3d3" />
+<img width="992" height="712" alt="image" src="https://github.com/user-attachments/assets/58bd485a-212e-444c-b9c1-937033c7e3d3" />
 
 
 ![The health meter: a heartbeat, a readout, bars for health and shield, the backlight by band](docs/images/health-meter.gif)
