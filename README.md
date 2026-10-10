@@ -39,7 +39,8 @@ Two of the built-in LCD animations, shown in the panel's own two colours (sample
 video of the glass). The editor's **Animations…** window previews all of them live and
 keeps one with a click:
 
-![The editor with the Animations window open](docs/images/editor-animations.png)
+![The editor with the Animations window open]<img width="992" height="712" alt="image" src="https://github.com/user-attachments/assets/58bd485a-212e-444c-b9c1-937033c7e3d3" />
+
 
 ![The health meter: a heartbeat, a readout, bars for health and shield, the backlight by band](docs/images/health-meter.gif)
 
@@ -50,7 +51,7 @@ green above 75, yellow, orange, red with a flash on every beat, blue over 100 fo
 overshield, and three dark seconds on a drop to zero before the search for a pulse.
 
 A game feeds it one line at a time through a small mod or script. Feeders for Deep Rock
-Galactic, Doom, Source engine games and ULTRAKILL are in `contrib/`; Counter-Strike 2
+Galactic, Doom, Source engine games, ULTRAKILL and more are in `contrib/`; Counter-Strike 2
 posts straight to the watcher. A profile ticks **Health mode** to show it, so the window
 rules put it on the game's windows and the profile's own picture returns when the tick
 comes off. `g13map health demo` runs the states on your own panel. See
