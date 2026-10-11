@@ -1194,7 +1194,13 @@ impl App {
                 egui::ComboBox::from_id_salt("health reader")
                     .selected_text(current.about())
                     .show_ui(ui, |ui| {
-                        for r in [Reader::Feed, Reader::Cs2, Reader::Log] {
+                        for r in [
+                            Reader::Feed,
+                            Reader::Cs2,
+                            Reader::Log,
+                            Reader::RetroArch,
+                            Reader::Dolphin,
+                        ] {
                             ui.selectable_value(&mut picked, r, r.about());
                         }
                     });

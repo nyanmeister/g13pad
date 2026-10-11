@@ -1,5 +1,66 @@
 # Validation record
 
+## 0.2.74 — automatic RetroArch memory readers — 2026-10-10
+
+The shared `g13map ra launch` owns private command pipes and selects a registered
+memory recipe from detected game identity. The former BN2 launch command is an
+alias. Unknown games and unloads leave the pipe idle; switches and same-ID reloads
+discard in-flight samples. Direct uncompressed BN2 files have a bounded layout
+recognizer so collection can begin before RA login completes. Every RAM cycle
+retains its ROM/layout validation. No RetroArch patch or plugin is required.
+The launch-time pipe requirement and temporary config-saving behavior are documented
+in the source and [user guide](retroachievements.md).
+
+- The workspace suite passed: 141 root tests, seven Factorio observer tests,
+  seven analog tests and two core tests; 12 root tests and one analog test were
+  ignored. Strict workspace/all-targets Clippy, the lean feature check and
+  formatting passed.
+- New fixtures exercise real owned child pipes: unknown games emit no requests,
+  BN2 detection activates its reader, unload stops it, and returning to BN2
+  reactivates it even after unavailable-memory replies. Epoch fixtures reject
+  samples spanning a switch or same-ID reload. File recognition checks both
+  supported variants, wrong signatures/sizes, directories and nonblocking FIFO
+  rejection.
+- An isolated stock RetroArch/mGBA run with the supported No MP Hard Mode v1.1
+  file automatically activated BN2 collection through the shared launcher.
+  A copied fresh-save state produced the expected Style diagnostic and a preview
+  byte-identical to the previous version. No RA credentials were copied; this
+  checks actual collection and decoding, with RA identity transitions covered by
+  fixtures rather than a newly authenticated hardware session.
+- On the development machine, the normal RetroArch desktop entry now routes
+  through the shared launcher using a per-user desktop override. The system
+  executable and desktop file are unchanged. Existing G13 and BN2 shortcuts stay
+  compatible; unwrapped processes retain native-log achievement support.
+
+## 0.2.73 — Health Mode architecture refactor — 2026-10-10
+
+The development watcher runs the refactor, which separates reader
+transports, game adapters, shared state and presentation clocks. This validation
+applies to the development build; it does not describe a new installed package.
+
+The owner reported successful physical G13 checks for all five reader modes:
+
+| Reader | Confirmed games and behavior |
+| --- | --- |
+| `retroarch` | Works, including switching to another game and back. |
+| `dolphin` | Success. |
+| `cs2` | Success. |
+| `log` | Doom through Zandronum. |
+| `feed` | Factorio, ULTRAKILL, Terraria and all three Dwarf Fortress modes (Fortress, Adventure and Travel). |
+
+The workspace suite passed: 138 root tests, seven Factorio observer tests, seven
+analog tests and two core tests; 12 root tests and one analog test remained ignored. Strict
+workspace/all-targets Clippy, the lean feature check and formatting passed. An
+isolated mGBA capture using the supported Battle Network 2 No MP Hard Mode v1.1
+ROM produced a preview byte-identical to 0.2.72.
+
+These hardware reports confirm the reader paths and the explicitly reported
+transitions. They do not individually establish every suggested edge case,
+other feed collectors, or a measured 100 FPS display rate. Hidden Battle Network
+2 Style data still uses its dedicated launcher; unwrapped RetroArch memory
+support remains deferred. See [the developer architecture guide](health-architecture.md)
+for the timing limits and reader boundaries.
+
 ## 0.2.55 — seasonal fortress backlight — 2026-10-09
 
 The DFHack collector reads and validates `df.global.cur_season`. Fortress feeds

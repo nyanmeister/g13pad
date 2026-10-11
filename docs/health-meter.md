@@ -83,7 +83,9 @@ off                                no game (removing the file does the same)
 atomically (beside, then rename) if you write it yourself. Give a feeder that could die
 with the game a `ttl`, so its meter dies with it; a feeder that only speaks on changes
 needs no `ttl`. The watcher reads the feed ten times a second and renders the meter
-itself, one frame per 100 ms, the daemon's reading pace.
+itself. Default health visuals retain a 100 ms logical step; LCD presentation can
+run independently at up to 100 FPS for local event animations. See the
+[developer timing contract](health-architecture.md).
 
 `g13map health demo` runs through every state in about forty seconds, for a look at the
 meter without a game.

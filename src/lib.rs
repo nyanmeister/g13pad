@@ -17,6 +17,7 @@ mod board;
 mod calibrate;
 mod cli;
 mod daemon;
+mod display_clock;
 mod draw;
 mod focus;
 #[cfg(feature = "editor")]
@@ -37,6 +38,7 @@ pub mod obs;
 pub mod overlay;
 mod panel;
 pub mod profile;
+pub mod ra;
 mod session;
 #[cfg(test)]
 mod test_support;

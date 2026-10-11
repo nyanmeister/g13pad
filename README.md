@@ -7,6 +7,9 @@ bindings and profiles, the backlight colour, pictures, text and animations on th
 live health meter for games, and an optional analog stick that games see as an Xbox
 controller.
 
+RetroArch and Dolphin can also show a [local RetroAchievements progress bar and queued
+unlock notifications](docs/retroachievements.md), using their existing login without a Web API key.
+
 Here is the editor, opened with `g13map edit`:
 
 <img width="992" height="712" alt="The g13pad editor: the board outline, a profile's bindings, LCD and backlight settings" src="https://github.com/user-attachments/assets/b0110d2e-496f-4714-913e-0a1334ea8aba" />
@@ -70,7 +73,7 @@ The collector reads the game without changing it.
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.60.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.74.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -81,6 +84,10 @@ earlier patched g13 driver is already on the machine. Existing `~/.config/g13map
 profiles are kept.
 
 ## Build and check
+
+For game-handler development, start with the [Health Mode architecture and timing
+contract](docs/health-architecture.md). Telemetry polling and LCD animation have
+independent clocks; the reported display ceiling is 100 FPS.
 
 On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev log4cpp`
 and the GUI runtime dependencies listed in [the Arch recipe](packaging/PKGBUILD), including

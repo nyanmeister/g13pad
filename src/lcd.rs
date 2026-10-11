@@ -357,17 +357,16 @@ fn cap_scale(w: u32, h: u32, cap: u32) -> f32 {
     }
 }
 
-/// A frame's delay as the file states it. Delays of 10 ms and under mean "as fast as you
-/// can" in GIFs, which browsers show at 100 ms; the same here.
+/// Preserve explicit delays down to 10 ms; zero/unspecified delays use 100 ms.
 #[cfg(feature = "editor")]
 fn frame_delay(f: &image::Frame) -> Duration {
     let (n, d) = f.delay().numer_denom_ms();
-    let ms = if d == 0 {
-        100.0
+    if n == 0 || d == 0 {
+        Duration::from_millis(100)
     } else {
-        (n as f64 / d as f64).round()
-    };
-    Duration::from_millis(if ms <= 10.0 { 100 } else { ms as u64 })
+        Duration::from_millis((n as f64 / d as f64).round() as u64)
+            .max(crate::display_clock::MIN_FRAME_INTERVAL)
+    }
 }
 
 /// Decodes the file: the first frame in colour, and for an animation every frame greyed at a
@@ -628,11 +627,11 @@ impl Animation {
         let total: Duration = self
             .frames
             .iter()
-            .map(|(d, _)| (*d).max(Duration::from_millis(1)))
+            .map(|(d, _)| (*d).max(crate::display_clock::MIN_FRAME_INTERVAL))
             .sum();
         let mut at = Duration::from_nanos((t.as_nanos() % total.as_nanos()) as u64);
         for (i, (d, _)) in self.frames.iter().enumerate() {
-            let d = (*d).max(Duration::from_millis(1));
+            let d = (*d).max(crate::display_clock::MIN_FRAME_INTERVAL);
             if at < d {
                 return (i, d - at);
             }
@@ -1255,8 +1254,45 @@ mod tests {
         let _ = fs::remove_dir_all(&dir); // another test may have just put the writer lock here
     }
 
-    /// A three-frame GIF (left half black, right half black, all white; 100, 40 and 5 ms):
-    /// every frame is decoded, greyed and rendered like a still; a 5 ms delay reads as 100.
+    #[test]
+    fn animation_delays_preserve_fast_frames_and_bound_playback() {
+        for (n, d, expected) in [
+            (0, 1, 100),
+            (1, 10, 10),
+            (5, 1, 10),
+            (10, 1, 10),
+            (40, 1, 40),
+        ] {
+            let frame = image::Frame::from_parts(
+                image::RgbaImage::new(1, 1),
+                0,
+                0,
+                image::Delay::from_numer_denom_ms(n, d),
+            );
+            assert_eq!(frame_delay(&frame), Duration::from_millis(expected));
+        }
+        let animation = Animation {
+            frames: vec![
+                (Duration::ZERO, Bitmap::blank()),
+                (Duration::from_millis(1), Bitmap::logo()),
+            ],
+        };
+        assert_eq!(
+            animation.due(Duration::ZERO),
+            (0, Duration::from_millis(10))
+        );
+        assert_eq!(
+            animation.due(Duration::from_millis(10)),
+            (1, Duration::from_millis(10))
+        );
+        assert_eq!(
+            animation.due(Duration::from_millis(20)),
+            (0, Duration::from_millis(10))
+        );
+    }
+
+    /// A three-frame GIF (left half black, right half black, all white; 100, 40 and 10 ms):
+    /// every frame is decoded, greyed and rendered like a still; an explicit 10 ms delay stays 10 ms.
     #[test]
     fn animations_decode_render_and_keep() {
         use image::codecs::gif::GifEncoder;
@@ -1283,7 +1319,7 @@ mod tests {
                 frame(|_| 255),
                 0,
                 0,
-                image::Delay::from_numer_denom_ms(5, 1),
+                image::Delay::from_numer_denom_ms(10, 1),
             ),
         ];
         let mut enc = GifEncoder::new(fs::File::create(&p).unwrap());
@@ -1291,7 +1327,7 @@ mod tests {
         drop(enc);
         let s = Source::open(&p).unwrap();
         assert!(s.animated() && s.frame_count() == 3);
-        assert_eq!(s.duration(), Duration::from_millis(240));
+        assert_eq!(s.duration(), Duration::from_millis(150));
         let o = Options {
             crop: Some(Crop::fill(200, 100)),
             dither: 0.0,
@@ -1301,7 +1337,7 @@ mod tests {
         assert_eq!(a.frames.len(), 3);
         assert_eq!(a.frames[0].0, Duration::from_millis(100));
         assert_eq!(a.frames[1].0, Duration::from_millis(40));
-        assert_eq!(a.frames[2].0, Duration::from_millis(100));
+        assert_eq!(a.frames[2].0, Duration::from_millis(10));
         assert_eq!(a.frames[0].1, s.render(&o));
         assert!(a.frames[0].1.get(0, 0) && !a.frames[0].1.get(159, 0));
         assert!(!a.frames[1].1.get(0, 0) && a.frames[1].1.get(159, 0));
@@ -1318,7 +1354,7 @@ mod tests {
             (1, Duration::from_millis(10))
         );
         assert_eq!(
-            a.due(Duration::from_millis(250)),
+            a.due(Duration::from_millis(160)),
             (0, Duration::from_millis(90))
         );
         // A still through the same door is one frame.

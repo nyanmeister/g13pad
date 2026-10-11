@@ -1,5 +1,19 @@
 # Making the health meter work for a game
 
+## Telemetry timing is separate from display timing
+
+**The G13 can display a new frame every 10 ms (up to 100 FPS), as reported
+2026-10-10. A 100 ms telemetry poll does not limit animation to 10 FPS.** Special
+events can animate from a single event without new live data. Keep collectors,
+presentation clocks and USB input timeouts independent; skip missed frames instead
+of accumulating a backlog. Actual throughput depends on the transport and driver.
+See [the developer module map and extension contract](docs/health-architecture.md).
+
+Tests that mutate process environment must use `test_support::Sandbox`, including
+temporary `G13MAP_UNIT=0` changes. A session test that set/removed it without the
+shared guard raced the cross-process overlay fixture (2026-10-10); serializing the
+test and restoring the previous value through Sandbox fixed the demonstrated race.
+
 Notes for whoever adds a game to the G13 health meter, assistant or human. The user
 side is in [docs/health-meter.md](docs/health-meter.md); this is what it took to get
 two games on it, written down so the next one is shorter.
@@ -75,6 +89,49 @@ fields; while dead, `player` is whoever is being spectated (compare `player.stea
 with `provider.steamid`), and the menu has no `player.state` at all. Counter-Strike:
 Source has the same armour and helmet but no Game State Integration; it needs another
 route (a server plugin), and a profile in mode `cs2` there waits forever.
+
+The CS2 listener uses a loopback TCP socket, not a network service reachable from
+other machines. `meter::tests::profile_names_select_the_meter` starts and drops the
+listener, then binds its port to verify that dropping it released the socket.
+Some agent sandboxes deny even `TcpListener::bind` on `127.0.0.1`; this produces
+`Operation not permitted` before any game traffic or external connection. Re-run
+the affected check with authorized localhost/socket access rather than changing
+the listener or treating the permission failure as a regression. A repository
+note explains the failure; it cannot grant sandbox permissions. Verified 2026-10-09:
+the same workspace suite passed with localhost access after this sandbox denial.
+
+## RetroAchievements: general reader and game adapters
+
+RetroArch game-specific memory integration needs private stdin/stdout pipes owned
+at launch by `g13map ra launch`; they cannot be attached to an already-running
+unwrapped emulator. Stock RetroArch's existing command support needs no patch or
+plugin. The shared launcher detects supported games, selects registered collection
+recipes and invalidates in-flight samples on switches/reloads. Each adapter still
+needs its own verified layout and a core exposing memory descriptors. Preserve
+this caveat in future game documentation. Temporary stdin/config-save overrides
+apply only to the wrapped session; manual config saves can persist them. No network
+command server is enabled by the wrapper.
+
+Keep trophy cards ahead of game-specific telemetry, and retain the general RA
+overview when an adapter rejects data. Dolphin's log reports active/total counts
+per achievement set; sum distinct sets, and keep unknown earned counts unknown
+for unsupported or Encore sessions. Never infer an unlock from a changed total.
+
+F-Zero GX USA uses the shared emulated RAM backing file read-only, with process
+start/FD identity, exact disc/revision, dynamic pointers and retail RAM bounds.
+The first racer block supplies speed/energy and the boost timer; global HUD speed
+is stale after results. The normal-speed coefficient is not km/h, dynamic base
+speed is not a ceiling, and the maximum-seen field includes boosts. All supported
+setups use the frozen empirical normal-speed model, with its numeric reference
+on the LCD and model provenance in the diagnostic CLI. Historical measurements
+never override the gauge. Guard its coefficient domain; unsupported values keep
+an empty gauge marked with dashes. Preserve timestamped predictions and compare
+with independent plateau/curve references, labeling the distinction. The eight-setup
+fit passed five held-out machine tests; arbitrary modified physics remains unverified.
+Bind measurements to weight, acceleration, speed coefficient and drag as well as
+machine ID. An expired boost
+can leave speed well above normal; the requested arrow requires both an active
+boost timer and speed above 102%. Include that case in live checks.
 
 ## Doom-family engines: the console is the channel
 

@@ -20,7 +20,10 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile controller NAME MAP   e.g. 'right r3 0 0 0' (stick/click/swap/invert-X/Y)
   g13map profile lcd NAME IMAGE        kept LCD image name, or none
   g13map profile health NAME MODE      health mode: off, feed (a mod or script),
-                                       cs2 (the watcher's listener), log (a console log)
+                                       cs2, log (health console log), retroarch or dolphin (RA)
+  g13map ra launch [ARGS...]           launch RetroArch with achievements and automatic game readers
+  g13map ra fzero [MEASURED_KMH]       inspect race data or record a measured reference
+  g13map ra bn2 [launch ARGS | preview FILE]  Battle Network 2 Style progress
   g13map modes on|off|show             enable/disable/show M-Sum profile switching
   g13map modes set SUM NAME            assign a saved profile to sum 0–7
   g13map modes clear SUM               restore that sum's fallback
@@ -156,7 +159,7 @@ fn profile(args: &[&str]) -> Result<String, String> {
             p.health = match *mode {
                 "off" => None,
                 word => Some(meter::Reader::parse(word).ok_or_else(|| {
-                    format!("health mode must be off, feed, cs2 or log, not '{word}'")
+                    format!("health mode must be off, feed, cs2, log, retroarch or dolphin, not '{word}'")
                 })?),
             };
         }
@@ -312,6 +315,9 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
             render_text(text, Some(name))
         }
         ["health", rest @ ..] => health(rest),
+        ["ra", "launch", rest @ ..] => crate::ra::launch(rest),
+        ["ra", "fzero", rest @ ..] => crate::ra::fzero_command(rest),
+        ["ra", "bn2", rest @ ..] => crate::ra::bn2_command(rest),
         ["import"] => import(None, None),
         ["import", file] => import(Some(file), None),
         ["import", file, name] => import(Some(file), Some(name)),

@@ -153,9 +153,8 @@ mod tests {
     fn detach_reports_a_bare_environment_instead_of_guessing() {
         // The test binary runs under cargo: DISPLAY may exist. Only the unit-off path is
         // environment-independent here; the NoDisplay path is exercised by the watcher test.
-        std::env::set_var("G13MAP_UNIT", "0");
+        let _sandbox = crate::test_support::Sandbox::new("detach-unit-off");
         assert_eq!(detach_pointer().unwrap(), Detach::Absent);
-        std::env::remove_var("G13MAP_UNIT");
         assert_eq!(Detach::Absent.to_string(), "");
         assert!(Detach::NoDisplay.to_string().contains("not detached"));
         assert_eq!(
