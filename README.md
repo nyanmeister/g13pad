@@ -94,7 +94,7 @@ The collector reads the game without changing it.
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.92.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.96.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -241,8 +241,11 @@ Where it works, as checked on a test machine with the pad attached (details in t
 Images support crop, background, threshold/dither, inversion and animation. Text supports
 installed fonts, size, multiline wrapping/alignment and scrolling. **Animations…** offers
 built-in looping pixel art drawn in code (a rainy skyline, a starfield, Pong, Life, waves,
-cubes, digital rain, a heartbeat, an aquarium, tesseracts); a click keeps one as a picture.
-`g13map-anim` lists and keeps the same scenes from a terminal.
+cubes, digital rain, a heartbeat, an aquarium, tesseracts, an orrery); a click keeps one as
+a picture.
+`g13map-anim` lists and keeps the same scenes from a terminal, and `g13map-anim anim NAME
+DIR` writes one as `DIR/NAME.anim`, which any installed `g13map demo` plays without knowing
+the scene.
 
 `g13map demo FILE [SECONDS]` shows a file temporarily, then restores the current
 display. The default is 10 seconds; fractional seconds are accepted. With no file,

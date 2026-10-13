@@ -1,5 +1,70 @@
 # Validation record
 
+## 0.2.96 — the four scenes leave the tree; the demo change ships — 2026-10-13
+
+- Asked 2026-10-13: "I don't quite feel these ready to be in the repo, but the demo change
+  is worth updating for." The 0.2.93 and 0.2.95 scenes (Tux and Puffy, the neon city,
+  Xenia, the lava lamp) are removed from `src/art.rs` and the README's list; their source
+  stays in the private maintenance notes (scenes-20261013: the patch against 0.2.92, the
+  0.2.95 `art.rs`, the exported `.anim` files and the contact sheets) to come back when
+  they are ready. The 0.2.94 change stays: `g13map-anim anim NAME DIR` and the
+  `demo scene NAME` fallback to a kept `NAME.anim`, which is exactly how the withdrawn
+  scenes are still played on the installed binary.
+- Check: the scene list and the art tests are the 0.2.92 set plus nothing; the removal is
+  the inverse of the saved patch, and the kept-picture format is untouched, so the
+  exported files play as before.
+
+## 0.2.95 — Tux sits — 2026-10-13
+
+- Against the reference picture (2026-10-13: the first Tux was "too Atari-like"), Tux now
+  sits as he does: an outline body nearly the floe's full height, a bright belly, eyes
+  filled bright under heavy lids with 3x3 pupils that glance at Puffy while he is near
+  and go wide (lids up, pupils centred) when he puffs, a filled beak wedge pointing to
+  the side, and feet splayed forward in a checker fill whose dark cells erase the body
+  outline beneath, so they read as a third tone against the belly. The waddle is gone;
+  he blinks, taps a foot and throws his flippers up. Puffy was judged about right and
+  stays.
+- Check: Tux cropped and enlarged 14x from exported frames; the first pass's feet halo
+  had carved the belly into a T and the pupils at the top of a lidded eye read as an M,
+  both visible only at that scale. One sample frame (100) coincided with a blink inside
+  the surprise and was mistaken for a drawing bug until a neighbour was looked at.
+
+## 0.2.94 — a scene to a file, so the installed demo plays it — 2026-10-13
+
+- Asked 2026-10-13, after 0.2.93: `g13map demo` was meant to show new animations without
+  recompiling, and a scene drawn in code reached the pad only through a package build.
+  `g13map-anim anim NAME DIR` now writes `DIR/NAME.anim` in the kept-picture format,
+  which `g13map demo FILE` has played since 0.2.1x; a development build of `g13map-anim`
+  is the only thing that needs the scene. `g13map demo scene NAME` also falls back to a
+  kept `NAME.anim` when the scene is not built in, so `g13map-anim keep` from a newer
+  build serves the installed binary by name.
+- Check: the four 0.2.93 scenes exported from the 0.2.94 build and `xenia.anim` played
+  through the installed `/usr/bin/g13map` 0.2.92 on a private FIFO
+  (`tools/fakedaemon.pl`, the check-demo.sh environment): the frames the fake daemon
+  received were the file's frames, in order, at the file's cadence. The pad was not
+  touched; another session had the driver.
+
+## 0.2.93 — four more scenes: Tux and Puffy, a neon city, Xenia, a lava lamp — 2026-10-13
+
+- Asked 2026-10-13 for monochrome animations the driver work could demo: Tux with Puffy,
+  a cyberpunk city with cars and no people, Xenia typing at a terminal seen from behind,
+  and anything else. Four scenes in `src/art.rs`, each a pure function of the frame with
+  every inner period dividing its loop: `tux-and-puffy` (250 frames at 80 ms: Puffy swims
+  in, puffs up at Tux, leaves; snow lands only on the ice), `neon-city` (240 at 40 ms:
+  three parallax layers at 1/4, 1/2 and 1 px a frame with repeats of 60, 120 and 240 px,
+  a dotted far skyline, flickering signs in a 3x5 face, one with a dying letter chosen by
+  the frame's hash so the loop still closes), `xenia` (240 at 100 ms: command lines typed
+  a column a frame, output at once, a clear at the end so frame 0 is the empty prompt),
+  `lava-lamp` (240 at 50 ms: five metaballs shaded by a 4x4 ordered dither fixed to the
+  panel, so only moving edges change).
+- Check: every frame of every scene looked at as a scaled contact sheet from
+  `g13map-anim pbm` before keeping anything (Puffy's first draft was a mesh; the city's
+  mid layer first hid the far one; Xenia's first chair read as a table). The existing
+  scene test holds all four to the 256 KiB kept-picture budget, which forced the Tux and
+  Xenia loops from 400 and 480 frames down to 250 and 240 at longer delays rather than
+  raising the budget. Nothing was sent to the pad: the driver was in another session's
+  hands.
+
 ## 0.2.92 — fifty frames a second — 2026-10-13
 
 Asked 2026-10-13 ("Nice animation! Can it be made 60 FPS reasonably?"; agreed on 50,

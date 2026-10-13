@@ -111,9 +111,13 @@ fn scene(args: &[&str]) -> Result<String, String> {
         _ => return Err("usage: g13map demo scene NAME [SECONDS]".into()),
     };
     let duration = parse_seconds(seconds)?;
-    let scene = crate::art::Scene::find(name)
-        .ok_or_else(|| format!("no scene '{name}'; see `g13map demo scenes`"))?;
-    let animation = scene.animation();
+    // A scene this binary lacks may be kept under its name by a newer `g13map-anim keep`.
+    let animation = match crate::art::Scene::find(name) {
+        Some(scene) => scene.animation(),
+        None => lcd::load_anim(name).ok_or_else(|| {
+            format!("no scene '{name}' built in or kept; see `g13map demo scenes`")
+        })?,
+    };
     let _signals = Signals::take()?;
     if STOP.load(Ordering::Relaxed) {
         return Ok("demo cancelled before display".into());

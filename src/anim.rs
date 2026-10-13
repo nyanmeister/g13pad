@@ -11,6 +11,8 @@ const HELP: &str = "g13map-anim — built-in LCD animations, drawn in code
   g13map-anim                    list the scenes
   g13map-anim keep [NAME...]     keep scenes as LCD pictures (all of them without names);
                                  the editor and `g13map profile lcd` can then use them
+  g13map-anim anim NAME DIR      write NAME to DIR/NAME.anim, which any `g13map demo` plays:
+                                 the installed g13map need not know the scene
   g13map-anim pbm NAME DIR       write every frame of NAME to DIR as PBM files, lit white
   g13map-anim --version
 
@@ -27,6 +29,7 @@ fn main() {
         )),
         ["--help" | "-h"] => Ok(HELP.to_string()),
         ["keep", names @ ..] => keep(names),
+        ["anim", name, dir] => anim(name, Path::new(dir)),
         ["pbm", name, dir] => pbm(name, Path::new(dir)),
         _ => Err("unknown arguments; see --help".to_string()),
     };
@@ -79,6 +82,22 @@ fn keep(names: &[&str]) -> Result<String, String> {
         out.push(format!("kept {} ({})", s.name, lcd::path(s.name).display()));
     }
     Ok(out.join("\n"))
+}
+
+/// The scene in the kept-picture format, so an older `g13map demo FILE` plays it.
+fn anim(name: &str, dir: &Path) -> Result<String, String> {
+    let scene = find(name)?;
+    fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
+    let animation = scene.animation();
+    let p = dir.join(format!("{name}.anim"));
+    fs::write(&p, animation.to_bytes()).map_err(|e| format!("{}: {e}", p.display()))?;
+    Ok(format!(
+        "{} frames of {name} at {} ms in {}; play with `g13map demo {} [SECONDS]`",
+        animation.frames.len(),
+        scene.delay_ms,
+        p.display(),
+        p.display()
+    ))
 }
 
 /// Frames as binary PBM (P4): a set PBM bit is black, so lit panel pixels come out white.
