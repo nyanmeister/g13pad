@@ -115,3 +115,22 @@ patched executable, not a version gate; keep it.
 4. If kept: DF records next; fortress.rs becomes `table` + season backlight.
 5. If not kept: revert to B's shape — `g13map-ra` stays out of process with its own
    record, and the named screens stay.
+
+## Revision, 2026-10-13: option A withdrawn
+
+The owner, on a side-by-side of shipped screens against a palette mock: the F-Zero
+screen is right as it is, because it shows what the game does not (the theoretical
+maximum speed, the share of it as a pie, the achievement progress); the palette column
+only repeated what is already on the monitor. **The principle: the best integration
+reveals stats the game does not expose.** Health mode earns its place the same way, as a
+peripheral-vision read (the colour, the beat), most valuable in GoldSource.
+
+So the question became *what the watcher owns*, and the answer is a kit of composable
+parts (`meter/parts.rs`: the heartbeat with its hold, the pie; with the gauges, bars,
+glyphs and sprites beside them in `render.rs`) that bespoke per-game screens compose,
+with the game's knowledge and its derived stats in the feeder or adapter. The
+2026-10-12 review's findings 3, 5 and 6 are answered by the kit and by keeping every
+per-game word inside `Meter`'s two `extras_*` hooks, not by a grammar. First step done
+in 0.2.91: the heartbeat, the hold and the pie out of `Meter` and F-Zero, every exported
+frame byte-identical before and after.
+

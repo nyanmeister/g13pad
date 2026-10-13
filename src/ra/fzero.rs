@@ -4,6 +4,7 @@
 //! RAM bank zero starts at backing-file offset zero (Dolphin Memmap.cpp).
 use super::{process_start, progress_bar, text, Bitmap, Model, Session};
 use crate::draw::Draw;
+use crate::meter::parts::Pie;
 use std::{
     fs::{self, File},
     os::unix::fs::{FileExt, MetadataExt},
@@ -383,21 +384,15 @@ pub(super) fn command(args: &[&str]) -> Result<String, String> {
 
 /// Clockwise sector from twelve o'clock, with a segmented futuristic outer ring.
 fn gauge(bm: &mut Bitmap, fraction: Option<f32>, boost: bool) {
-    let fill = fraction.unwrap_or(0.0).clamp(0.0, 1.0);
-    for y in -20i32..=20 {
-        for x in -20i32..=20 {
-            let r2 = x * x + y * y;
-            let angle = (x as f32)
-                .atan2(-y as f32)
-                .rem_euclid(std::f32::consts::TAU);
-            if (r2 <= 16 * 16 && fill > 0.0 && angle <= fill * std::f32::consts::TAU)
-                || ((18 * 18..=20 * 20).contains(&r2)
-                    && angle.rem_euclid(std::f32::consts::TAU / 12.0) > 0.10)
-            {
-                bm.plot(21 + x, 21 + y);
-            }
-        }
-    }
+    const PIE: Pie = Pie {
+        cx: 21,
+        cy: 21,
+        disc: 16,
+        ring_in: 18,
+        ring_out: 20,
+        segments: 12,
+    };
+    PIE.draw(bm, fraction.unwrap_or(0.0));
     if boost && fraction.is_some_and(|f| f > 1.02) {
         // Paired split-tip arrowheads, selected from the offline samples (option E).
         // Black outlines preserve their spacing against the filled disc.

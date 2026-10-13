@@ -243,11 +243,11 @@ mod behaviour {
                         assert_eq!(first.get(x, y), frame.get(x, y), "vitals stay steady");
                     }
                 }
-                assert!(m.lift.iter().all(|v| *v == 0));
-                assert_eq!(m.beat_age, None);
+                assert!(m.beat.lift.iter().all(|v| *v == 0));
+                assert_eq!(m.beat.beat_age, None);
             }
             m.frame(parse("0 vehicle tank pilot 60", now, now).unwrap());
-            assert_eq!(m.dead, 0);
+            assert_eq!(m.hold.dead, 0);
             m.frame(State::health(60));
             assert!(!m.holding());
         }
@@ -635,7 +635,7 @@ mod behaviour {
         let f = v.frame(v1_state(72));
         assert!(lit_in(&f, 2, 1, 17, 14) > 40, "V1 is drawn");
         let dead: Vec<Bitmap> = (0..40).map(|_| m.frame(State::health(0))).collect();
-        assert!(m.beat_age.is_none());
+        assert!(m.beat.beat_age.is_none());
         assert!(dead[..30].windows(2).all(|w| w[0].0 == w[1].0));
         assert!(dead[31..].windows(2).any(|w| w[0].0 != w[1].0));
         let mut m = Meter::default();
@@ -648,7 +648,7 @@ mod behaviour {
         assert_eq!(colours[29], [0, 0, 0]);
         assert_eq!(colours[31], Tuning::default().rgb_at(1));
         m.frame(State::health(5));
-        assert_eq!(m.dead, 0);
+        assert_eq!(m.hold.dead, 0);
         m.frame(State::Wait);
         assert_eq!(m.colour(State::Wait, [9, 9, 9]), [9, 9, 9]);
         // One zero latches the whole hold: the feed may already say 100 or wait, the
@@ -674,7 +674,7 @@ mod behaviour {
         let beats: Vec<u32> = (0..200u32)
             .filter(|_| {
                 m.frame(State::health(100));
-                m.beat_age == Some(0)
+                m.beat.beat_now()
             })
             .collect();
         assert_eq!(beats, (0..10).map(|i| 4 + 20 * i).collect::<Vec<_>>());

@@ -22,7 +22,8 @@ src/meter/
 ├── feed.rs                   feed files, parsing, serialization and expiry
 ├── transport.rs              CS2 HTTP listener and Doom console-log follower
 ├── tuning.rs                 saved and live-reloaded meter preferences
-├── render.rs                 gauges, heartbeat, colours and legacy visual timing
+├── parts.rs                  the kit: Heartbeat, Hold, Pie; parts no game knows about
+├── render.rs                 glyphs, gauges, bars, the Meter composer and its per-game extras
 ├── runtime.rs                reader lifetime, output ownership and frame scheduling
 ├── demo.rs                   synthetic demonstration feed
 ├── source.rs                 Source-engine installation helpers
@@ -54,6 +55,27 @@ Each module implements one responsibility; the facades re-export the existing AP
 The shared feed remains the boundary for CS2, console logs and external collectors.
 DF's three structured states use their dedicated renderers. RA retains its own
 achievement model; it does not invent health or achievement state from game memory.
+
+## The kit (`meter/parts.rs`)
+
+What a screen shows is its own business; ideally what the game does *not* show (asked
+2026-10-13: F-Zero's theoretical maximum, the share of it as a pie, the achievement
+progress). What it shows it *with* is shared, and lives in `parts.rs`:
+
+- `Heartbeat`: the scrolling ECG and its beat clock. `tick(pct, period)` scrolls and
+  decides the pump; `trace(bm)` draws it; `beat_now()` and `swelling(ticks)` tell a sprite
+  when to swell or a panel when to flash; `reset()` starts a fresh trace.
+- `Hold`: the dark seconds after a drop to zero. `tick(zero, hold_ticks)`, `holding()`.
+- `Pie`: a clockwise sector in a segmented ring, placed by a `Pie { cx, cy, disc, ring_in,
+  ring_out, segments }`; `draw(bm, fill)`. F-Zero's speed dial is one.
+
+`Meter` in `render.rs` owns one `Heartbeat` and one `Hold` and composes a health frame as
+beat, sprite, rings, `extras_by_the_sprite`, readout, `extras_on_the_panel`, bars, flash.
+The two `extras_*` hooks hold every per-game word (dashes, rank, mana, battery, research);
+a new game adds to them, never to the composer. Pulling a part out of `Meter` is checked
+by the frame exports: `G13MAP_METER_DUMP`, `G13MAP_FZERO_DUMP`, `G13MAP_RA_DUMP`,
+`G13MAP_ADVENTURE_DUMP`, `G13MAP_TRAVEL_DUMP` and `G13MAP_MPD_DUMP` before and after must
+be byte-identical (1016 files on 2026-10-13 when the heartbeat moved out).
 
 ## Adding coverage
 

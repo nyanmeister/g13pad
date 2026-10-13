@@ -54,6 +54,8 @@ pub use tuning::{Band, Flash, Sprite, Tuning, VehicleStyle};
 mod feed;
 pub use feed::{parse, path, paths, prepare, read, write};
 mod render;
+
+pub(crate) mod parts;
 pub(crate) use render::text;
 pub use render::{Meter, TICK};
 mod runtime;

@@ -1,5 +1,25 @@
 # Validation record
 
+## 0.2.91 — the heartbeat, the hold and the pie as parts — 2026-10-13
+
+Asked 2026-10-13, after a mock of a generic element palette was withdrawn (the owner:
+an integration should reveal what the game does not show; the F-Zero screen is right
+as it is): make the shared parts of a screen reusable without changing a pixel.
+`src/meter/parts.rs` now holds `Heartbeat` (the ECG ring, beat clock, swell and
+beat-now), `Hold` (the dark seconds) and `Pie` (F-Zero's dial geometry); `Meter`
+owns one of each, and `alive` is a composer with two per-game hooks,
+`extras_by_the_sprite` and `extras_on_the_panel`, in the previous drawing order.
+
+- Oracle: every frame export (`G13MAP_METER_DUMP`, `_FZERO_`, `_RA_`, `_ADVENTURE_`,
+  `_TRAVEL_`, `_MPD_`) from 6aecad5 was frozen first; the same exports after the change
+  compared byte-identical with `diff -rq`: 1016 files, 4.1 MB. Rerun for F-Zero alone
+  after the pie became a `Pie` struct: identical again.
+- Full `--lib`: 180 passed, 15 ignored (the live ones; no Dolphin or audio server
+  involved). Clippy as CI runs it: one warning, pre-existing since 0.2.87
+  (`feed.rs` `Outcome::Live` is 1088 bytes beside `Off`); not touched here.
+- Not exercised: a live heartbeat on the glass before packaging; the VM check with the
+  pad follows installation and is recorded in the review folder.
+
 ## 0.2.90 — attempt newer game versions; runbooks out of AGENTS.md — 2026-10-13
 
 Asked 2026-10-13: integrations are read-only, so a reader attempts newer game versions

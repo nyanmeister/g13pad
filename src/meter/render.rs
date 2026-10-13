@@ -318,13 +318,8 @@ pub(super) fn bars(
 pub struct Meter {
     pub(super) fortress: fortress::Display,
     pub(super) attack_flash: Option<Instant>,
-    pub(super) lift: [i32; W],
-    /// Columns since the current beat began.
-    pub(super) u: i32,
-    /// Ticks since the last beat began; `None` before the first.
-    pub(super) beat_age: Option<u32>,
-    /// Ticks at zero health.
-    pub(super) dead: u32,
+    pub(super) beat: parts::Heartbeat,
+    pub(super) hold: parts::Hold,
     pub(super) tick: u32,
     pub(super) research_name: Label,
     pub(super) research_started: u32,
@@ -337,10 +332,8 @@ impl Default for Meter {
         Meter {
             fortress: fortress::Display::default(),
             attack_flash: None,
-            lift: [0; W],
-            u: 0,
-            beat_age: None,
-            dead: 0,
+            beat: parts::Heartbeat::default(),
+            hold: parts::Hold::default(),
             tick: 0,
             research_name: Label::EMPTY,
             research_started: 0,
@@ -359,17 +352,17 @@ impl Meter {
         let mut bm = Bitmap::blank();
         self.tick = self.tick.wrapping_add(1);
         if let State::Fortress(fort) = state {
-            self.dead = 0;
+            self.hold = parts::Hold::default();
             self.fortress.draw(&mut bm, fort, now);
             return bm;
         }
         if let State::Adventure(adv) = state {
-            self.dead = 0;
+            self.hold = parts::Hold::default();
             adv.draw(&mut self.fortress, &mut bm, now);
             return bm;
         }
         if let State::Travel(travel) = state {
-            self.dead = 0;
+            self.hold = parts::Hold::default();
             travel.draw(&mut self.fortress, &mut bm, now);
             return bm;
         }
@@ -377,11 +370,7 @@ impl Meter {
         // feed says meanwhile (asked 2026-10-07); only then does the next state show.
         let zero =
             matches!(state, State::Health { pct: 0, extra, .. } if extra.vehicle == Label::EMPTY);
-        self.dead = if zero || self.holding() {
-            self.dead + 1
-        } else {
-            0
-        };
+        self.hold.tick(zero, self.tuning.hold_ticks());
         match state {
             _ if self.holding() => self.alive(&mut bm, 0, 0, false, Extra::NONE),
             State::Fortress(fort) => self.fortress.draw(&mut bm, fort, now),
@@ -428,7 +417,7 @@ impl Meter {
 
     /// The corner sprite and its size: the heart, or V1.
     pub(super) fn sprite(&self, pct: u32) -> (&'static [&'static str], i32, i32, i32, i32) {
-        let swell = self.beat_age.is_some_and(|a| a < self.tuning.swell_ticks());
+        let swell = self.beat.swelling(self.tuning.swell_ticks());
         match self.tuning.sprite {
             Sprite::Heart => match (pct, swell) {
                 (0, _) => (HEART_OUTLINE, 7, 6, 0, 0),
@@ -445,7 +434,7 @@ impl Meter {
 
     /// Inside the dark seconds after a drop to zero.
     pub(super) fn holding(&self) -> bool {
-        (1..=self.tuning.hold_ticks()).contains(&self.dead)
+        self.hold.holding(self.tuning.hold_ticks())
     }
 
     /// The backlight for the frame just drawn: off through the hold, the band's colour,
@@ -486,34 +475,10 @@ impl Meter {
         }
     }
 
+    /// One tick of the beat at `pct`, at the tuning's pace.
     pub(super) fn scroll(&mut self, pct: u32) {
-        let beating = pct > 0;
         let period = self.tuning.period(pct);
-        let mut beat = false;
-        self.lift.rotate_left(SCROLL as usize);
-        for x in W - SCROLL as usize..W {
-            self.lift[x] = if beating { ecg(self.u) } else { 0 };
-            // The heart pumps as the R peak enters, not as the quiet P wave does.
-            beat |= beating && self.u == ECG_R;
-            // A flat trace holds the clock at the start, so the next pulse begins whole.
-            self.u = if beating && self.u + 1 < period {
-                self.u + 1
-            } else {
-                0
-            };
-        }
-        self.beat_age = match (beat, self.beat_age) {
-            (true, _) => Some(0),
-            (false, Some(a)) => Some(a + 1),
-            (false, None) => None,
-        };
-    }
-
-    pub(super) fn trace(&self, bm: &mut Bitmap) {
-        for x in 0..W as i32 - 1 {
-            let (a, b) = (self.lift[x as usize], self.lift[x as usize + 1]);
-            bm.line(x, BASE - a, x + 1, BASE - b);
-        }
+        self.beat.tick(pct, period);
     }
 
     pub(super) fn alive(
@@ -525,7 +490,7 @@ impl Meter {
         extra: Extra,
     ) {
         self.scroll(pct);
-        self.trace(bm);
+        self.beat.trace(bm);
         let [hx, hy] = self.tuning.heart;
         let (sprite, w, h, dx, dy) = self.sprite(pct);
         if self.tuning.sprite == Sprite::V1 {
@@ -539,6 +504,36 @@ impl Meter {
                 ring(bm, hx, hy, w, h, out as i32);
             }
         }
+        self.extras_by_the_sprite(bm, hx, hy, h, extra);
+        let [rx, ry] = self.tuning.readout;
+        readout(bm, &pct.min(999).to_string(), rx, ry);
+        self.extras_on_the_panel(bm, rx, ry, extra);
+        bars(
+            bm,
+            (BAR_W * pct.min(100) as i32 + 50) / 100,
+            (BAR_W * shield.min(200) as i32 + 50) / 100,
+            helmet,
+            &self.tuning.notches(),
+            extra.cap.map(|c| (BAR_W * c.min(100) as i32 + 50) / 100),
+        );
+        // In the alarm band every beat flashes: the panel, or the trace alone.
+        if self.beat.beat_now() && self.tuning.is_alarm(pct) {
+            let rows = match self.tuning.flash {
+                Flash::Off => 0,
+                Flash::Trace => SHIELD_TOP as usize - 1,
+                Flash::Panel => H,
+            };
+            for y in 0..rows {
+                for x in 0..W {
+                    bm.set(x, y, !bm.get(x, y));
+                }
+            }
+        }
+    }
+
+    /// What a game adds beside its sprite and at the top centre, drawn before the
+    /// readout: ULTRAKILL's dashes and rail charge, its style rank and meter.
+    fn extras_by_the_sprite(&mut self, bm: &mut Bitmap, hx: i32, hy: i32, h: i32, extra: Extra) {
         // Under the sprite: the dashes as pips, a charge as a small gauge.
         let under = hy + h + 2;
         if let Some(d) = extra.dash {
@@ -559,7 +554,7 @@ impl Meter {
             gauge(bm, hx + 16, under - 1, 20, 6, r as u32);
         }
         // The style rank, its letters big at the top centre with its own meter beneath.
-        let [rx, ry] = self.tuning.readout;
+        let [_, ry] = self.tuning.readout;
         if let Some(rank) = extra.rank {
             let letters = RANKS[rank as usize % RANKS.len()];
             let w = (letters.len() as i32 * 6 - 1) * 2;
@@ -569,7 +564,11 @@ impl Meter {
                 gauge(bm, 64, ry + 15, w.max(20), 5, fill as u32);
             }
         }
-        readout(bm, &pct.min(999).to_string(), rx, ry);
+    }
+
+    /// What a game adds on the panel after the readout: the level timer, mana, defence,
+    /// air, the suit battery, attacks or research.
+    fn extras_on_the_panel(&mut self, bm: &mut Bitmap, rx: i32, ry: i32, extra: Extra) {
         if let Some(t) = extra.time {
             let s = clock(t);
             let w = s.len() as i32 * 6 - 1;
@@ -609,34 +608,11 @@ impl Meter {
             bm.halo(43, 19, 95, 7);
             self.research(bm, 43, 19, extra.technology, research);
         }
-        bars(
-            bm,
-            (BAR_W * pct.min(100) as i32 + 50) / 100,
-            (BAR_W * shield.min(200) as i32 + 50) / 100,
-            helmet,
-            &self.tuning.notches(),
-            extra.cap.map(|c| (BAR_W * c.min(100) as i32 + 50) / 100),
-        );
-        // In the alarm band every beat flashes: the panel, or the trace alone.
-        if self.beat_age == Some(0) && self.tuning.is_alarm(pct) {
-            let rows = match self.tuning.flash {
-                Flash::Off => 0,
-                Flash::Trace => SHIELD_TOP as usize - 1,
-                Flash::Panel => H,
-            };
-            for y in 0..rows {
-                for x in 0..W {
-                    bm.set(x, y, !bm.get(x, y));
-                }
-            }
-        }
     }
 
     pub(super) fn vehicle(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, extra: Extra) {
         // Returning on foot starts a fresh ECG instead of retaining old beats.
-        self.lift.fill(0);
-        self.u = 0;
-        self.beat_age = None;
+        self.beat.reset();
         let phase = (self.tick % 48) as i32;
         match self.tuning.vehicle {
             VehicleStyle::Tread => {
