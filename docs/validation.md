@@ -1,5 +1,30 @@
 # Validation record
 
+## 0.2.90 — attempt newer game versions; runbooks out of AGENTS.md — 2026-10-13
+
+Asked 2026-10-13: integrations are read-only, so a reader attempts newer game versions
+and never refuses them; "verified against" is a record, not a gate. First application:
+`src/ra/fzero.rs` bound to disc id `GFZE01` *and* revision 0 and rejected revision 1 by
+header alone. It now binds to the six-byte id and lets the existing pointer, bounds and
+physics validation decide; a moved layout shows the dashed empty gauge, as before for
+unsupported physics. The project AGENTS.md (534 lines) became 74 lines of nudges; every
+runbook section moved verbatim to `docs/notes/` (16 files, 601 lines with headers), each
+game note stamped with the version it was verified against and the attempt-newer rule.
+
+- `cargo test --offline --lib ra::`: 30 passed, 5 ignored (the two sample exporters, the
+  live F-Zero RAM read, the live Dolphin log, the frame dump). Full `--lib`: 180 passed,
+  15 ignored. The ignored live-RAM test was not run: no Dolphin session was available.
+- The flipped test was watched failing: with the eight-byte gate put back, the
+  `GFZE01\0\x01` case failed at the new `is_some()`; with the fix restored it passed.
+  Trap on the way: after copying the fixed file back, cargo reused the previous test
+  binary (same failure line) until the source was touched. Check the gate on disk and
+  force the rebuild before reading a result.
+- `cargo fmt --check` clean on the changed file.
+- Not exercised: a real newer F-Zero GX revision (none to hand). The claim this release
+  makes is only that the header no longer refuses one; whether revision 1's layout
+  decodes is for the first person who has the disc, who will see either the gauge or
+  the dashes.
+
 ## 0.2.74 — automatic RetroArch memory readers — 2026-10-10
 
 The shared `g13map ra launch` owns private command pipes and selects a registered

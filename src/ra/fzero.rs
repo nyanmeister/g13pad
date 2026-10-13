@@ -55,8 +55,10 @@ fn read<const N: usize>(file: &File, offset: u64) -> Option<[u8; N]> {
     Some(bytes)
 }
 fn decode(file: &File) -> Option<Snapshot> {
-    // Disc number and revision are part of the binding, not only a window title.
-    if read::<8>(file, 0)? != *b"GFZE01\0\0" {
+    // The disc id is part of the binding, not only a window title. The revision is not:
+    // a newer revision is attempted under the same validation (asked 2026-10-13), and a
+    // moved layout fails the pointer and bounds checks below rather than this line.
+    if read::<6>(file, 0)? != *b"GFZE01" {
         return None;
     }
     let root = u32::from_be_bytes(read(file, ROOT)?);
@@ -141,7 +143,7 @@ fn decode(file: &File) -> Option<Snapshot> {
     if read::<4>(file, ROOT)? != root.to_be_bytes()
         || byte(MODE)? != mode
         || read::<2>(file, address(root, FLAGS, 2)?)? != flags
-        || read::<8>(file, 0)? != *b"GFZE01\0\0"
+        || read::<6>(file, 0)? != *b"GFZE01"
         || read::<4>(file, pointer_at)? != pointer.to_be_bytes()
     {
         return None;
@@ -690,8 +692,9 @@ mod tests {
         populate(&file, 0x801ba960);
         file.write_all_at(b"GLME01\0\0", 0).unwrap();
         assert!(decode(&file).is_none());
+        // A newer disc revision is attempted, not refused; the populated layout still decodes.
         file.write_all_at(b"GFZE01\0\x01", 0).unwrap();
-        assert!(decode(&file).is_none());
+        assert!(decode(&file).is_some());
         populate(&file, 0x801ba960);
         for root in [0u32, 0x801ba961, 0x81800000, 0x817ffffc] {
             file.write_all_at(&root.to_be_bytes(), ROOT).unwrap();

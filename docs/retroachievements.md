@@ -159,7 +159,7 @@ profile's backlight colour is retained. To disable it, run
 ### F-Zero GX
 
 The first game-specific display recognizes RA game **9699** and the USA disc
-**GFZE01**, revision 0. It opens the running Dolphin instance's shared emulated
+**GFZE01** (verified against revision 0; other revisions are attempted under the same validation and show an empty gauge if their layout differs). It opens the running Dolphin instance's shared emulated
 RAM read-only through `/proc/PID/fd`. Dolphin itself and the game are unchanged;
 this needs neither an API key nor a launch wrapper. These are live RAM fields,
 not a read of persistent SRAM or the memory card.

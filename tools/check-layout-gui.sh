@@ -3,7 +3,7 @@
 # Isolated GUI selection/capture/live-refresh check. No input reaches the real desktop.
 set -eu
 if [ "${1:-}" = '--version' ]; then
- printf '%s\n' 'g13pad-layout-gui-check 0.2.89'
+ printf '%s\n' 'g13pad-layout-gui-check 0.2.90'
  exit 0
 fi
 if [ "$#" -ne 1 ]; then printf '%s\n' 'usage: check-layout-gui.sh OUTPUT_DIRECTORY' >&2; exit 2; fi
