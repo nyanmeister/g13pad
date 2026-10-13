@@ -63,8 +63,8 @@ What a screen shows is its own business; ideally what the game does *not* show (
 progress). What it shows it *with* is shared, and lives in `parts.rs`:
 
 - `Heartbeat`: the scrolling ECG and its beat clock. `tick(pct, period)` scrolls and
-  decides the pump; `trace(bm)` draws it; `beat_now()` and `swelling(ticks)` tell a sprite
-  when to swell or a panel when to flash; `reset()` starts a fresh trace.
+  decides the pump; `trace(bm)` draws it; `just_beat(ticks)` and `swelling(ticks)` tell a
+  panel when to flash and a sprite when to swell; `reset()` starts a fresh trace.
 - `Hold`: the dark seconds after a drop to zero. `tick(zero, hold_ticks)`, `holding()`.
 - `Pie`: a clockwise sector in a segmented ring, placed by a `Pie { cx, cy, disc, ring_in,
   ring_out, segments }`; `draw(bm, fill)`. F-Zero's speed dial is one.
@@ -76,6 +76,29 @@ a new game adds to them, never to the composer. Pulling a part out of `Meter` is
 by the frame exports: `G13MAP_METER_DUMP`, `G13MAP_FZERO_DUMP`, `G13MAP_RA_DUMP`,
 `G13MAP_ADVENTURE_DUMP`, `G13MAP_TRAVEL_DUMP` and `G13MAP_MPD_DUMP` before and after must
 be byte-identical (1016 files on 2026-10-13 when the heartbeat moved out).
+
+## Composing a screen from the kit
+
+For a new game, start from the feed line (docs/health-meter.md): most games need no
+screen of their own, only their derived numbers in the line. Reach for a screen when the
+game has something the monitor does not show (asked 2026-10-13: F-Zero's theoretical
+maximum and the share of it, the achievement progress), and then:
+
+1. Put the game's knowledge in its feeder or adapter, never in the watcher: the watcher
+   receives numbers and words, and draws.
+2. If the look is the health meter plus a few words, add the words to `Extra` and draw
+   them in `Meter::extras_by_the_sprite` (beside the sprite, before the readout) or
+   `extras_on_the_panel` (after it). Nothing else in `alive` changes.
+3. If the look is its own screen, it is a `State` variant drawn from `Meter::frame_at`,
+   composed from the kit: a `Heartbeat` when a pulse means something there (own one in
+   the screen's state and call `tick`/`trace`), a `Hold` for a death, `Pie`, `gauge`,
+   `bars`, `ring`, `text`, `readout`, `clock`, `gear`, the sprites. Colours come from
+   `Tuning::rgb_at(pct)` and `alarm()`, never from constants of your own.
+4. Count time in seconds from the tuning or in `TICKS_PER_100MS` units; a bare tick is
+   20 ms. Animations keyed to `self.tick` must divide by it.
+5. Before and after: freeze the frame exports, change, export again, `diff -rq`. A
+   screen export of its own (`G13MAP_<NAME>_DUMP`, one saved frame per 100 ms) is the
+   price of adding one, and what the next person's refactor will be checked against.
 
 ## Adding coverage
 
@@ -123,9 +146,15 @@ request 100 ms. Future local event sequences can request the same 10 ms interval
 without changing any collector's polling rate. Keep their duration based on elapsed
 time, with bounded queues and explicit interruption/priority rules.
 
-Legacy health visuals keep their existing 100 ms logical step: beat speed, swell,
-death holds and vehicle animation must not accelerate when faster event rendering
-is added. Their logical step and a future event renderer's frame rate are distinct.
+Health visuals draw 50 frames a second since 0.2.92 (`meter::TICK` is 20 ms; the glass
+takes a frame every 10 ms, and 50 is the rate at which the trace moves exactly one
+column per frame). The feed is still read ten times a second (`meter::POLL`): telemetry
+and presentation are separate clocks. Every duration in the meter is seconds in the
+tuning file turned into ticks at draw time; an animation that counts ticks counts them
+in `TICKS_PER_100MS` units (5), so the gears still turn once in 4.8 s, the marquee still
+pauses 1.2 s, the alarm flash still lasts a tenth of a second. The frame exports save
+every fifth tick, so a contact sheet is still ten frames a second and the frozen sets
+from before the change stay comparable.
 Imported GIFs retain explicit delays down to 10 ms; shorter positive delays clamp
 to 10 ms, while zero/unspecified GIF delays retain the 100 ms fallback. Stored
 animation playback also clamps effective frame durations to at least 10 ms.

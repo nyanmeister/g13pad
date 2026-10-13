@@ -1,5 +1,31 @@
 # Validation record
 
+## 0.2.92 — fifty frames a second — 2026-10-13
+
+Asked 2026-10-13 ("Nice animation! Can it be made 60 FPS reasonably?"; agreed on 50,
+"since its max is 100"): the meter's tick is 20 ms and the trace scrolls one column
+per frame, the same 50 columns a second as before but five times as smooth. The feed
+poll stays at 100 ms (`meter::POLL`), telemetry apart from presentation. Every duration
+is still seconds in the tuning file; tick-counted animations (the gear turn, the tread,
+the scan, the research marquee, the waiting sweep and its bar mark) count in
+`TICKS_PER_100MS` units, and the alarm flash lasts five ticks (a tenth of a second)
+rather than one frame.
+
+- Oracle: the 1016 frames frozen before 0.2.91, which were ten a second, against the
+  exports at the new cadence saving every fifth tick: `diff -rq` identical, all 1016.
+  Two findings on the way, both fixed before the comparison passed: the demo writer
+  counted its script in frames and had to sample every fifth tick like the others; and
+  the gear angle at whole tenths differed from the old frames by one float ulp
+  (`phase*TAU/240` versus `i*TAU/48`), enough to flip crack pixels in three cracked-gear
+  frames, so the angle is computed as whole tenths exactly as before plus fine steps.
+- Tests with tick counts were re-derived by hand from seconds (swell 0.25 s = 12.5 →
+  13 ticks; hold 1.5 s = 75; default hold 3 s = 150; the first beat at full health on
+  tick 22 as column 21 enters; one gear turn = 240) and the suite passes: 180, 15
+  ignored. Clippy as CI runs it: only the pre-existing `feed.rs` warning.
+- Not measured before packaging: the watcher's CPU at 50 frames a second and the look
+  on the glass. Both are checked on the VM with the pad after installation and recorded
+  in the review folder and the journal.
+
 ## 0.2.91 — the heartbeat, the hold and the pie as parts — 2026-10-13
 
 Asked 2026-10-13, after a mock of a generic element palette was withdrawn (the owner:

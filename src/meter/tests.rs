@@ -75,14 +75,15 @@ mod behaviour {
             Tuning::parse("flash trace\nheart 20 10\n").flash,
             Flash::Trace
         );
-        assert_eq!((t.swell, t.swell_ticks()), (0.25, 3));
+        assert_eq!((t.swell, t.swell_ticks()), (0.25, 13)); // 0.25 s / 20 ms = 12.5, rounded
         assert_eq!((t.calm, t.racing), (d.calm, d.racing));
         // The hold and the beat spacing follow the file.
         let mut m = Meter {
             tuning: t.clone(),
             ..Default::default()
         };
-        for _ in 0..15 {
+        for _ in 0..75 {
+            // 1.5 s at 20 ms a tick
             m.frame(State::health(0));
         }
         assert!(m.holding());
@@ -203,7 +204,8 @@ mod behaviour {
         let first = m.frame(healthy);
         let later = m.frame(healthy);
         assert!((0..19).any(|y| (0..33).any(|x| first.get(x, y) != later.get(x, y))));
-        for tick in 0..48 {
+        for tick in 0..240 {
+            // one turn of the gears: 4.8 s
             m.tick = tick;
             let intact = m.frame(healthy);
             m.tick = tick;
@@ -236,7 +238,7 @@ mod behaviour {
             m.tuning.vehicle = style;
             m.tick = i32::MAX as u32; // animations remain safe across the signed boundary
             let first = m.frame(state);
-            for _ in 0..48 {
+            for _ in 0..240 {
                 let frame = m.frame(state);
                 for y in 2..19 {
                     for x in 33..W {
@@ -263,11 +265,11 @@ mod behaviour {
         let mut first = Bitmap::blank();
         m.research(&mut first, 43, 19, label, 37);
         let mut paused = Bitmap::blank();
-        m.tick = 12;
+        m.tick = 60; // the 1.2 s pause, in 20 ms ticks
         m.research(&mut paused, 43, 19, label, 37);
         assert_eq!(first, paused);
         let mut later = Bitmap::blank();
-        m.tick = 24;
+        m.tick = 120;
         m.research(&mut later, 43, 19, label, 37);
         assert_ne!(first, later);
         for y in 0..H {
@@ -285,7 +287,7 @@ mod behaviour {
             Label::parse("advanced_solar_power").unwrap(),
             37,
         );
-        assert_eq!(m.research_started, 24);
+        assert_eq!(m.research_started, 120);
         assert_eq!(Label::parse(&"x".repeat(256)).unwrap().as_str().len(), 256);
         assert!(Label::parse(&"x".repeat(257)).is_none());
     }
@@ -534,7 +536,8 @@ mod behaviour {
             State::health(999),
         ] {
             let mut m = Meter::default();
-            let frames: Vec<Bitmap> = (0..80).map(|_| m.frame(state)).collect();
+            // Four seconds: past the 3 s hold, so even a dead state moves again.
+            let frames: Vec<Bitmap> = (0..200).map(|_| m.frame(state)).collect();
             assert!(frames.iter().all(|f| f.lit() > 0), "{state:?}");
             assert!(
                 frames.windows(2).any(|w| w[0].0 != w[1].0),
@@ -634,30 +637,31 @@ mod behaviour {
         assert_eq!((v.tuning.sprite, v.tuning.heart), (Sprite::V1, [2, 1]));
         let f = v.frame(v1_state(72));
         assert!(lit_in(&f, 2, 1, 17, 14) > 40, "V1 is drawn");
-        let dead: Vec<Bitmap> = (0..40).map(|_| m.frame(State::health(0))).collect();
+        // The default hold is 3 s: 150 ticks of 20 ms.
+        let dead: Vec<Bitmap> = (0..200).map(|_| m.frame(State::health(0))).collect();
         assert!(m.beat.beat_age.is_none());
-        assert!(dead[..30].windows(2).all(|w| w[0].0 == w[1].0));
-        assert!(dead[31..].windows(2).any(|w| w[0].0 != w[1].0));
+        assert!(dead[..150].windows(2).all(|w| w[0].0 == w[1].0));
+        assert!(dead[151..].windows(2).any(|w| w[0].0 != w[1].0));
         let mut m = Meter::default();
-        let colours: Vec<[u8; 3]> = (0..32)
+        let colours: Vec<[u8; 3]> = (0..152)
             .map(|_| {
                 m.frame(State::health(0));
                 m.colour(State::health(0), [9, 9, 9])
             })
             .collect();
-        assert_eq!(colours[29], [0, 0, 0]);
-        assert_eq!(colours[31], Tuning::default().rgb_at(1));
+        assert_eq!(colours[149], [0, 0, 0]);
+        assert_eq!(colours[151], Tuning::default().rgb_at(1));
         m.frame(State::health(5));
         assert_eq!(m.hold.dead, 0);
         m.frame(State::Wait);
         assert_eq!(m.colour(State::Wait, [9, 9, 9]), [9, 9, 9]);
         // One zero latches the whole hold: the feed may already say 100 or wait, the
-        // panel stays dark and flat for thirty ticks, then shows what the feed says.
+        // panel stays dark and flat for 150 ticks (3 s), then shows what the feed says.
         for next in [State::health(100), State::Wait] {
             let mut m = Meter::default();
             let first = m.frame(State::health(0));
             assert_eq!(m.colour(State::health(0), [9, 9, 9]), [0, 0, 0]);
-            for i in 1..30 {
+            for i in 1..150 {
                 assert_eq!(m.frame(next).0, first.0, "{next:?} tick {i}");
                 assert_eq!(m.colour(next, [9, 9, 9]), [0, 0, 0], "{next:?} tick {i}");
             }
@@ -668,19 +672,19 @@ mod behaviour {
                 .map_or([9, 9, 9], |p| Tuning::default().rgb_at(p));
             assert_eq!(m.colour(next, [9, 9, 9]), want, "{next:?} colour after");
         }
-        // Full health beats every 100 columns, 20 ticks, the first on the fifth tick, as
-        // the R peak enters (indices are zero-based).
+        // Full health beats every 100 columns, one column a tick, the first as the R
+        // peak (column 21) enters on the 22nd tick (indices are zero-based).
         let mut m = Meter::default();
-        let beats: Vec<u32> = (0..200u32)
+        let beats: Vec<u32> = (0..1000u32)
             .filter(|_| {
                 m.frame(State::health(100));
-                m.beat.beat_now()
+                m.beat.just_beat(1)
             })
             .collect();
-        assert_eq!(beats, (0..10).map(|i| 4 + 20 * i).collect::<Vec<_>>());
+        assert_eq!(beats, (0..10).map(|i| 21 + 100 * i).collect::<Vec<_>>());
         // On the last quarter the beat frame is the panel inverted: mostly lit.
         let mut m = Meter::default();
-        let flash = (0..40)
+        let flash = (0..200)
             .map(|_| m.frame(State::health(10)))
             .max_by_key(|f| f.lit())
             .unwrap();
@@ -801,6 +805,10 @@ mod dump {
             m.tuning.vehicle = style;
             let mut colours = String::new();
             for i in 0..48 {
+                // One saved frame per 100 ms: a turn of the gears in 48 frames.
+                for _ in 1..TICKS_PER_100MS {
+                    m.frame(state);
+                }
                 let bm = m.frame(state);
                 pbm(&dir, &format!("demo-{i:03}.pbm"), &bm);
                 let [r, g, b] = m.colour(state, [0, 0, 0]);
@@ -859,6 +867,10 @@ mod dump {
                 m.tuning = Tuning::parse("sprite v1\nheart 2 1\n");
             }
             for i in 0..40 {
+                // One saved frame per 100 ms: four seconds of each state on a sheet.
+                for _ in 1..TICKS_PER_100MS {
+                    m.frame(state);
+                }
                 pbm(&dir, &format!("{tag}-{i:03}.pbm"), &m.frame(state));
             }
         }
@@ -879,8 +891,12 @@ mod dump {
         let mut m = Meter::default();
         let mut colours = String::new();
         let mut i = 0;
-        for (state, ticks) in script {
-            for _ in 0..ticks {
+        // The counts are frames at ten a second, the GIF's rate; each is the fifth tick.
+        for (state, frames) in script {
+            for _ in 0..frames {
+                for _ in 1..TICKS_PER_100MS {
+                    m.frame(state);
+                }
                 pbm(&dir, &format!("demo-{i:03}.pbm"), &m.frame(state));
                 let [r, g, b] = m.colour(state, rest);
                 colours.push_str(&format!("{r} {g} {b}\n"));

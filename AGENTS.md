@@ -27,6 +27,10 @@ Read the note for an area before touching it:
   the LCD to another mode. Factorio is the model: a `BUILD_ID` mismatch is logged and the
   last layout is tried under validation. The F-Zero reader once refused any disc revision
   but the one it was written against; it no longer does.
+- **A screen is composed from the kit** (`meter/parts.rs`, `render.rs`; the steps are in
+  docs/health-architecture.md). Per-game words go in `Meter`'s two `extras_*` hooks. A
+  bare tick is 20 ms since 0.2.92: count animations in `TICKS_PER_100MS` units, and
+  check a change against the frozen frame exports, sampled every fifth tick.
 
 ## Before believing a check
 

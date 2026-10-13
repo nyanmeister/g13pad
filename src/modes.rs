@@ -588,7 +588,7 @@ pub fn watch() -> Result<String, String> {
         if idle {
             thread::sleep(Duration::from_millis(100));
         }
-        if meter_checked.elapsed() >= meter::TICK {
+        if meter_checked.elapsed() >= meter::POLL {
             meter_checked = Instant::now();
             if !editor_was {
                 feed_meter(&mut panel, meter::read());

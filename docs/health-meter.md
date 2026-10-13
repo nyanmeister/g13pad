@@ -97,7 +97,7 @@ files). Write the file atomically (beside, then rename) if you write it yourself
 Give a feeder that could die with the game a `ttl`, so its meter dies with it;
 a feeder that only speaks on changes needs no `ttl`. The watcher reads the feed ten
 times a second and renders the meter
-itself. Default health visuals retain a 100 ms logical step; LCD presentation can
+itself. Health visuals draw 50 frames a second (since 0.2.92); LCD presentation can
 run independently at up to 100 FPS for local event animations. See the
 [developer timing contract](health-architecture.md).
 

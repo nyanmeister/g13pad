@@ -299,6 +299,6 @@ pub(super) fn follow_log(path: &std::path::Path, stop: &AtomicBool) {
                 kept = Instant::now();
             }
         }
-        thread::sleep(TICK);
+        thread::sleep(POLL);
     }
 }

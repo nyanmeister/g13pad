@@ -57,7 +57,7 @@ mod render;
 
 pub(crate) mod parts;
 pub(crate) use render::text;
-pub use render::{Meter, TICK};
+pub use render::{Meter, POLL, TICK};
 mod runtime;
 pub use runtime::Live;
 mod demo;

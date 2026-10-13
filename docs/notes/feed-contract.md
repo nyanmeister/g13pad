@@ -1,5 +1,8 @@
 # Feed contract
 
+For a screen of its own, composed from the shared parts, see "Composing a screen from
+the kit" in [health-architecture](../health-architecture.md).
+
 Moved verbatim from the project AGENTS.md on 2026-10-13 (Claude, Fable 5.1); the
 nudges stayed there, the runbook lives here. Dates in the text are the original ones.
 

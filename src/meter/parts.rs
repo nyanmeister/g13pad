@@ -66,9 +66,9 @@ impl Heartbeat {
         }
     }
 
-    /// True on the tick the heart pumps.
-    pub(crate) fn beat_now(&self) -> bool {
-        self.beat_age == Some(0)
+    /// True for `ticks` from the pump, the beat's own moment: a flash, a pip.
+    pub(crate) fn just_beat(&self, ticks: u32) -> bool {
+        self.beat_age.is_some_and(|a| a < ticks)
     }
 
     /// True for `swell_ticks` after a beat: the sprite's moment to swell or blink.

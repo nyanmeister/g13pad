@@ -4,10 +4,17 @@ use super::*;
 
 // ---- the picture ----
 
-/// Frames come every tick; the trace scrolls this many columns per tick.
-/// Legacy heartbeat logical step. Independent of collector and event-frame cadence.
-pub const TICK: Duration = Duration::from_millis(100);
-pub(super) const SCROLL: i32 = 5;
+/// Frames come every tick: 50 a second, one trace column each, since 2026-10-13 (the
+/// glass takes a frame every 10 ms; 50 is the rate at which one column per frame gives
+/// the trace its 50 columns a second). Independent of the feed poll, `POLL`.
+pub const TICK: Duration = Duration::from_millis(20);
+/// How often the feed files are read: telemetry, not presentation.
+pub const POLL: Duration = Duration::from_millis(100);
+/// Columns the trace scrolls per tick.
+pub(super) const SCROLL: i32 = 1;
+/// Ticks in a tenth of a second: the unit the animations were first drawn in, and the
+/// length of the alarm flash.
+pub(super) const TICKS_PER_100MS: u32 = (100 / TICK.as_millis()) as u32;
 pub(super) const BASE: i32 = 22;
 
 #[rustfmt::skip]
@@ -516,8 +523,9 @@ impl Meter {
             &self.tuning.notches(),
             extra.cap.map(|c| (BAR_W * c.min(100) as i32 + 50) / 100),
         );
-        // In the alarm band every beat flashes: the panel, or the trace alone.
-        if self.beat.beat_now() && self.tuning.is_alarm(pct) {
+        // In the alarm band every beat flashes for a tenth of a second: the panel, or
+        // the trace alone.
+        if self.beat.just_beat(TICKS_PER_100MS) && self.tuning.is_alarm(pct) {
             let rows = match self.tuning.flash {
                 Flash::Off => 0,
                 Flash::Trace => SHIELD_TOP as usize - 1,
@@ -613,7 +621,10 @@ impl Meter {
     pub(super) fn vehicle(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, extra: Extra) {
         // Returning on foot starts a fresh ECG instead of retaining old beats.
         self.beat.reset();
-        let phase = (self.tick % 48) as i32;
+        // One turn of the gears every 4.8 s, as when a tick was 100 ms.
+        let turn = 48 * TICKS_PER_100MS;
+        let phase = (self.tick % turn) as i32;
+        let tenths = TICKS_PER_100MS as i32;
         match self.tuning.vehicle {
             VehicleStyle::Tread => {
                 // A steady hull with circulating tread links, independent of HP.
@@ -631,14 +642,18 @@ impl Meter {
                 bm.line(19, 4, 19, 7);
                 bm.line(19, 5, 27, 5);
                 for x in 5..=25 {
-                    if (x + phase / 2) % 4 < 2 {
+                    if (x + phase / (2 * tenths)) % 4 < 2 {
                         bm.plot(x, 11);
                         bm.plot(30 - x, 14);
                     }
                 }
             }
             VehicleStyle::Gear => {
-                let angle = phase as f32 * std::f32::consts::TAU / 48.0;
+                // Whole tenths exactly as the 100 ms frames computed them (the crack
+                // mask is sensitive to a last-bit difference), the ticks between
+                // added as fine steps.
+                let angle = (phase / tenths) as f32 * std::f32::consts::TAU / 48.0
+                    + (phase % tenths) as f32 * std::f32::consts::TAU / turn as f32;
                 let damaged = self.tuning.vehicle_damaged(pct);
                 // Adjacent wheels counter-rotate; the middle meshes with both.
                 gear(bm, 7, 6, angle, damaged);
@@ -647,7 +662,7 @@ impl Meter {
             }
             VehicleStyle::Scan => {
                 gauge(bm, 3, 2, 26, 18, 0);
-                let step = phase % 48;
+                let step = (phase / tenths) % 48;
                 let x = 4 + if step < 24 { step } else { 47 - step };
                 bm.line(x, 5, x, 16);
                 bm.line(x - 1, 7, x - 1, 14);
@@ -696,9 +711,11 @@ impl Meter {
             text(bm, x, y, &name, 1);
         } else {
             let loop_width = length + 19; // three spaces between copies
-            let cycle = 12 + (loop_width as u32).div_ceil(2);
+                                          // A 1.2 s pause, then two columns every tenth of a second.
+            let pause = 12 * TICKS_PER_100MS;
+            let cycle = pause + (loop_width as u32).div_ceil(2) * TICKS_PER_100MS;
             let phase = self.tick.wrapping_sub(self.research_started) % cycle;
-            let offset = phase.saturating_sub(12) as i32 * 2;
+            let offset = phase.saturating_sub(pause) as i32 * 2 / TICKS_PER_100MS as i32;
             let mut clipped = Bitmap::blank();
             text(&mut clipped, -offset, 0, &name, 1);
             text(&mut clipped, loop_width - offset, 0, &name, 1);
@@ -725,7 +742,8 @@ impl Meter {
         }
         bm.line(cursor, BASE - 2, cursor, BASE + 2);
         let [hx, hy] = self.tuning.heart;
-        let full = t % 20 < 3;
+        let tenths = TICKS_PER_100MS as i32;
+        let full = t % (20 * tenths) < 3 * tenths;
         match self.tuning.sprite {
             Sprite::Heart => bm.sprite(hx, hy, if full { HEART } else { HEART_OUTLINE }),
             Sprite::V1 => {
@@ -736,7 +754,7 @@ impl Meter {
         let [rx, ry] = self.tuning.readout;
         readout(bm, "--", rx, ry);
         bars(bm, 0, 0, false, &self.tuning.notches(), None);
-        let x = BAR_X + tri(t * 2, BAR_W - 6);
+        let x = BAR_X + tri(t * 2 / tenths, BAR_W - 6);
         for dx in 0..6 {
             for y in 36..=40 {
                 bm.plot(x + dx, y);
