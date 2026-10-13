@@ -136,18 +136,15 @@ impl Adjust {
         self.pending = true;
     }
 
-    /// Draws the window. Returns the entry's name when the picture was kept this frame (the
-    /// caller shows and sends it), or the error that stopped that.
-    pub fn show(&mut self, ctx: &egui::Context, profile: &str) -> Result<Option<String>, String> {
+    /// Draws the view. Returns the entry's name when the picture was kept this frame (the
+    /// caller shows and sends it), or the error that stopped that. Done sets `open` false;
+    /// the caller may too, and the pending frame is kept either way.
+    pub fn show(&mut self, ui: &mut egui::Ui, profile: &str) -> Result<Option<String>, String> {
         let before = self.opts;
-        let mut open = self.open;
-        egui::Window::new("LCD picture")
-            .collapsible(false)
-            .resizable(true)
-            .default_size([780.0, 640.0])
-            .open(&mut open)
-            .show(ctx, |ui| self.contents(ui));
-        self.open &= open;
+        if self.open {
+            self.contents(ui);
+        }
+        let ctx = ui.ctx();
         if self.opts != before {
             if self.opts.background != before.background {
                 let view = self.src.view(self.opts.background);
@@ -232,13 +229,17 @@ impl Adjust {
             ui.separator();
             if ui
                 .button("Reset")
-                .on_hover_text("As it was when this window opened")
+                .on_hover_text("As it was when this view opened")
                 .clicked()
             {
                 self.opts = self.start;
                 self.lock = self.start.crop.is_none_or(|c| c.panel_shaped());
             }
-            if ui.button("Done").clicked() {
+            if ui
+                .button("Done")
+                .on_hover_text("Keep it like this and go back to the board (Escape)")
+                .clicked()
+            {
                 self.open = false;
             }
         });

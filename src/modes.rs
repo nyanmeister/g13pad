@@ -7,7 +7,7 @@
 //! `watch` also follows window focus changes (`focus`): the window's rule is the base, a lit sum
 //! overrides it, MR clears back to it.
 use crate::focus::{self, Rules};
-use crate::profile::Profile;
+use crate::profile::{Display, Profile};
 use crate::{active_name, daemon, daemon_base, lcd, load, meter, set_active};
 use std::{
     env, fs,
@@ -180,47 +180,98 @@ struct Panel {
     player: Option<lcd::Player>,
     /// The health meter while a game feeds it; it owns the panel and the backlight.
     meter: Option<meter::Live>,
+    pressure: Option<crate::pressure::Live>,
+    mpv: Option<crate::mpv::Live>,
+    mpd: Option<crate::mpd::Live>,
+    audio: Option<crate::audio::Live>,
+    music: Option<crate::music::Worker>,
     /// Feed reads in a row that gave nothing while the meter was on: a feeder rewriting
     /// its file in place is empty for an instant, which must not drop the meter.
     misses: u32,
-    seen: (
-        String,
-        Option<String>,
-        Option<SystemTime>,
-        Option<SystemTime>,
-    ),
+    seen: PanelState,
+}
+
+#[derive(Default, PartialEq)]
+struct PanelState {
+    profile: String,
+    /// The kept picture, and its files' times: a picture converted again under the same
+    /// name is noticed.
+    picture: Option<String>,
+    bitmap: Option<SystemTime>,
+    animation: Option<SystemTime>,
+    display: Display,
+    /// The chosen microphone, while the display is the audio one.
+    audio_mic: Option<String>,
 }
 
 impl Panel {
-    fn state(
-        profile: &str,
-    ) -> (
-        String,
-        Option<String>,
-        Option<SystemTime>,
-        Option<SystemTime>,
-    ) {
-        // Health mode counts as the picture here: the meter's old name for the reader, so
-        // show() keys on one string for picture, meter and reader alike.
-        let pic = load(profile)
-            .ok()
-            .and_then(|(p, _)| p.health.map(|r| r.picture().to_string()).or(p.lcd));
+    fn state(profile: &str) -> PanelState {
+        let selected = load(profile).ok().map(|(p, _)| p);
+        let display = selected.as_ref().map(|p| p.display).unwrap_or_default();
+        let audio_mic = selected
+            .as_ref()
+            .filter(|_| display == Display::Audio)
+            .and_then(|p| p.audio_mic.clone());
+        let pic = selected.and_then(|p| p.lcd);
         let m = |ext: &str| {
             pic.as_ref()
                 .and_then(|n| mtime(&lcd::dir().join(format!("{n}.{ext}"))))
         };
-        (profile.to_string(), pic.clone(), m("lpbm"), m("anim"))
+        PanelState {
+            profile: profile.to_string(),
+            picture: pic.clone(),
+            bitmap: m("lpbm"),
+            animation: m("anim"),
+            display,
+            audio_mic,
+        }
     }
-    /// Puts the profile's picture up from the start (an animation from its first frame),
-    /// or, for a profile that chose the health meter, the meter with its reader: it stays
-    /// across a switch between two profiles with the same reader (the switch wrote the
-    /// backlight, so the band's colour goes back up over it) and ends with any other.
+    /// Puts up what the profile chose: its picture from the start (an animation from its
+    /// first frame), or its live display. Every other live display is ended first; the
+    /// audio and MPD collectors are kept running but told to stop drawing, by design
+    /// (their histories survive a profile change). The health meter stays across a switch
+    /// between two profiles with the same reader (the switch wrote the backlight, so the
+    /// band's colour goes back up over it).
     fn show(&mut self, profile: &str) -> Result<(), String> {
+        let was = self.seen.display;
         self.seen = Self::state(profile);
+        let want = self.seen.display;
         self.player = None; // stops the old frames before the new first one
         let rest = rest_colour(profile);
-        match meter::selects(self.seen.1.as_deref()) {
-            Some(reader) => match &mut self.meter {
+        // Leaving the audio display: it painted the backlight, so the profile's comes back.
+        if was == Display::Audio && want != Display::Audio {
+            if let Some(live) = &self.audio {
+                live.display(None, None);
+            }
+            if !lcd::editor_open() {
+                daemon::send(&format!("rgb {} {} {}\n", rest[0], rest[1], rest[2]))?;
+            }
+        }
+        if want != Display::Mpd {
+            if let Some(live) = &self.mpd {
+                live.display(false);
+            }
+        }
+        if !matches!(want, Display::Health(_)) {
+            if let Some(mut live) = self.meter.take() {
+                // The meter restores the resting colour as it stops: this profile's,
+                // not the one it started under.
+                live.rest(rest);
+                drop(live);
+                eprintln!("health meter: off");
+            }
+        }
+        if want != Display::Mpv && self.mpv.take().is_some() {
+            eprintln!("mpv playback: off");
+        }
+        if want != Display::Pressure && self.pressure.take().is_some() {
+            eprintln!("system pressure: off");
+        }
+        match want {
+            Display::Picture => {
+                self.player = Some(lcd::show(self.seen.picture.as_deref(), true)?);
+            }
+            Display::Health(reader) => match &mut self.meter {
                 Some(live) if live.reader() == reader => live.rest(rest),
                 _ => {
                     self.meter = None; // the old reader goes before the new one binds
@@ -230,22 +281,40 @@ impl Panel {
                     eprintln!("health meter: on ('{profile}', {reader:?})");
                 }
             },
-            None => {
-                if let Some(mut live) = self.meter.take() {
-                    // The meter restores the resting colour as it stops: this profile's,
-                    // not the one it started under.
-                    live.rest(rest);
-                    drop(live);
-                    eprintln!("health meter: off");
+            Display::Mpv => {
+                if self.mpv.is_none() {
+                    self.mpv = Some(crate::mpv::Live::start());
+                    eprintln!("mpv playback: on ('{profile}')");
                 }
-                self.player = Some(lcd::show(self.seen.1.as_deref(), true)?);
+            }
+            Display::Pressure => {
+                if self.pressure.is_none() {
+                    self.pressure = Some(crate::pressure::Live::start());
+                    eprintln!("system pressure: on ('{profile}')");
+                }
+            }
+            Display::Audio => {
+                self.audio
+                    .get_or_insert_with(crate::audio::Live::start)
+                    .display(Some(rest), self.seen.audio_mic.clone());
+            }
+            Display::Mpd => {
+                if self.mpd.is_none() {
+                    self.mpd = Some(crate::mpd::Live::start());
+                    eprintln!("MPD playback: on ('{profile}')");
+                }
+                self.mpd.as_ref().unwrap().display(true);
             }
         }
         Ok(())
     }
     /// Shows again when the profile's picture changed, or nothing is up (the daemon was away).
     fn refresh(&mut self, profile: &str) {
-        let nothing_up = self.player.is_none() && self.meter.is_none();
+        let nothing_up = self.player.is_none()
+            && self.meter.is_none()
+            && self.pressure.is_none()
+            && self.mpv.is_none()
+            && !matches!(self.seen.display, Display::Mpd | Display::Audio);
         if nothing_up || Self::state(profile) != self.seen {
             if let Err(e) = self.show(profile) {
                 eprintln!("LCD: {e}");
@@ -339,7 +408,7 @@ pub fn watch() -> Result<String, String> {
     let mut rules = Rules::load();
     let mut name = active_name();
     let mut bits = 0u8;
-    let mut out: Option<Out> = None;
+    let mut out: Option<Out> = Out::open().ok();
     if modes.on {
         // With window rules on the LEDs are the presses only; alone, they show the profile's sum.
         bits = if rules.on {
@@ -451,6 +520,32 @@ pub fn watch() -> Result<String, String> {
                     while let Some(i) = pending.find(';') {
                         let tok = pending[..i].trim().to_string();
                         pending.drain(..=i);
+                        if let Some(action) = tok
+                            .strip_prefix("AUDIO:")
+                            .and_then(crate::audio::Action::parse)
+                        {
+                            panel
+                                .audio
+                                .get_or_insert_with(crate::audio::Live::start)
+                                .action(
+                                    action,
+                                    load(&active_name()).ok().and_then(|(p, _)| p.audio_mic),
+                                );
+                            continue;
+                        }
+                        if let Some(action) = tok
+                            .strip_prefix("MPD:")
+                            .and_then(crate::music::Action::parse)
+                        {
+                            panel
+                                .music
+                                .get_or_insert_with(crate::music::Worker::start)
+                                .action(action);
+                            continue;
+                        }
+                        if !modes.on {
+                            continue;
+                        }
                         let Some(b) = step(bits, &tok) else { continue };
                         bits = b;
                         let why = format!("mode {bits} ({})", label(bits));
@@ -501,6 +596,9 @@ pub fn watch() -> Result<String, String> {
         }
         if editor_checked.elapsed() >= Duration::from_millis(500) {
             editor_checked = Instant::now();
+            if let Err(e) = crate::demo::recover() {
+                eprintln!("demo recovery: {e}");
+            }
             let now = lcd::editor_open();
             if editor_was && !now {
                 // Whatever the editor showed last, saved or not, the saved picture goes up.
@@ -598,7 +696,7 @@ pub fn watch() -> Result<String, String> {
                     let _ = daemon::send(&format!("{}{}", mod_line(bits, &name), binds()));
                     out = Some(Out::open()?);
                 } else if !modes.on && was.0 {
-                    out = None;
+                    // Audio and music actions use this FIFO even when M-Sum is disabled.
                     bits = 0;
                 }
                 if rules.on {
@@ -625,12 +723,17 @@ pub fn watch() -> Result<String, String> {
                     let _ = daemon::send(&mod_line(bits, &name));
                 }
             }
+            if out.is_none() {
+                out = Out::open().ok();
+            }
             if let Some(o) = &mut out {
                 let now = fs::metadata(out_pipe()).ok().map(|m| m.ino());
                 if now != o.ino {
                     if let Ok(no) = Out::open() {
                         *o = no;
-                        let _ = daemon::send(&format!("{}{}", mod_line(bits, &name), binds()));
+                        if modes.on {
+                            let _ = daemon::send(&format!("{}{}", mod_line(bits, &name), binds()));
+                        }
                         eprintln!("g13map watch: reopened {}", out_pipe().display());
                     }
                 }
@@ -642,6 +745,121 @@ pub fn watch() -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every display to every other (the audio one excepted: its collector opens the
+    /// machine's sound server), with the rule checked after each step: exactly the chosen
+    /// display is up, the picture player only for the picture, the meter with the chosen
+    /// reader, and the MPD collector kept alive once started (its history survives).
+    #[test]
+    #[cfg(feature = "editor")]
+    fn every_display_handoff_leaves_exactly_the_chosen_one_up() {
+        let _sandbox = crate::test_support::Sandbox::new("display-matrix");
+        let _pipe = crate::test_support::PanelPipe::new();
+        crate::test_support::picture("still", &[61]);
+        let displays: Vec<Display> = Display::ALL
+            .into_iter()
+            .filter(|d| *d != Display::Audio)
+            .collect();
+        for (i, display) in displays.iter().enumerate() {
+            let mut p = Profile::parse("# lcd still\n").0;
+            p.display = *display;
+            crate::save(&format!("d{i}"), &p).unwrap();
+        }
+        let check = |panel: &Panel, want: Display| {
+            assert_eq!(panel.seen.display, want);
+            assert_eq!(panel.player.is_some(), want == Display::Picture, "{want:?}");
+            assert_eq!(
+                panel.pressure.is_some(),
+                want == Display::Pressure,
+                "{want:?}"
+            );
+            assert_eq!(panel.mpv.is_some(), want == Display::Mpv, "{want:?}");
+            match want {
+                Display::Health(reader) => {
+                    assert_eq!(panel.meter.as_ref().map(|m| m.reader()), Some(reader))
+                }
+                _ => assert!(panel.meter.is_none(), "{want:?}"),
+            }
+            if want == Display::Mpd {
+                assert!(panel.mpd.is_some());
+            }
+        };
+        let mut panel = Panel::default();
+        let mut started_mpd = false;
+        for (i, from) in displays.iter().enumerate() {
+            for (j, to) in displays.iter().enumerate() {
+                panel.show(&format!("d{i}")).unwrap();
+                check(&panel, *from);
+                panel.show(&format!("d{j}")).unwrap();
+                check(&panel, *to);
+                started_mpd |= *to == Display::Mpd;
+                assert_eq!(panel.mpd.is_some(), started_mpd, "{from:?} -> {to:?}");
+                // Showing the same thing again changes nothing.
+                panel.refresh(&format!("d{j}"));
+                check(&panel, *to);
+            }
+        }
+    }
+
+    #[test]
+    #[cfg(feature = "editor")]
+    fn pressure_health_and_picture_handoffs_stop_the_previous_display() {
+        let _sandbox = crate::test_support::Sandbox::new("pressure-handoff");
+        let pipe = crate::test_support::PanelPipe::new();
+        crate::test_support::picture("still", &[61]);
+        let (p, _) = Profile::parse("# lcd still\n# pressure on\n");
+        crate::save("pressure", &p).unwrap();
+        let (p, _) = Profile::parse("# lcd still\n# health feed\n");
+        crate::save("health", &p).unwrap();
+        let (p, _) = Profile::parse("# lcd still\n# mpv on\n");
+        crate::save("mpv", &p).unwrap();
+        let (p, _) = Profile::parse("# lcd still\n# mpd on\n");
+        crate::save("mpd", &p).unwrap();
+        let mut panel = Panel::default();
+        panel.show("pressure").unwrap();
+        assert!(panel.pressure.is_some() && panel.meter.is_none() && panel.player.is_none());
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.refresh("pressure");
+        pipe.expect_quiet();
+        panel.show("health").unwrap();
+        assert!(panel.pressure.is_none() && panel.meter.is_some() && panel.player.is_none());
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.show("pressure").unwrap();
+        assert!(panel.pressure.is_some() && panel.meter.is_none());
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.show("mpv").unwrap();
+        assert!(panel.mpv.is_some() && panel.pressure.is_none() && panel.meter.is_none());
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.show("health").unwrap();
+        assert!(panel.mpv.is_none() && panel.pressure.is_none() && panel.meter.is_some());
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.show("mpv").unwrap();
+        assert!(panel.mpv.is_some() && panel.pressure.is_none() && panel.meter.is_none());
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.show("mpd").unwrap();
+        assert!(
+            panel.mpd.is_some()
+                && panel.mpv.is_none()
+                && panel.pressure.is_none()
+                && panel.meter.is_none()
+        );
+        assert_eq!(pipe.read().len(), lcd::BYTES);
+        panel.show("still").unwrap();
+        assert!(panel.mpd.is_some() && panel.seen.display != Display::Mpd);
+        assert!(
+            panel.mpv.is_none()
+                && panel.pressure.is_none()
+                && panel.meter.is_none()
+                && panel.player.is_some()
+        );
+        // A frame already in flight can precede the new picture, never follow it.
+        loop {
+            if pipe.read() == vec![61; lcd::BYTES] {
+                break;
+            }
+        }
+        pipe.expect_quiet();
+    }
     #[test]
     fn automatic_profile_switch_applies_stick_before_top_binding() {
         let _sandbox = crate::test_support::Sandbox::new("watch-stick");

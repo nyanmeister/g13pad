@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Fixed adapter integration; configuration contains numbers, never shell commands.
-use g13pad_core::gamepad::{Click, Mapping};
+use g13pad_core::gamepad::{self, Mapping};
 use std::{
     env, fs,
     io::{Read, Write},
@@ -90,7 +90,7 @@ impl Calibration {
             "--evdev-absmap",
             "ABS_X=x1,ABS_Y=y1",
             "--evdev-keymap",
-            "BTN_EXTRA=TL",
+            "",
             "--mimic-xpad",
             "--ui-axismap",
             "x1=ABS_X,y1^resp:32767:0:-32768=ABS_Y",
@@ -106,11 +106,11 @@ impl Calibration {
         .map(String::from)
         .collect();
         args[4] = mapping.absmap();
-        args[6] = format!("BTN_EXTRA={}", mapping.click.source_button());
+        args[6] = gamepad::keymap();
         args[9] = mapping.axismap();
-        if mapping.click == Click::None {
-            args.extend(["--ui-buttonmap".into(), "TL=void".into()]);
-        }
+        // xboxdrv's mimic-xpad predates the modern directional button names:
+        // its historical BTN_X/BTN_Y aliases put X north and Y west.
+        args.extend(["--ui-buttonmap".into(), "x=BTN_WEST,y=BTN_NORTH".into()]);
         args.extend(["--deadzone".into(), self.deadzone.to_string()]);
         if let (Some(x), Some(y)) = (self.x, self.y) {
             args.extend([
@@ -268,7 +268,8 @@ fn run(args: &[String]) -> Result<(), String> {
             println!("g13pad-analog {}", env!("CARGO_PKG_VERSION"));
             Ok(())
         }
-        ["prepare", pipe] => send(Path::new(pipe), b"stickmode ABSOLUTE\nbind TOP MEXTRA\n"),
+        ["prepare", pipe] => prepare(Path::new(pipe), Mapping::default()),
+        ["prepare", pipe, map] => prepare(Path::new(pipe), Mapping::read(Path::new(map))?),
         ["await", path] => wait_exists(Path::new(path)),
         ["init-map", path] => initialize_mapping(Path::new(path)),
         ["release", pipe] => send(Path::new(pipe), b"stickmode KEYS\n"),
@@ -303,6 +304,13 @@ fn run(args: &[String]) -> Result<(), String> {
     }
 }
 
+fn prepare(pipe: &Path, mapping: Mapping) -> Result<(), String> {
+    send(
+        pipe,
+        format!("stickmode ABSOLUTE\nbind TOP {}\n", mapping.click.action()).as_bytes(),
+    )
+}
+
 fn main() {
     if let Err(error) = run(&env::args().skip(1).collect::<Vec<_>>()) {
         eprintln!("g13pad-analog: {error}");
@@ -313,6 +321,7 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use g13pad_core::gamepad::Click;
     #[test]
     fn mappings_preserve_physical_calibration_and_disable_click_explicitly() {
         use g13pad_core::gamepad::Stick;
@@ -338,7 +347,9 @@ mod tests {
             value("--ui-axismap"),
             "y2^resp:32767:0:-32768=ABS_RY,x2=ABS_RX"
         );
-        assert_eq!(value("--ui-buttonmap"), "TL=void");
+        assert_eq!(value("--ui-buttonmap"), "x=BTN_WEST,y=BTN_NORTH");
+        assert_eq!(mapping.click.action(), "KEY_RESERVED");
+        assert!(value("--evdev-keymap").contains("BTN_TRIGGER_HAPPY10=TL"));
     }
     #[test]
     fn init_map_preserves_custom_settings_and_rejects_links_and_fifos() {
@@ -553,7 +564,7 @@ mod tests {
             .any(|pair| pair == ["--device-usbid", "046d:c21c:0110"]));
         assert!(args
             .windows(2)
-            .any(|pair| pair == ["--evdev-keymap", "BTN_EXTRA=TL"]));
+            .any(|pair| pair == ["--evdev-keymap", &gamepad::keymap()]));
         assert!(args.iter().any(|arg| arg == "--evdev-no-grab"));
     }
     #[test]

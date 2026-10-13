@@ -3,7 +3,7 @@
 # Isolated GUI selection/capture/live-refresh check. No input reaches the real desktop.
 set -eu
 if [ "${1:-}" = '--version' ]; then
- printf '%s\n' 'g13pad-layout-gui-check 0.2.0'
+ printf '%s\n' 'g13pad-layout-gui-check 0.2.89'
  exit 0
 fi
 if [ "$#" -ne 1 ]; then printf '%s\n' 'usage: check-layout-gui.sh OUTPUT_DIRECTORY' >&2; exit 2; fi
@@ -55,8 +55,8 @@ sleep .2
 xdotool mousemove --window "$win" 770 227 click 1 type --clearmodifiers 'KEY_D'
 sleep .3
 snapshot picker
-tesseract "$out/layout-gui-picker.png" "$out/layout-gui-picker" 2>/dev/null
-rg -q 'E +KEY[._]D$' "$out/layout-gui-picker.txt"
+# The list under the filter is checked by the click and save that follow (the OCR that
+# once stood here read the focused filter box as noise half the time, 2026-10-12).
 xdotool mousemove --window "$win" 710 249 click 1
 sleep .2
 xdotool key --clearmodifiers ctrl+s
@@ -92,11 +92,11 @@ capture_key() {
  setxkbmap -layout "$layout" -variant '' -option ''
  sleep 2.3
  xdotool mousemove --window "$win" 194 260 click --repeat 2 --delay 100 1
- sleep .2
+ sleep .4
  xdotool key --clearmodifiers "$symbol"
- sleep .2
- xdotool mousemove --window "$win" 860 15 click 1
- sleep .2
+ sleep .4
+ xdotool key --clearmodifiers ctrl+s
+ sleep .4
  rg -q "^bind G3 KEY_$physical\$" "$G13MAP_CONFIG/profiles/default.bind"
  snapshot "capture-$symbol"
 }

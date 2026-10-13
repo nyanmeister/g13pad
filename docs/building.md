@@ -3,10 +3,13 @@
 One Cargo workspace and lockfile cover the editor, shared mapping model and analog helper.
 All members inherit the workspace release version. The helper and core have no external
 crate dependencies; selecting their packages does not compile the GUI stack.
-The CLI/watcher selects only the standard library, mapping core and JSON dependencies;
+The CLI/watcher selects the standard library, mapping core, JSON, native libpulse and libmpdclient;
 GUI/image/font crates are optional behind the `editor` feature. `g13map edit` replaces
 its process with the adjacent `g13map-editor`, preserving the invocation's environment.
-Headless text generation and temporary LCD-error rendering also use that helper, without
+Install libpulse development headers/library before linking (`libpulse` on Arch,
+`libpulse-dev` on Debian/Ubuntu). An audio server is needed only for audio controls
+or the System audio display, not version reporting, other displays or profile edits.
+Install libmpdclient (Arch) or libmpdclient-dev (Debian/Ubuntu) for MPD statistics. A running MPD is needed only for that display, never version reporting. Headless text generation, image demos and temporary LCD-error rendering use that helper, without
 opening a window. Stored LCD frames/animations, profiles and panel polls stay in the CLI.
 Keep both executables together for the full feature set; neither needs hardware or a
 display to answer `--version`. The built-in LCD animations live behind the `art` feature

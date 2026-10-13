@@ -11,9 +11,46 @@ pub fn render(text: &str) -> Result<Animation, String> {
 }
 
 pub fn render_with(text: &str, options: &Options) -> Result<Animation, String> {
+    let strip = raster(text, options, H, 128)?;
+    Ok(scroll_with(&strip, options))
+}
+/// Bounded headless title strip. MPR1, little-endian width/height, then row-major
+/// one-bit pixels. No GUI session, generated animation or persistent font atlas.
+pub fn lcd_row(text: &str) -> Result<Vec<u8>, String> {
+    let options = Options {
+        size: 10.,
+        align: Align::Left,
+        ..Options::default()
+    };
+    let strip = raster(text, &options, 10, 256)?;
+    let (width, height) = (strip.width() as usize, strip.height() as usize);
+    if width == 0 || width > 2560 || height == 0 || height > 10 {
+        return Err("LCD title exceeds raster bounds".into());
+    }
+    let mut out = Vec::with_capacity(10 + (width * height).div_ceil(8));
+    out.extend_from_slice(b"MPR1");
+    out.extend_from_slice(&(width as u32).to_le_bytes());
+    out.extend_from_slice(&(height as u16).to_le_bytes());
+    out.resize(10 + (width * height).div_ceil(8), 0);
+    for y in 0..height {
+        for x in 0..width {
+            if strip.get_pixel(x as u32, y as u32).0[0] >= 96 {
+                let bit = y * width + x;
+                out[10 + bit / 8] |= 1 << (bit % 8);
+            }
+        }
+    }
+    Ok(out)
+}
+fn raster(
+    text: &str,
+    options: &Options,
+    max_height: usize,
+    max_chars: usize,
+) -> Result<image::GrayImage, String> {
     options.validate()?;
-    if text.len() > 4096 || text.chars().count() > 128 {
-        return Err("LCD text is limited to 128 characters".into());
+    if text.len() > 4096 || text.chars().count() > max_chars {
+        return Err(format!("LCD text is limited to {max_chars} characters"));
     }
     let text = text
         .lines()
@@ -106,15 +143,15 @@ pub fn render_with(text: &str, options: &Options) -> Result<Animation, String> {
             }
         }
     }
-    if height > H as u32 {
+    if height > max_height as u32 {
         strip = image::imageops::resize(
             &strip,
-            (width * H as u32 / height).max(1),
-            H as u32,
+            (width * max_height as u32 / height).max(1),
+            max_height as u32,
             image::imageops::FilterType::Triangle,
         );
     }
-    Ok(scroll_with(&strip, options))
+    Ok(strip)
 }
 
 /// Short text is centred. Longer text wraps with a half-panel gap, two pixels per 50 ms.
@@ -206,6 +243,31 @@ pub fn keep_with(text: &str, name: Option<&str>, options: &Options) -> Result<St
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn lcd_row_preserves_case_and_unicode_glyphs() {
+        let row = lcd_row("Artist - Title").unwrap();
+        assert_eq!(&row[..4], b"MPR1");
+        let width = u32::from_le_bytes(row[4..8].try_into().unwrap()) as usize;
+        let height = u16::from_le_bytes(row[8..10].try_into().unwrap()) as usize;
+        assert!(width > 0 && width <= 160 && height <= 10);
+        assert_ne!(row, lcd_row("ARTIST - TITLE").unwrap());
+        // Optional system CJK fonts are not assumed on CI's minimal installation.
+        let cjk = std::process::Command::new("fc-match")
+            .args(["-f", "%{lang}", ":charset=65e5 672c 8a9e"])
+            .output()
+            .ok()
+            .is_some_and(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .split('|')
+                    .any(|s| s == "ja")
+            });
+        if cjk {
+            assert_ne!(lcd_row("日").unwrap(), lcd_row("本").unwrap());
+            assert_ne!(lcd_row("本").unwrap(), lcd_row("語").unwrap());
+        }
+    }
+
     use super::*;
     #[test]
     fn text_renders_without_a_display_and_keeps_reusable_frames() {

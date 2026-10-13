@@ -2,7 +2,7 @@
 -- Read-only fortress and adventure overview for the G13 LCD. Requires DFHack.
 --@module = true
 local json = require('json')
-local VERSION = '0.2.74'
+local VERSION = '0.2.82'
 local CARE_FLAGS = {'needs_healthcare', 'rq_diagnosis', 'rq_immobilize', 'rq_dressing',
     'rq_cleaning', 'rq_surgery', 'rq_suture', 'rq_setting', 'rq_traction', 'rq_crutch'}
 enabled = enabled or false

@@ -14,7 +14,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential gcc-multilib g++-multilib cmake ninja-build pkg-config shellcheck ripgrep perl lua5.4 \
-            libusb-1.0-0-dev libevdev-dev liblog4cpp5-dev \
+            libusb-1.0-0-dev libevdev-dev libpulse-dev libmpdclient-dev libsqlite3-dev mpd mpc sqlite3 liblog4cpp5-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libx11-dev libxcursor-dev libxi-dev \
             libxrandr-dev libgl1-mesa-dev libwayland-dev fontconfig
       - name: Rust tools
@@ -31,7 +31,7 @@ jobs:
           RUST_TEST_THREADS: "1"
           RUST_BACKTRACE: "1"
       - name: Rust tests (core, analog adapter)
-        run: cargo test --locked -p g13pad-core -p g13pad-analog
+        run: cargo test --locked -p g13pad-core -p g13pad-analog -p g13pad-music
       - name: Configure and build (driver, CLI, editor, animations, adapter)
         run: |
           cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON \
@@ -43,7 +43,7 @@ jobs:
       - name: Versions of the built executables
         run: |
           for b in build/g13d build/pbm2lpbm build/rust/release/g13map build/rust/release/g13map-editor \
-                   build/rust/release/g13map-anim build/rust/release/g13pad-analog; do "$b" --version; done
+                   build/rust/release/g13map-anim build/rust/release/g13pad-analog build/rust/release/g13music; do "$b" --version; done
       - name: Stage an installation tree
         run: |
           DESTDIR="$PWD/stage" cmake --install build

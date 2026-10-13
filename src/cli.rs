@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! CLI edits saved state; explicit `use`/`apply` are the hardware acceptance boundary.
-use crate::{profile::StickMode, *};
+use crate::{
+    profile::{Display, StickMode},
+    *,
+};
 use std::process::Command;
 
 const HELP: &str = "g13map — Logitech G13 configuration
@@ -12,15 +15,29 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map use NAME                      apply and select a saved profile
   g13map apply                         reapply the selected profile
   g13map profile create NAME [FROM]    create empty or copy a saved profile
-  g13map profile bind NAME KEY ACTION  save a physical KEY_* key/chord or raw action
+  g13map profile bind NAME KEY ACTION  save a KEY_* key/chord, PAD_* controller button or raw action
   g13map profile unbind NAME KEY       remove a saved binding
   g13map profile rgb NAME R G B        save backlight colour (0–255)
   g13map profile leds NAME BITS        save M-key LED mask (0–15)
   g13map profile stick NAME MODE       analog, keys or current
   g13map profile controller NAME MAP   e.g. 'right r3 0 0 0' (stick/click/swap/invert-X/Y)
   g13map profile lcd NAME IMAGE        kept LCD image name, or none
-  g13map profile health NAME MODE      health mode: off, feed (a mod or script),
+  g13map profile health NAME MODE      game integration: off, feed (a mod or script),
                                        cs2, log (health console log), retroarch or dolphin (RA)
+  g13map profile pressure NAME on|off  show the computer's load (one live display at a time)
+  g13map profile mpv NAME on|off       select mpv playback diagnostics and progress
+  g13map profile mpd NAME on|off       select MPD playback and listening history
+  g13map profile audio NAME on|off     select System audio (mic state and level history)
+  g13map profile mic NAME SOURCE      choose source identity, or default, for this profile
+  g13map audio inputs                 list available microphone/source identities
+  g13map audio status                 show selected profile's mic and default output state
+  g13map audio COMMAND                mic-toggle, mic-mute, mic-unmute, mic-up, mic-down,
+                                      output-toggle, volume-up, volume-down
+  g13map music ACTION                control MPD through the listening-history service
+  g13map music status                persistent listening totals and service state
+  g13map mpd status                  show MPD daemon and library statistics
+  g13map mpd preview FILE.lpbm        render MPD now-playing without touching the pad
+  g13map mpv preview FILE.lpbm         render the current mpv feed without touching the pad
   g13map ra launch [ARGS...]           launch RetroArch with achievements and automatic game readers
   g13map ra fzero [MEASURED_KMH]       inspect race data or record a measured reference
   g13map ra bn2 [launch ARGS | preview FILE]  Battle Network 2 Style progress
@@ -34,6 +51,7 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map panel lxqt|xfce|waybar|text    panel status (no arguments means LXQt)
   g13map import [FILE] [NAME]          import a driver bind file
   g13map marquee TEXT [NAME]           keep LCD text
+  g13map demo FILE [SECONDS]           temporarily display an image/animation (default 10 seconds)
   g13map health VALUE[/MAX] [shield S[/MAX]]  feed the health meter (needs the watcher)
                                       extras: mana M/MAX defense D breath B/MAX
   g13map health wait|off               game connected without health; no game
@@ -60,6 +78,8 @@ Profile edits only save files. Use `g13map use NAME` to apply them.
 M-Sum/window switching needs g13map-watch.service (also plays LCD animations).
 Quote spaces/chords: g13map profile bind gaming G1 'KEY_LEFTCTRL+KEY_C'.
 KEY_* names are physical codes; consult `g13map layout` for your layout's labels.
+Controller bindings: PAD_A/B/X/Y, PAD_LB/RB, PAD_LT/RT, PAD_UP/DOWN/LEFT/RIGHT,
+PAD_BACK/START/GUIDE/L3/R3. Saving one selects analog mode for that profile.
 `g13map COMMAND --help` shows this help without invoking COMMAND.";
 
 fn number<T: std::str::FromStr>(text: &str, what: &str) -> Result<T, String> {
@@ -109,6 +129,21 @@ fn profile(args: &[&str]) -> Result<String, String> {
             if action.chars().any(char::is_control) {
                 return Err("binding must be a single line".into());
             }
+            if action.starts_with(">AUDIO:")
+                && crate::audio::Action::from_binding(&action).is_none()
+            {
+                return Err("unknown audio binding; use >AUDIO:COMMAND;".into());
+            }
+            if action.starts_with(">MPD:") && crate::music::Action::from_binding(&action).is_none()
+            {
+                return Err("unknown music binding; use >MPD:COMMAND;".into());
+            }
+            if action.starts_with("PAD_") {
+                if gamepad::button_label(&action).is_none() {
+                    return Err("unknown controller button; see --help for PAD_* names".into());
+                }
+                p.stick = Some(StickMode::Analog);
+            }
             if action != profile::UNBOUND
                 && action
                     .split_whitespace()
@@ -156,12 +191,38 @@ fn profile(args: &[&str]) -> Result<String, String> {
             };
         }
         ("health", [mode]) => {
-            p.health = match *mode {
-                "off" => None,
-                word => Some(meter::Reader::parse(word).ok_or_else(|| {
+            p.display = match *mode {
+                "off" => Display::Picture,
+                word => Display::Health(meter::Reader::parse(word).ok_or_else(|| {
                     format!("health mode must be off, feed, cs2, log, retroarch or dolphin, not '{word}'")
                 })?),
             };
+        }
+        // `X on` selects that live display (there is only ever one); `X off` goes back
+        // to the picture if X is the one selected, and otherwise changes nothing.
+        ("pressure" | "mpv" | "mpd" | "audio", [mode]) => {
+            let what = *op;
+            let display = match what {
+                "pressure" => Display::Pressure,
+                "mpv" => Display::Mpv,
+                "mpd" => Display::Mpd,
+                _ => Display::Audio,
+            };
+            match *mode {
+                "on" => p.display = display,
+                "off" => {
+                    if p.display == display {
+                        p.display = Display::Picture;
+                    }
+                }
+                _ => return Err(format!("{what} must be on or off")),
+            }
+        }
+        ("mic", [source]) => {
+            if source.is_empty() || source.contains('\0') {
+                return Err("invalid microphone identity".into());
+            }
+            p.audio_mic = (*source != "default").then(|| source.to_string());
         }
         ("lcd", [image]) => {
             if *image == "none" {
@@ -315,6 +376,11 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
             render_text(text, Some(name))
         }
         ["health", rest @ ..] => health(rest),
+        ["demo", rest @ ..] => crate::demo::command(rest),
+        ["mpv", "preview", path] => crate::mpv::preview(std::path::Path::new(path)),
+        ["music", action] => g13pad_music::request(action),
+        ["mpd", rest @ ..] => crate::mpd::command(rest),
+        ["audio", rest @ ..] => crate::audio::command(rest),
         ["ra", "launch", rest @ ..] => crate::ra::launch(rest),
         ["ra", "fzero", rest @ ..] => crate::ra::fzero_command(rest),
         ["ra", "bn2", rest @ ..] => crate::ra::bn2_command(rest),

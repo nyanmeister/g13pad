@@ -1,6 +1,74 @@
 # Making the health meter work for a game
 
+## System tools and audio
+
+What the LCD shows is one choice per profile, `profile::Display` (since 2026-10-12: the
+kept picture, or one live display), listed in the editor under **Shows**; the
+machine-wide ones sit under **This computer**. Each live display keeps its own comment
+line on disk (`# pressure on`, `# audio on`, ...); the saved picture stays kept.
+
+Microphone choices are per-profile stable source names in JSON-escaped
+`# audio-mic "NAME"` comments. Missing chosen devices stay unavailable/red; never
+fall back to the system default. Display, graph and mic bindings must share the
+same choice, including controls-only profiles. Enumerate inputs off the GUI thread
+without opening peak streams; mark output monitors to prevent accidental selection.
+Audio's native libpulse client
+also works with PipeWire-Pulse. Its callbacks and boxed state stay on one owning
+thread, with context/stream destruction before state destruction. Peak streams
+store levels only. A missing level stream must not discard a known mute state.
+Audio bindings use exact `>AUDIO:COMMAND;` tokens through the existing driver output
+FIFO; the watcher reads it even when M-Sum is off. Test controls against an isolated
+audio server or virtual devices, never mute the user's host microphone to test.
+
+MPD playback uses compatible `# mpd on` under System tools. Native readonly
+status/currentsong queries stay on one owning thread; bounded companion `track`
+snapshots must match both URI and daemon endpoint. Never enumerate the share or
+control playback from the display. Keep missing history unknown. The retained
+collector survives profile changes; a synchronous visibility ack retires its LCD
+writes before handoff. Editor ownership suppresses writes, not collection.
+Audio capture is a server peak monitor of exactly one identified MPD sink input,
+optionally pinned to the Unix socket peer PID via stream/client properties.
+Never fall back to a microphone, a desktop mix or an ambiguous MPD stream.
+Pauses/stops freeze the ring, hidden profiles continue it; transient reconnects
+retain it and confirmed peer PID changes reset it. All native Pulse callbacks
+and boxed state stay on one owning thread. Rasterize Unicode titles once in the
+bounded headless editor helper; keep only the packed strip in the watcher.
+Legacy `mpd status` retains daemon/library statistics. Test private sockets,
+null audio, fake LCD FIFOs and silent virtual audio devices; never change the
+user's live queue/audio routing. See [MPD playback](docs/mpd-statistics.md).
+
+## MPD music companion boundary
+
+The driver emits opaque `MPD:COMMAND;` tokens only. Music bindings use exact
+`>MPD:COMMAND;` strings; watcher dispatch remains asynchronous and independent
+of M-Sum/LCD selection. Collection, SQLite, sticker projections and queue policy
+belong to the standalone `g13music` user service in `crates/g13pad-music`, not the
+stats collector or hardware driver. See [ownership/schema/limits/extraction](docs/mpd-music.md).
+Test with private MPD/null audio and local music fixtures; never manipulate the
+user's live queue or ratings to validate controls. Music files are untouched in
+this phase; embedded identity/mtime-preserving rename support remains separate.
+
+## Controller bindings
+
+See [controller bindings](docs/controller-bindings.md). `G13_PAD_SEQ` and the
+core's `gamepad::BUTTONS` share the fixed private channel order. TOP uses the
+same refcounted channel as board buttons; mapping its old BTN_EXTRA to the same
+xboxdrv output would let either release cancel the other held button. Disabling
+TOP must not disable G-key L3. Keep modern west/north X/Y output codes explicit:
+xboxdrv's historical aliases and jstest's printed names use the old convention.
+The native `tools/controller-proof.rs` checks real xboxdrv in the isolated VM;
+driver action proofs check shared holds and releases across rebindings.
+
 ## Telemetry timing is separate from display timing
+
+Temporary file demos use their own runtime `.demo` lock, never the blocking editor
+lock. Normal LCD writers keep the latest restore frame while the demo owns the
+display; editor and error overlays retain priority. Set `.demo-pending` before the
+first frame and clear it only after successful restoration. The watcher checks it
+every 500 ms after the kernel releases the demo lock, including SIGKILL. Watching
+only lock transitions misses a process that starts and dies between polls. Use
+`tools/check-demo.sh` for actual lean CLI/helper/watcher and signal checks on private
+FIFOs; `g13map demo --clear` restores a saved picture without a watcher.
 
 **The G13 can display a new frame every 10 ms (up to 100 FPS), as reported
 2026-10-10. A 100 ms telemetry poll does not limit animation to 10 FPS.** Special
@@ -231,7 +299,7 @@ What made it work:
 
 ## Choosing where it shows
 
-The meter is a profile's **Health mode** tick with a reader (`g13map profile health NAME
+The meter is a profile's display choice (`Display::Health(reader)`; `g13map profile health NAME
 feed|cs2|log`; the picture stays kept underneath), so the window rules put it on the
 game's windows and nowhere else. Two profiles with the same reader
 hand the meter across a switch; any other picture ends it, and the ending profile's
@@ -294,6 +362,20 @@ took, for the next thing that wants to show the pad or the glass on a monitor:
 
 ## Iterating without the package cycle
 
+- **An isolated editor needs the whole sandbox set, not just the config.** `XDG_CONFIG_HOME`
+  alone leaves the editor on the real `/run/g13d/g13-0` pipe and the real editor lock: it
+  pushes its picture to the live pad and pauses the watcher (2026-10-12, one minute on the
+  owner's pad). Use what `test_support::Sandbox` sets: `G13MAP_CONFIG`, `G13MAP_PIPE`,
+  `G13MAP_OUT_PIPE` (with a reader draining the pipe), `XDG_RUNTIME_DIR`, `G13MAP_UNIT=0`,
+  `G13MAP_ANALOG=1`, `G13MAP_ANALOG_MAP`; `tools/check-board-gui.sh` is the model.
+- **`g13map edit` execs the sibling `g13map-editor`.** `cargo build --bin g13map` alone
+  leaves the old editor binary in place; build `--bin g13map-editor` too and check its
+  `--version` or mtime before believing a GUI check.
+- **Build packages under a path without spaces** (`/tmp/g13-package-VERSION`): the
+  GoldSource checks pass `LD_PRELOAD` paths, which split on spaces.
+- **A row of labels wider than the 340 px pane squeezes the whole pane off the window**;
+  `horizontal_wrapped` for any such row. Clicks from xdotool reach nothing on a bare Xvfb
+  until `xdotool windowfocus`.
 - `~/.config/g13map/meter` holds the look (the band ladder and its colours, the dark hold, beat
   spacing, the swell, the flash, where the heart and the readout sit, the CS2 port) and is re-read within two seconds while the meter runs.
 - `tools/dev-watch.sh` runs `g13map-watch.service` from a warm `cargo build --release`
@@ -444,3 +526,9 @@ present in that army, not every army member or historical dead party entry. Rese
 view/subject baselines across local/travel changes; include adventure_view in the
 diagnostic save/restore. No map alone is insufficient: validate the player army and
 matching current nemesis, and wait during loading/unloading without that identity.
+
+The native audio mainloop must drain a bounded batch of ready events before the
+worker sleeps. A single `pa_mainloop_iterate` per 20 ms fell behind PipeWire-Pulse
+peak traffic and timed out device queries after 10–16 seconds despite a present mic.
+The opt-in `peak_stream_keeps_device_queries_responsive` test exercises 40 seconds of
+real server traffic; run it explicitly against a suitable test input/server.

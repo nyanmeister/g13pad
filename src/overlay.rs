@@ -110,6 +110,13 @@ pub(crate) fn remember(frame: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+pub(crate) fn remembered_frame() -> Option<Vec<u8>> {
+    read(&daemon::runtime_file("frame").ok()?, lcd::BYTES)
+        .ok()
+        .flatten()
+        .filter(|bytes| bytes.len() == lcd::BYTES)
+}
+
 pub(crate) fn clear_expired() -> Result<(), String> {
     if !active()? {
         match fs::remove_file(daemon::runtime_file("overlay")?) {
@@ -198,11 +205,10 @@ pub fn tick() -> Result<(), String> {
         if state().is_ok_and(|s| s.is_none()) || active()? {
             return Ok(());
         }
-        let frame = read(&daemon::runtime_file("frame")?, lcd::BYTES)
-            .ok()
-            .flatten()
-            .filter(|bytes| bytes.len() == lcd::BYTES)
-            .unwrap_or_else(|| lcd::LOGO.to_vec());
+        if crate::demo::active() && !lcd::editor_open() {
+            return Ok(());
+        }
+        let frame = remembered_frame().unwrap_or_else(|| lcd::LOGO.to_vec());
         clear_expired()?;
         daemon::write_atomic(file, &frame)
     })

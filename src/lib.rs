@@ -11,12 +11,14 @@ mod adjust;
 mod application;
 #[cfg(feature = "art")]
 pub mod art;
+pub mod audio;
 #[cfg(feature = "editor")]
 mod board;
 #[cfg(feature = "editor")]
 mod calibrate;
 mod cli;
 mod daemon;
+mod demo;
 mod display_clock;
 mod draw;
 mod focus;
@@ -33,10 +35,14 @@ pub mod lcd;
 mod marquee;
 pub mod meter;
 mod modes;
+pub mod mpd;
+pub mod mpv;
+pub mod music;
 #[cfg(feature = "editor")]
 pub mod obs;
 pub mod overlay;
 mod panel;
+pub mod pressure;
 pub mod profile;
 pub mod ra;
 mod session;
@@ -263,6 +269,25 @@ pub fn run_editor() {
         [arg] if arg == "--help" || arg == "-h" => {
             Ok("usage: g13map-editor [--version|--help]\nNormally launch with: g13map edit".into())
         }
+        [arg] if arg == "--lcd-row" => {
+            use std::io::{Read, Write};
+            let result = (|| {
+                let mut text = String::new();
+                std::io::stdin()
+                    .take(4097)
+                    .read_to_string(&mut text)
+                    .map_err(|e| e.to_string())?;
+                if text.len() > 4096 {
+                    return Err("LCD title exceeds input limit".into());
+                }
+                let bytes = marquee::lcd_row(&text)?;
+                std::io::stdout()
+                    .write_all(&bytes)
+                    .map_err(|e| e.to_string())
+            })();
+            finish(result.map(|_| String::new()));
+            return;
+        }
         [arg, text] if arg == "--error-frame" => {
             use std::io::Write;
             let result = overlay::error_frame(text).and_then(|bytes| {
@@ -278,6 +303,9 @@ pub fn run_editor() {
                 finish(validate_name(name).map(|_| String::new()));
             }
             marquee::keep(text, rest.first().map(String::as_str))
+        }
+        [arg, rest @ ..] if arg == "--demo" => {
+            demo::command(&rest.iter().map(String::as_str).collect::<Vec<_>>())
         }
         _ => Err("usage: g13map-editor [--version|--help]".into()),
     };

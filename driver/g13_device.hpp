@@ -175,6 +175,7 @@ protected:
 
   bool keys[G13_NUM_KEYS]{};
   G13_ActionPtr pressed_actions[G13_NUM_KEYS]{};
+  unsigned int pad_holds[G13_PAD_COUNT]{};
 
 private:
   using InputReport = std::array<unsigned char, 8>;

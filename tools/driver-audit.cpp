@@ -65,6 +65,12 @@ public:
     if (held) r[7] = 8;
     m_currentProfile->ParseKeys(r);
   }
+  void pad_report(bool g10, bool top) {
+    unsigned char r[8] = {0, 127, 127, 0, 0, 0, 0, 0};
+    if (g10) r[4] = 2;
+    if (top) r[7] = 8;
+    m_currentProfile->ParseKeys(r);
+  }
   void joystick(unsigned char x, unsigned char y) {
     unsigned char r[8] = {0, x, y, 0, 0, 0, 0, 0};
     stick().ParseJoystick(r);
@@ -173,6 +179,37 @@ int main() {
   log4cpp::Category::getRoot().setPriority(log4cpp::Priority::CRIT);
   check_axis_modes();
   check_zone_commands();
+  {
+    Device pad;
+    auto *manager = G13::G13_Manager::Instance();
+    for (int i = 0; i < G13::G13_PAD_COUNT; ++i) {
+      const auto name = std::string("PAD_") + G13::G13_PAD_SEQ[i];
+      const int code = BTN_TRIGGER_HAPPY1 + i;
+      assert(manager->FindInputKeyValue(name) == code);
+      pad.Command(("bind G10 " + name).c_str());
+      pad.report(true);
+      assert(down[code]);
+      pad.Command("bind G10 KEY_A");
+      pad.report(false);
+      assert(!down[code] && !down[KEY_A]);
+    }
+    pad.Command("bind G10 PAD_A");
+    pad.Command("bind TOP PAD_A");
+    const auto before = key_events;
+    pad.pad_report(true, false);
+    pad.pad_report(true, true);
+    pad.Command("bind G10 PAD_B");
+    pad.pad_report(false, true);
+    assert(down[BTN_TRIGGER_HAPPY1] && !down[BTN_TRIGGER_HAPPY2]);
+    assert(key_events == before + 1);
+    pad.pad_report(false, false);
+    assert(!down[BTN_TRIGGER_HAPPY1] && key_events == before + 2);
+    pad.pad_report(true, false);
+    assert(down[BTN_TRIGGER_HAPPY2]);
+    pad.pad_report(false, false);
+    assert(!down[BTN_TRIGGER_HAPPY2]);
+    std::cout << "All 17 controller channels release old bindings; shared TOP/G-key holds survive individual release\n";
+  }
   Device d;
   d.Command("stickmode ABSOLUTE");
   d.Command("bind STICK_LEFT KEY_LEFT");

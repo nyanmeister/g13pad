@@ -1,10 +1,10 @@
 [workspace]
-members = ["crates/g13pad-core", "crates/g13pad-analog"]
-default-members = [".", "crates/g13pad-core", "crates/g13pad-analog"]
+members = ["crates/g13pad-core", "crates/g13pad-analog", "crates/g13pad-music"]
+default-members = [".", "crates/g13pad-core", "crates/g13pad-analog", "crates/g13pad-music"]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.74"
+version = "0.2.89"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -46,6 +46,7 @@ required-features = ["editor"]
 
 [dependencies]
 g13pad-core.workspace = true
+g13pad-music = { path = "crates/g13pad-music" }
 eframe = { version = "0.36", optional = true, default-features = false, features = ["glow", "x11", "wayland", "default_fonts"] }
 egui = { version = "0.36", optional = true }
 serde_json = "1"

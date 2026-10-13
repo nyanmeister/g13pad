@@ -1,0 +1,16 @@
+[Unit]
+Description=MPD listening history and G13 music controls
+After=mpd.service
+
+[Service]
+ExecStart=@CMAKE_INSTALL_FULL_BINDIR@/g13music run
+Restart=on-failure
+RestartSec=3
+UMask=0077
+RuntimeDirectory=g13music
+RuntimeDirectoryMode=0700
+NoNewPrivileges=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=default.target

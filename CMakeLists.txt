@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.2.74 LANGUAGES C CXX)
+project(g13pad VERSION 0.2.89 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 install(DIRECTORY contrib/df-health/
@@ -287,7 +287,7 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
   endif()
   # Cargo owns freshness (including include_bytes! assets and manifest changes).
   # Separate package selections keep adapter/driver work out of the GUI dependency graph.
-  foreach(component cli editor anim obs factorio adapter)
+  foreach(component cli editor anim obs factorio music adapter)
     set(rust_features)
     set(rust_test_args)
     if(component STREQUAL "editor")
@@ -315,6 +315,11 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
       list(APPEND rust_test_args --bin g13map-factorio)
       set(component_enabled ${G13PAD_BUILD_CLI})
       list(APPEND rust_features --no-default-features)
+    elseif(component STREQUAL "music")
+      set(rust_package g13pad-music)
+      set(rust_binary g13music)
+      set(rust_test music-tests)
+      set(component_enabled ${G13PAD_BUILD_CLI})
     elseif(component STREQUAL "cli")
       set(rust_package g13map)
       set(rust_binary g13map)
@@ -365,6 +370,21 @@ if(BUILD_TESTING AND G13PAD_BUILD_CLI AND G13PAD_BUILD_EDITOR)
   add_test(NAME cli-contract COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-cli.sh"
     "${rust_output_dir}/g13map")
   set_tests_properties(cli-contract PROPERTIES TIMEOUT 30)
+  add_test(NAME demo-contract COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-demo.sh"
+    "${rust_output_dir}/g13map")
+  set_tests_properties(demo-contract PROPERTIES TIMEOUT 45)
+  find_program(G13PAD_TEST_SQLITE sqlite3)
+  find_program(G13PAD_TEST_MPD mpd)
+  find_program(G13PAD_TEST_MPC mpc)
+  if(G13PAD_TEST_MPD AND G13PAD_TEST_MPC)
+    add_test(NAME mpd-native-statistics COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-mpd.sh"
+      "${rust_output_dir}/g13map")
+    set_tests_properties(mpd-native-statistics PROPERTIES TIMEOUT 20)
+    if(G13PAD_TEST_SQLITE)
+      add_test(NAME music-native-history COMMAND sh "${CMAKE_CURRENT_SOURCE_DIR}/tools/check-music.sh" "${rust_output_dir}/g13music" "${rust_output_dir}/g13map")
+      set_tests_properties(music-native-history PROPERTIES TIMEOUT 60)
+    endif()
+  endif()
 endif()
 
 if(G13PAD_BUILD_FUZZERS)
@@ -401,7 +421,7 @@ set(G13PAD_BINDIR "${CMAKE_INSTALL_FULL_BINDIR}")
 if(G13PAD_BINDIR MATCHES "[\"%\\\\]")
   message(FATAL_ERROR "Service executable paths cannot contain quotes, percent signs or backslashes")
 endif()
-foreach(template g13.service g13-analog.service g13map-apply.service g13map-watch.service g13pad.desktop)
+foreach(template g13.service g13-analog.service g13map-apply.service g13map-watch.service g13music.service g13pad.desktop)
   configure_file("packaging/${template}.in" "packaging/${template}" @ONLY)
 endforeach()
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/packaging/g13.service"
@@ -409,6 +429,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/packaging/g13.service"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/system)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/packaging/g13map-apply.service"
   "${CMAKE_CURRENT_BINARY_DIR}/packaging/g13map-watch.service"
+  "${CMAKE_CURRENT_BINARY_DIR}/packaging/g13music.service"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/systemd/user)
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/packaging/g13pad.desktop" DESTINATION ${CMAKE_INSTALL_DATADIR}/applications)
 install(FILES packaging/g13pad.sysusers DESTINATION ${CMAKE_INSTALL_LIBDIR}/sysusers.d RENAME g13pad.conf)
@@ -418,6 +439,7 @@ install(FILES packaging/default.bind packaging/analog.conf DESTINATION /etc/g13)
 install(FILES packaging/g13pad.sudoers DESTINATION /etc/sudoers.d RENAME g13pad PERMISSIONS OWNER_READ GROUP_READ)
 install(FILES packaging/g13pad.quirks DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad)
 install(FILES packaging/steam-g13-analog.vdf DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad)
+install(FILES contrib/mpv/g13-lcd.lua DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/mpv)
 # Use themed icons so genmon follows the panel's icon sizing and non-default prefixes
 # through XDG_DATA_DIRS, without writing an SVG cache on each status poll.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/panel/g13.svg" g13_mark)
@@ -432,7 +454,7 @@ foreach(icon g13pad g13pad-disconnected)
   install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/${icon}.svg"
     DESTINATION ${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps)
 endforeach()
-install(FILES LICENSE NOTICE.md docs/installation.md docs/migration.md docs/provenance.md docs/steam-input.md docs/building.md
+install(FILES LICENSE NOTICE.md docs/installation.md docs/migration.md docs/provenance.md docs/steam-input.md docs/building.md docs/controller-bindings.md docs/system-audio.md docs/mpd-statistics.md docs/mpd-music.md
   DESTINATION ${CMAKE_INSTALL_DATADIR}/doc/g13pad)
 install(DIRECTORY LICENSES/ DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/g13pad)
 

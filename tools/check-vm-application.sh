@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Real USB integration in the authorized test VM; no generated desktop input.
 set -Eeuo pipefail
-if [[ ${1:-} == --version ]]; then echo 'g13pad-vm-application-check 0.2.8'; exit 0; fi
+if [[ ${1:-} == --version ]]; then echo 'g13pad-vm-application-check 0.2.78'; exit 0; fi
 # G13PAD_VM_HOST names the authorized test VM; the check refuses to run anywhere else.
 [[ -n ${G13PAD_VM_HOST:-} && $(hostname) == "$G13PAD_VM_HOST" && $# == 1 && $(id -u) != 0 ]] || exit 2
 out=$(realpath -e "$1")
@@ -48,7 +48,8 @@ inspect() {
 }
 inspect >"$out/left-argv.txt"
 grep -q 'ABS_X=x1,ABS_Y=y1' "$out/left-argv.txt"
-grep -q 'BTN_EXTRA=TL' "$out/left-argv.txt"
+grep -q 'BTN_TRIGGER_HAPPY10=TL' "$out/left-argv.txt"
+grep -q '^click l3$' /run/g13d/analog.map
 g13map watch >"$out/watch.log" 2>&1 &
 watch_pid=$!
 for _attempt in $(seq 1 50); do
@@ -74,7 +75,8 @@ signal_mode M1
 await_profile test-right
 inspect >"$out/right-argv.txt"
 grep -q 'ABS_X=y2,ABS_Y=x2' "$out/right-argv.txt"
-grep -q 'BTN_EXTRA=TR' "$out/right-argv.txt"
+grep -q 'BTN_TRIGGER_HAPPY11=TR' "$out/right-argv.txt"
+grep -q '^click r3$' /run/g13d/analog.map
 signal_mode MR
 await_profile test-left
 signal_mode M2

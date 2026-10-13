@@ -513,7 +513,32 @@ impl Board {
                 String::new()
             } else {
                 action
-                    .map(|a| action_label(a, &self.layout))
+                    .map(|a| {
+                        if let Some(action) = crate::audio::Action::from_binding(a) {
+                            match action {
+                                crate::audio::Action::MicToggle => "Mic",
+                                crate::audio::Action::MicMute => "Mute",
+                                crate::audio::Action::MicUnmute => "Open",
+                                crate::audio::Action::MicUp => "Mic+",
+                                crate::audio::Action::MicDown => "Mic-",
+                                crate::audio::Action::OutputToggle => "Out",
+                                crate::audio::Action::VolumeUp => "Vol+",
+                                crate::audio::Action::VolumeDown => "Vol-",
+                            }
+                            .to_string()
+                        } else if crate::gamepad::button_label(a).is_some() {
+                            match a {
+                                "PAD_UP" => "D-Up",
+                                "PAD_DOWN" => "D-Down",
+                                "PAD_LEFT" => "D-Left",
+                                "PAD_RIGHT" => "D-Right",
+                                _ => a.strip_prefix("PAD_").unwrap(),
+                            }
+                            .to_string()
+                        } else {
+                            action_label(a, &self.layout)
+                        }
+                    })
                     .unwrap_or_else(|| "—".into())
             };
             let name = match s.name.strip_prefix("STICK_") {
@@ -576,7 +601,7 @@ impl Board {
             }
             if is_hover {
                 let extra = if locked {
-                    " — bound to the stick click by g13-analog.service"
+                    " — a game controller in this profile; click to set it up"
                 } else if inert {
                     " — inactive while the analog adapter runs"
                 } else {
@@ -585,7 +610,7 @@ impl Board {
                 let full = action.map(|a| format!("\n{a}")).unwrap_or_default();
                 resp.clone()
                     .on_hover_text(format!("{}: {}{}{}", s.name, s.about, extra, full));
-                if resp.clicked() && !locked && s.kind != Kind::Deco {
+                if resp.clicked() && s.kind != Kind::Deco {
                     clicked = Some((s.name, resp.double_clicked()));
                 }
             }

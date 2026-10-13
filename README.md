@@ -55,10 +55,31 @@ overshield, and three dark seconds on a drop to zero before the search for a pul
 
 A game feeds it one line at a time through a small mod or script. Feeders for Deep Rock
 Galactic, Doom, Source engine games, ULTRAKILL and more are in `contrib/`; Counter-Strike 2
-posts straight to the watcher. A profile ticks **Health mode** to show it, so the window
-rules put it on the game's windows and the profile's own picture returns when the tick
-comes off. `g13map health demo` runs the states on your own panel. See
+posts straight to the watcher. In the editor, click the screen and choose the game's
+entry under **Shows**, so the window rules put it on the game's windows; the profile's
+own picture stays kept and returns when the choice goes back to **Picture**.
+`g13map health demo` runs the states on your own panel. See
 [the health meter](docs/health-meter.md) and, for adding a game, [AGENTS.md](AGENTS.md).
+
+The same list, under **This computer**, has two machine-wide displays.
+**Computer load** shows CPU, memory and I/O stalls with a 90-second history.
+**Microphone and volume** shows default mic/output state and a scrolling mic-level
+history, with red backlight for a muted mic and green for an open mic. A key's **Sound**
+tab provides mic mute/gain and output mute/volume controls. A profile shows one thing at
+a time; the saved picture is kept underneath. See [System pressure](docs/system-pressure.md)
+and [System audio](docs/system-audio.md).
+
+[MPD listening history and music controls](docs/mpd-music.md) add an independent
+SQLite companion service, G13 Music bindings, and queued album/smart shuffle.
+The driver only emits action tokens; history and playback policy live outside it.
+
+[MPD playback](docs/mpd-statistics.md) (**Music (MPD): what is playing**) shows Artist - Title,
+qualified plays and last played date, elapsed/remaining time, and an MPD-only audio
+level history. The graph freezes on pause and survives profile switches.
+
+[mpv playback](docs/mpv-playback.md) adds decoder, recent frame drops, A/V sync,
+buffering and GPU pass timing, with elapsed/remaining time above a full-width
+progress bar. Choose **mpv: what is playing** under **Shows** and install the passive mpv script.
 
 [Dwarf Fortress with DFHack](contrib/df-health/README.md) has a fixed fortress
 overview: care, impaired limbs, worn clothing, weather and temperature. Its detail
@@ -73,7 +94,7 @@ The collector reads the game without changing it.
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.74.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.89.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -89,7 +110,7 @@ For game-handler development, start with the [Health Mode architecture and timin
 contract](docs/health-architecture.md). Telemetry polling and LCD animation have
 independent clocks; the reported display ceiling is 100 FPS.
 
-On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev log4cpp`
+On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev libpulse log4cpp`
 and the GUI runtime dependencies listed in [the Arch recipe](packaging/PKGBUILD), including
 `libglvnd libxkbcommon libxkbcommon-x11 libx11`. A first Rust build downloads the
 versions pinned by Cargo.lock. For an already populated cache, add
@@ -170,8 +191,14 @@ LCD errors and reapplies the profile after a driver reconnect.
 
 ### The editor
 
-The editor offers captured keys and chords, raw daemon actions, M-key additive profile
-modes, window rules, a per-profile stick preference and LCD choices.
+The board on the left is the pad; click a key, the stick or the screen and the pane on
+the right shows what it does and the ways to change it: a key or chord (press it, or
+pick it from the list), a controller button, a sound or music action, or the driver's
+raw action text under **Advanced**. The screen's pane has one list, **Shows**: the kept
+picture, or one of the live displays (game health, achievements, what is playing, the
+microphone, the computer's load); the picture stays kept underneath. The bar's
+**Window rules** and **OBS** buttons swap the board for those views; **← Board** or
+Escape comes back. Every change reaches the pad at once; **Save** keeps it.
 
 The key picker, board and chord labels follow the active X11 keyboard layout and group,
 including changes while the editor is open. Bindings keep the physical Linux `KEY_*` code,
@@ -216,6 +243,15 @@ installed fonts, size, multiline wrapping/alignment and scrolling. **Animations�
 built-in looping pixel art drawn in code (a rainy skyline, a starfield, Pong, Life, waves,
 cubes, digital rain, a heartbeat, an aquarium, tesseracts); a click keeps one as a picture.
 `g13map-anim` lists and keeps the same scenes from a terminal.
+
+`g13map demo FILE [SECONDS]` shows a file temporarily, then restores the current
+display. The default is 10 seconds; fractional seconds are accepted. With no file,
+it prints usage and exits. GIF, animated PNG/WebP and ordinary images use the editor
+component's decoder without opening a window; white pixels light the LCD. Native
+sprite sheets whose dimensions are multiples of 160×43 play left-to-right, then
+top-to-bottom, at 200 ms per frame. Driver `.lpbm` and kept `.anim` files also work.
+The demo preserves profiles and pictures, yields to an open editor, and restores
+the display on Ctrl+C. Example: `g13map demo loop-160x43.gif 15`.
 
 **Show temporary LCD errors** displays errors for five seconds, then restores the latest
 normal image or animation frame. The watcher performs the restoration even after the
@@ -266,7 +302,7 @@ lit pixel passes, the same colour brighter and only paler where a channel has no
 Without OBS, or on a machine without the plugin, `g13map obs` (0.2.39) is the same
 picture as a borderless transparent window ("G13 overlay"; `--lcd N` the LCD alone as
 "G13 LCD"; `--dump DIR` writes the sheet for repainting; `--help` has the rest), and
-the editor's **OBS…** button (0.2.40) opens and closes those windows. A window must stay
+the editor's **OBS** view (0.2.40) opens and closes those windows. A window must stay
 on a visible workspace to be captured; the plugin needs nothing of the kind.
 
 ### Panel applets
@@ -279,9 +315,16 @@ custom-command output remains the default with no arguments. See
 
 ### The analog stick
 
+The key editor's **Controller** tab binds G-keys and thumb buttons to the same
+Xbox-compatible controller as the stick: A/B/X/Y, LB/RB, LT/RT, D-pad directions,
+Back/Start/Guide and L3/R3. Picking a controller binding selects analog mode for
+the profile; other keys can retain keyboard bindings. Digital triggers send full
+pressure while held and zero on release. Click the stick itself for what pressing it sends.
+See [controller bindings](docs/controller-bindings.md) for setup and CLI usage.
+
 Analog support defaults to the left controller stick and its click to L3, preserving
-normal board keyboard events. **Controller…** changes the output stick, click button,
-axis swap and physical-axis inversion per profile. Apply changes the live adapter; Save
+normal board keyboard events. The stick's pane (click the stick on the board) changes the
+output stick, click button, axis swap and flips per profile. Apply changes the live adapter; Save
 keeps them, Revert restores the saved mapping, and Use defaults removes the override.
 Calibration continues to follow physical X/Y when axes are swapped.
 

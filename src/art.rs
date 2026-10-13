@@ -80,6 +80,12 @@ pub const SCENES: &[Scene] = &[
         delay_ms: 50,
         closed: aquarium,
     },
+    Scene {
+        name: "orrery",
+        about: "Planets on their rings around a small sun",
+        delay_ms: 50,
+        closed: orrery,
+    },
 ];
 
 impl Scene {
@@ -103,6 +109,7 @@ impl Scene {
 
 // ---- the scenes ----
 
+/// Animation created by Fable Claude 5.1.
 fn skyline_rain() -> Vec<Bitmap> {
     const N: i32 = 120;
     // Buildings left to right: x, width, roof row.
@@ -171,6 +178,7 @@ fn skyline_rain() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn starfield() -> Vec<Bitmap> {
     const N: i32 = 160;
     const SHIP: &[&str] = &[
@@ -217,6 +225,7 @@ fn starfield() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn pong() -> Vec<Bitmap> {
     // The ball crosses 152 columns at 2 per frame (period 152) and 38 rows at 1 per frame
     // (period 76): the loop is 152 frames.
@@ -245,6 +254,7 @@ fn pong() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn life() -> Vec<Bitmap> {
     // Oscillators of periods 2, 3, 8 and 15 placed apart: the garden repeats after 120
     // generations, which the loop test proves (a collision would break the period).
@@ -366,6 +376,7 @@ fn life_step(g: &[bool]) -> Vec<bool> {
     next
 }
 
+/// Animation created by Fable Claude 5.1.
 fn waves() -> Vec<Bitmap> {
     // The gull crosses once per loop and is away the other half; three fish jump out of
     // the front wave in its direction, once each (asked 2026-10-07).
@@ -442,6 +453,7 @@ fn waves() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn cubes() -> Vec<Bitmap> {
     const N: i32 = 120;
     frames(N as usize, |t, bm| {
@@ -475,6 +487,7 @@ fn cubes() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn tesseracts() -> Vec<Bitmap> {
     // Sixteen vertices (±1)^4 and the 32 edges between those differing in one coordinate.
     // Each turns in two planes at once (xw and yz: a double rotation, the one with no
@@ -514,6 +527,7 @@ fn tesseracts() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn digital_rain() -> Vec<Bitmap> {
     // Each column is an endless ribbon of 20 (a third: 10) glyph slots, six pixels apart, scrolling
     // down one or two pixels a frame with no reset: the ribbon's period (60 or 120 px)
@@ -561,6 +575,7 @@ fn digital_rain() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn heartbeat() -> Vec<Bitmap> {
     // One beat is 80 columns and the trace scrolls 2 per frame: 40 frames.
     const N: i32 = 40;
@@ -595,6 +610,7 @@ fn heartbeat() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Fable Claude 5.1.
 fn aquarium() -> Vec<Bitmap> {
     // Three fish cross and spend seconds away before coming back (asked 2026-10-07); a
     // pufferfish stays put, bobbing, fluttering, blinking and blowing bubbles.
@@ -745,6 +761,86 @@ fn aquarium() -> Vec<Bitmap> {
     })
 }
 
+/// Animation created by Claude Opus 4.8, asked 2026-10-12.
+///
+/// A small orrery: a sun at the centre, three planets on tilted elliptical rings, the middle
+/// one carrying a moon. Each body is a pure function of the frame, and every orbit period
+/// divides the loop, so the rings never jump. The near side of a ring (lower on the panel) is
+/// drawn over the sun and the far side behind it, which reads as depth on the flat glass.
+fn orrery() -> Vec<Bitmap> {
+    const N: usize = 240;
+    const CX: i32 = 80;
+    const CY: i32 = 21;
+    // Semi-axis across, semi-axis down, period in frames, body radius, start phase in turns.
+    // Every period divides N (48, 80, 120 | 240), so the loop closes without a seam.
+    let planets: [(f32, f32, f32, i32, f32); 3] = [
+        (24.0, 6.0, 48.0, 1, 0.00),
+        (46.0, 12.0, 80.0, 2, 0.37),
+        (70.0, 18.0, 120.0, 2, 0.68),
+    ];
+    // A point on a tilted ellipse at `turns`; the vertical sine is the front/back depth cue.
+    let at = |a: f32, b: f32, turns: f32| -> (i32, i32, f32) {
+        let ang = turns * TAU;
+        (
+            CX + (a * ang.cos()).round() as i32,
+            CY + (b * ang.sin()).round() as i32,
+            ang.sin(),
+        )
+    };
+    // One ring, dotted so the planets read over it.
+    let dot_ellipse = |bm: &mut Bitmap, a: f32, b: f32| {
+        let steps = ((a + b) * 2.0) as i32;
+        for k in (0..steps).step_by(3) {
+            let (x, y, _) = at(a, b, k as f32 / steps as f32);
+            bm.plot(x, y);
+        }
+    };
+    // A filled body, with a cleared halo so the ring and anything behind do not bleed through.
+    let body = |bm: &mut Bitmap, x: i32, y: i32, r: i32| {
+        bm.halo(x - r, y - r, 2 * r + 1, 2 * r + 1);
+        bm.disc(x, y, r);
+    };
+    // Fixed stars, kept clear of the extreme columns only the outer planet reaches.
+    const STARS: [(i32, i32); 6] = [(22, 4), (138, 6), (31, 38), (129, 36), (118, 3), (46, 40)];
+    frames(N, |t, bm| {
+        for &(x, y) in &STARS {
+            bm.plot(x, y);
+        }
+        for &(a, b, ..) in &planets {
+            dot_ellipse(bm, a, b);
+        }
+        // Place every body, the moon riding the middle planet, then split them by depth.
+        let mut bodies: Vec<(i32, i32, i32, f32)> = Vec::with_capacity(4);
+        for (i, &(a, b, period, r, phase)) in planets.iter().enumerate() {
+            let (x, y, depth) = at(a, b, t as f32 / period + phase);
+            bodies.push((x, y, r, depth));
+            if i == 1 {
+                let turns = t as f32 / 48.0 + 0.2;
+                let mx = x + (7.0 * (turns * TAU).cos()).round() as i32;
+                let my = y + (3.0 * (turns * TAU).sin()).round() as i32;
+                bodies.push((mx, my, 0, depth));
+            }
+        }
+        // Far side first, then the sun with a short corona, then the near side over the top.
+        for &(x, y, r, _) in bodies.iter().filter(|b| b.3 < 0.0) {
+            body(bm, x, y, r);
+        }
+        body(bm, CX, CY, 3);
+        // Four cardinal corona stubs, one clear pixel off the sun's edge (diagonals would
+        // merge into the disc's corners and read as a lump).
+        for a in 0..4 {
+            let ang = a as f32 / 4.0 * TAU;
+            bm.plot(
+                CX + (ang.cos() * 5.0).round() as i32,
+                CY + (ang.sin() * 5.0).round() as i32,
+            );
+        }
+        for &(x, y, r, _) in bodies.iter().filter(|b| b.3 >= 0.0) {
+            body(bm, x, y, r);
+        }
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -808,5 +904,37 @@ mod tests {
         assert!(bm.get(0, 0) && bm.get(5, 5) && bm.get(159, 42) && bm.get(2, 0));
         bm.halo(1, 1, 3, 3);
         assert!(!bm.get(0, 0) && !bm.get(4, 4) && bm.get(5, 5));
+    }
+
+    #[test]
+    fn orrery_sun_holds_while_the_outer_planet_sweeps_edge_to_edge() {
+        let frames = Scene::find("orrery").unwrap().closed_loop();
+        // The sun sits at the centre and is drawn after the far bodies, so (80, 21) is lit in
+        // every frame: nothing orbits close enough to the centre to clear it.
+        for (i, f) in frames.iter().enumerate() {
+            assert!(f.get(80, 21), "frame {i}: the sun went dark");
+        }
+        // The outer ring (across ±70) is static and lights its leftmost column 10 and rightmost
+        // column 150 in every frame, so those are not a planet test. The planet is a disc of
+        // radius 2 about that ring, so only its disc reaches columns 8..=9 and 151..=152, and
+        // only while it is at that extreme. A lit pixel there is proof the planet swept the edge.
+        let lit_in = |cols: std::ops::RangeInclusive<usize>| {
+            frames
+                .iter()
+                .filter(|f| cols.clone().any(|x| (0..H).any(|y| f.get(x, y))))
+                .count()
+        };
+        let left = lit_in(0..=9);
+        let right = lit_in(151..=159);
+        assert!(
+            left > 0 && right > 0,
+            "edges not reached: left {left} right {right}"
+        );
+        // And it is a sweep, not a planet parked at an edge: most frames leave both edges dark.
+        assert!(left < frames.len() / 2, "left edge lit too often: {left}");
+        assert!(
+            right < frames.len() / 2,
+            "right edge lit too often: {right}"
+        );
     }
 }

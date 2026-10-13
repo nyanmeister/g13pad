@@ -43,13 +43,13 @@ pub fn with_characters(text: &str) -> FontDefinitions {
     };
     if !file
         .metadata()
-        .is_ok_and(|m| m.is_file() && m.len() <= 16 << 20)
+        .is_ok_and(|m| m.is_file() && m.len() <= 24 << 20)
     {
         return fonts;
     }
     let mut bytes = Vec::new();
-    if file.take((16 << 20) + 1).read_to_end(&mut bytes).is_err()
-        || bytes.len() > 16 << 20
+    if file.take((24 << 20) + 1).read_to_end(&mut bytes).is_err()
+        || bytes.len() > 24 << 20
         || read_fonts::FontRef::from_index(&bytes, 0).is_err()
     {
         return fonts;

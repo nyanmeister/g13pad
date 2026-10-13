@@ -1090,109 +1090,105 @@ impl Panel {
         self.checked = None;
     }
 
-    /// The OBS window: the two overlay windows as toggles, their options, the sheet.
-    pub fn window(&mut self, ctx: &egui::Context, open: &mut bool) {
-        if !*open {
-            return;
-        }
+    /// The OBS view in the editor: the two overlay windows as toggles, their options, the
+    /// sheet, and the glass-matching course.
+    pub fn contents(&mut self, ui: &mut egui::Ui) {
         self.refresh();
-        ctx.request_repaint_after(Duration::from_secs(1));
-        let mut still_open = *open;
-        egui::Window::new("OBS overlay")
-            .open(&mut still_open)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.label(
-                    egui::RichText::new(
-                        "Windows for OBS to capture: the pad with its keys lit as pressed, the stick and the LCD; or the LCD alone. \
-                         In OBS add a Window Capture (Xcomposite) and pick \"G13 overlay\" or \"G13 LCD\". \
-                         The windows outlive the editor; keep them on a visible workspace.",
-                    )
-                    .weak(),
+        ui.ctx().request_repaint_after(Duration::from_secs(1));
+        ui.label(
+            egui::RichText::new(
+                "Windows for OBS to capture: the pad with its keys lit as you press them, the stick and the LCD; or the LCD alone. \
+                 In OBS add a Window Capture (Xcomposite) and pick \"G13 overlay\" or \"G13 LCD\", or use the g13pad source plugin. \
+                 The windows stay open after this editor closes; keep them on a visible workspace.",
+            )
+            .weak(),
+        );
+        ui.add_space(6.0);
+        egui::Grid::new("obs-grid")
+            .num_columns(3)
+            .spacing([12.0, 8.0])
+            .show(ui, |ui| {
+                ui.label("Pad overlay");
+                ui.add(egui::Slider::new(&mut self.scale, 1..=8).text("× scale"));
+                match self.running.overlay {
+                    Some(pid) => {
+                        if ui.button("Close window").clicked() {
+                            stop(pid);
+                            self.checked = None;
+                        }
+                    }
+                    None => {
+                        if ui.button("Open window").clicked() {
+                            self.start(false);
+                        }
+                    }
+                }
+                ui.end_row();
+                ui.label("LCD alone");
+                ui.add(egui::Slider::new(&mut self.lcd_px, 1..=16).text("px per LCD pixel"));
+                match self.running.lcd {
+                    Some(pid) => {
+                        if ui.button("Close window").clicked() {
+                            stop(pid);
+                            self.checked = None;
+                        }
+                    }
+                    None => {
+                        if ui.button("Open window").clicked() {
+                            self.start(true);
+                        }
+                    }
+                }
+                ui.end_row();
+            });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.chroma, "Solid background colour to key out")
+                .on_hover_text(
+                    "Instead of a transparent window, for a capture that drops transparency",
                 );
-                ui.add_space(6.0);
-                egui::Grid::new("obs-grid").num_columns(3).spacing([12.0, 8.0]).show(ui, |ui| {
-                    ui.label("Pad overlay");
-                    ui.add(egui::Slider::new(&mut self.scale, 1..=8).text("× scale"));
-                    match self.running.overlay {
-                        Some(pid) => {
-                            if ui.button("Stop").clicked() {
-                                stop(pid);
-                                self.checked = None;
-                            }
-                        }
-                        None => {
-                            if ui.button("Open").clicked() {
-                                self.start(false);
-                            }
-                        }
+            ui.add_enabled_ui(self.chroma, |ui| {
+                ui.color_edit_button_srgb(&mut self.chroma_rgb);
+            });
+        });
+        ui.add_space(6.0);
+        ui.horizontal(|ui| {
+            if ui
+                .button("Write sheet for repainting")
+                .on_hover_text("g13.png + g13.json into ~/.config/g13map/obs; a repainted copy there is drawn instead of the built-in one")
+                .clicked()
+            {
+                self.status = match dump(&crate::config_dir().join("obs")) {
+                    Ok(msg) => msg,
+                    Err(e) => e,
+                };
+            }
+            match self.running.calibrate {
+                Some(pid) => {
+                    if ui.button("Stop matching").clicked() {
+                        stop(pid);
+                        self.checked = None;
                     }
-                    ui.end_row();
-                    ui.label("LCD alone");
-                    ui.add(egui::Slider::new(&mut self.lcd_px, 1..=16).text("px per LCD pixel"));
-                    match self.running.lcd {
-                        Some(pid) => {
-                            if ui.button("Stop").clicked() {
-                                stop(pid);
-                                self.checked = None;
-                            }
-                        }
-                        None => {
-                            if ui.button("Open").clicked() {
-                                self.start(true);
-                            }
-                        }
-                    }
-                    ui.end_row();
-                });
-                ui.horizontal(|ui| {
-                    ui.checkbox(&mut self.chroma, "Opaque background to chroma-key")
-                        .on_hover_text("Instead of a transparent window (for a capture that drops alpha)");
-                    ui.add_enabled_ui(self.chroma, |ui| {
-                        ui.color_edit_button_srgb(&mut self.chroma_rgb);
-                    });
-                });
-                ui.add_space(6.0);
-                ui.horizontal(|ui| {
+                }
+                None => {
                     if ui
-                        .button("Write sheet for repainting")
-                        .on_hover_text("g13.png + g13.json into ~/.config/g13map/obs; a repainted copy there is drawn instead of the built-in one")
+                        .button("Match the glass…")
+                        .on_hover_text("A course of backlight colours to match by eye against the pad; writes ~/.config/g13map/glass, which the windows and the OBS source draw through")
                         .clicked()
                     {
-                        self.status = match dump(&crate::config_dir().join("obs")) {
-                            Ok(msg) => msg,
+                        self.status = match launch(&["--calibrate".to_string()]) {
+                            Ok(child) => {
+                                self.children.push(child);
+                                String::new()
+                            }
                             Err(e) => e,
                         };
+                        self.checked = None;
                     }
-                    match self.running.calibrate {
-                        Some(pid) => {
-                            if ui.button("Stop matching").clicked() {
-                                stop(pid);
-                                self.checked = None;
-                            }
-                        }
-                        None => {
-                            if ui
-                                .button("Match the glass…")
-                                .on_hover_text("A course of backlight colours to match by eye against the pad; writes ~/.config/g13map/glass, which the windows and the OBS source draw through")
-                                .clicked()
-                            {
-                                self.status = match launch(&["--calibrate".to_string()]) {
-                                    Ok(child) => {
-                                        self.children.push(child);
-                                        String::new()
-                                    }
-                                    Err(e) => e,
-                                };
-                                self.checked = None;
-                            }
-                        }
-                    }
-                });
-                if !self.status.is_empty() {
-                    ui.label(&self.status);
                 }
-            });
-        *open = still_open;
+            }
+        });
+        if !self.status.is_empty() {
+            ui.label(&self.status);
+        }
     }
 }

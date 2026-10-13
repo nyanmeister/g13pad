@@ -135,6 +135,11 @@ pub fn send_lcd(frame: &[u8]) -> Result<(), String> {
     }
     lcd_turn(|f| {
         let _ = crate::overlay::remember(frame);
+        // Keep the current normal frame ready for restoration while a demo owns the LCD.
+        // An editor still takes priority and can open without waiting for the demo.
+        if crate::demo::active() && !crate::lcd::editor_open() {
+            return Ok(());
+        }
         if !crate::overlay::active().unwrap_or(false) {
             let _ = crate::overlay::clear_expired();
             write_atomic(f, frame)?;

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Exercise the actual CLI and sibling renderer with private files/FIFO and no display.
 set -eu
-if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-cli-check 0.2.16'; exit 0; fi
+if [ "${1:-}" = --version ]; then printf '%s\n' 'g13pad-cli-check 0.2.78'; exit 0; fi
 repo=$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)
 binary=${1:-"$repo/build/rust/release/g13map"}
 fixture=$(mktemp -d /tmp/g13pad-cli.XXXXXX)
@@ -62,4 +62,26 @@ test "$(wc -c < "$G13MAP_CONFIG/lcd/cli.lpbm")" -eq 960
 # shellcheck disable=SC2016 # Literal shell syntax must remain argv data.
 "$(dirname "$binary")/g13map-editor" --error-frame 'bad $(command) `command` Unicode: λ' > "$fixture/error-frame"
 test "$(wc -c < "$fixture/error-frame")" -eq 960
+"$binary" profile create controller 'CLI profile'
+"$binary" profile bind controller G1 PAD_A
+"$binary" profile bind controller G2 PAD_LT
+"$binary" show controller | rg -q '^# stick analog$'
+"$binary" use controller
+i=0
+while ! rg -q '^bind G2 PAD_LT$' "$fixture/commands"; do i=$((i+1)); [ "$i" -lt 50 ]; sleep .1; done
+cp "$G13MAP_CONFIG/profiles/controller.bind" "$fixture/controller.before"
+if "$binary" profile bind controller G1 PAD_UNKNOWN > "$fixture/controller-error" 2>&1; then exit 1; fi
+cmp "$fixture/controller.before" "$G13MAP_CONFIG/profiles/controller.bind"
+"$binary" profile create audio 'CLI profile'
+"$binary" profile audio audio on
+"$binary" profile mic audio alsa_input.test-mic
+"$binary" show audio | rg -q '^# audio-mic "alsa_input.test-mic"$'
+"$binary" profile mic audio default
+if "$binary" show audio | rg -q '^# audio-mic '; then exit 1; fi
+"$binary" profile bind audio G1 '>AUDIO:mic-toggle;'
+"$binary" show audio | rg -q '^# audio on$'
+"$binary" show audio | rg -q '^bind G1 >AUDIO:mic-toggle;$'
+cp "$G13MAP_CONFIG/profiles/audio.bind" "$fixture/audio.before"
+if "$binary" profile bind audio G1 '>AUDIO:unknown;' > "$fixture/audio-error" 2>&1; then exit 1; fi
+cmp "$fixture/audio.before" "$G13MAP_CONFIG/profiles/audio.bind"
 printf '%s\n' 'CLI, saved-unbind, panel contracts and headless renderer checks passed'

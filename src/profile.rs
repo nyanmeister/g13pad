@@ -65,6 +65,126 @@ impl StickMode {
     }
 }
 
+/// What the LCD shows while the profile is active: its kept picture, or one live display.
+/// One choice, so the profile cannot ask for two at once (until 2026-10-12 this was five
+/// fields clearing each other). The picture (`lcd`) stays kept under any live display, for
+/// when the choice goes back to it. On disk each live display is its own comment line
+/// (`# health feed`, `# mpv on`, `# pressure on`, `# audio on`, `# mpd on`), unchanged
+/// from before, so files written either way read the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum Display {
+    /// The kept picture, or the daemon's logo without one.
+    #[default]
+    Picture,
+    /// The health meter, fed by that reader (asked 2026-10-08).
+    Health(crate::meter::Reader),
+    /// mpv playback: elapsed time and progress of the running player.
+    Mpv,
+    /// The machine's CPU, memory and I/O pressure.
+    Pressure,
+    /// Microphone and output state with a level history; the mic is `audio_mic`.
+    Audio,
+    /// MPD: what plays, its history, output levels.
+    Mpd,
+}
+
+impl Display {
+    /// Every choice, in the order the editor lists them.
+    pub const ALL: [Self; 10] = {
+        use crate::meter::Reader;
+        [
+            Self::Picture,
+            Self::Health(Reader::Feed),
+            Self::Health(Reader::Cs2),
+            Self::Health(Reader::Log),
+            Self::Health(Reader::RetroArch),
+            Self::Health(Reader::Dolphin),
+            Self::Mpv,
+            Self::Mpd,
+            Self::Audio,
+            Self::Pressure,
+        ]
+    };
+    /// Short name, as the editor's list and the status line show it.
+    pub fn label(self) -> &'static str {
+        use crate::meter::Reader;
+        match self {
+            Self::Picture => "Picture",
+            Self::Health(Reader::Feed) => "Game health (mod or script)",
+            Self::Health(Reader::Cs2) => "Counter-Strike 2 health",
+            Self::Health(Reader::Log) => "Doom health (console log)",
+            Self::Health(Reader::RetroArch) => "RetroArch achievements",
+            Self::Health(Reader::Dolphin) => "Dolphin achievements",
+            Self::Mpv => "mpv: what is playing",
+            Self::Mpd => "Music (MPD): what is playing",
+            Self::Audio => "Microphone and volume",
+            Self::Pressure => "Computer load",
+        }
+    }
+    /// One sentence for a layman, under the label.
+    pub fn about(self) -> &'static str {
+        use crate::meter::Reader;
+        match self {
+            Self::Picture => "The picture or animation kept with this profile.",
+            Self::Health(Reader::Feed) => {
+                "Health and shield from a game mod or script that feeds g13map (Deep Rock, Factorio, ULTRAKILL, Terraria, Dwarf Fortress...)."
+            }
+            Self::Health(Reader::Cs2) => "Health, armour and helmet from the game's own Game State Integration.",
+            Self::Health(Reader::Log) => "Health from a Doom engine's console log (Zandronum, GZDoom with the contrib script).",
+            Self::Health(Reader::RetroArch) => "Achievement progress and unlock cards from RetroArch's local log.",
+            Self::Health(Reader::Dolphin) => "Achievement progress and unlock cards from Dolphin's local log.",
+            Self::Mpv => "Elapsed time and a progress bar for the video or track mpv is playing.",
+            Self::Mpd => "Artist and title, play history and output levels from the music daemon.",
+            Self::Audio => "Whether the microphone is live or muted, its level, and the output volume.",
+            Self::Pressure => "How busy the CPU, memory and disks are.",
+        }
+    }
+    /// The comment line that selects this on disk, without the `# `; none for the picture.
+    pub fn line(self) -> Option<String> {
+        Some(match self {
+            Self::Picture => return None,
+            Self::Health(reader) => format!("health {}", reader.key()),
+            Self::Mpv => "mpv on".into(),
+            Self::Pressure => "pressure on".into(),
+            Self::Audio => "audio on".into(),
+            Self::Mpd => "mpd on".into(),
+        })
+    }
+    /// Reads a `# WORD VALUE` comment: `Some(Ok(display))` to select, `Some(Ok(Picture))`
+    /// for an `off`, `Some(Err(why))` for a bad value, `None` for an unrelated comment.
+    fn parse(word: &str, value: &str) -> Option<Result<Self, String>> {
+        let on_off = |on: Self, what: &str| match value {
+            "on" => Ok(on),
+            "off" => Ok(Self::Picture),
+            _ => Err(format!("ignored invalid {what}: {value}")),
+        };
+        Some(match word {
+            "health" => match value {
+                "off" => Ok(Self::Picture),
+                _ => crate::meter::Reader::parse(value)
+                    .map(Self::Health)
+                    .ok_or_else(|| format!("ignored invalid health mode: {value}")),
+            },
+            "mpv" => on_off(Self::Mpv, "mpv display"),
+            "pressure" => on_off(Self::Pressure, "System pressure mode"),
+            "audio" => on_off(Self::Audio, "System audio mode"),
+            "mpd" => on_off(Self::Mpd, "MPD playback mode"),
+            _ => return None,
+        })
+    }
+    /// The word the `off` of this line clears: `# mpv off` leaves another display alone.
+    fn word(self) -> &'static str {
+        match self {
+            Self::Picture => "",
+            Self::Health(_) => "health",
+            Self::Mpv => "mpv",
+            Self::Pressure => "pressure",
+            Self::Audio => "audio",
+            Self::Mpd => "mpd",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct Profile {
     /// control name -> action string in the daemon's grammar (absent = unbound).
@@ -75,10 +195,11 @@ pub struct Profile {
     /// Name of the LCD image in the history (`# lcd NAME`: a comment, so the daemon never
     /// sees it; the frame itself goes through `daemon::send_lcd`).
     pub lcd: Option<String>,
-    /// Health mode (`# health feed|cs2|log`, asked 2026-10-08): the health meter shows
-    /// instead of the picture while the profile is active, fed by that reader. The
-    /// picture stays kept for when the mode is off again.
-    pub health: Option<crate::meter::Reader>,
+    /// What the LCD shows: the picture above, or a live display over it.
+    pub display: Display,
+    /// Stable PulseAudio source name for `Display::Audio` and the mic bindings; None
+    /// follows the desktop default.
+    pub audio_mic: Option<String>,
     /// None preserves the current mode. A comment so the service remains its only owner.
     pub stick: Option<StickMode>,
     pub gamepad: Option<crate::gamepad::Mapping>,
@@ -87,6 +208,22 @@ pub struct Profile {
 }
 
 impl Profile {
+    /// Whether `g13map watch` has to run for this profile to work as saved: a live
+    /// display, or a binding the watcher carries out (audio and music controls).
+    pub fn needs_watcher(&self) -> bool {
+        self.display != Display::Picture
+            || self.binds.values().any(|a| {
+                crate::audio::Action::from_binding(a).is_some()
+                    || crate::music::Action::from_binding(a).is_some()
+            })
+    }
+    /// The health meter's reader when the profile shows the meter.
+    pub fn health(&self) -> Option<crate::meter::Reader> {
+        match self.display {
+            Display::Health(reader) => Some(reader),
+            _ => None,
+        }
+    }
     /// Parses bind-file text. `stickmode` lines are dropped: the analog adapter service owns
     /// the stick mode and a profile must never flip it. Returns the notes for the caller.
     pub fn parse(text: &str) -> (Profile, Vec<String>) {
@@ -98,6 +235,36 @@ impl Profile {
                 continue;
             }
             if let Some(comment) = line.strip_prefix('#') {
+                if let Some(value) = comment.trim().strip_prefix("audio-mic ") {
+                    match serde_json::from_str::<String>(value) {
+                        Ok(name) if !name.is_empty() && !name.contains('\0') => {
+                            p.audio_mic = Some(name)
+                        }
+                        _ => notes.push(format!("ignored invalid microphone identity: {line}")),
+                    }
+                }
+                // A live display line: the last one in the file wins; an `off` clears
+                // only its own display, so `# mpv off` leaves `# mpd on` alone.
+                let (word, value) = comment
+                    .trim()
+                    .split_once(char::is_whitespace)
+                    .unwrap_or((comment.trim(), ""));
+                match Display::parse(word, value.trim()) {
+                    Some(Ok(Display::Picture)) => {
+                        if p.display.word() == word {
+                            p.display = Display::Picture;
+                        }
+                    }
+                    Some(Ok(display)) => {
+                        if p.display != Display::Picture && p.display != display {
+                            notes
+                                .push(format!("{} replaces another live display", display.label()));
+                        }
+                        p.display = display;
+                    }
+                    Some(Err(why)) => notes.push(why),
+                    None => {}
+                }
                 if let Some(mapping) = comment.trim().strip_prefix("gamepad ") {
                     match crate::gamepad::Mapping::from_compact(mapping) {
                         Ok(mapping) => p.gamepad = Some(mapping),
@@ -117,12 +284,6 @@ impl Profile {
                 }
                 if let Some(name) = comment.trim().strip_prefix("lcd ") {
                     p.lcd = Some(name.trim().to_string()).filter(|n| !n.is_empty());
-                }
-                if let Some(word) = comment.trim().strip_prefix("health ") {
-                    p.health = crate::meter::Reader::parse(word.trim());
-                    if p.health.is_none() {
-                        notes.push(format!("ignored invalid health mode: {line}"));
-                    }
                 }
                 continue;
             }
@@ -165,11 +326,11 @@ impl Profile {
         }
         // Before `# health`, the meter was a picture name (`# lcd health cs2`): read as
         // health mode with no picture of its own, written back the new way.
-        if p.health.is_none() {
-            if let Some(reader) = crate::meter::selects(p.lcd.as_deref()) {
-                p.health = Some(reader);
-                p.lcd = None;
+        if let Some(reader) = crate::meter::selects(p.lcd.as_deref()) {
+            if p.display == Display::Picture {
+                p.display = Display::Health(reader);
             }
+            p.lcd = None;
         }
         (p, notes)
     }
@@ -184,8 +345,14 @@ impl Profile {
         if let Some(n) = &self.lcd {
             out.push_str(&format!("# lcd {n}\n"));
         }
-        if let Some(reader) = self.health {
-            out.push_str(&format!("# health {}\n", reader.key()));
+        if let Some(line) = self.display.line() {
+            out.push_str(&format!("# {line}\n"));
+        }
+        if let Some(name) = &self.audio_mic {
+            out.push_str(&format!(
+                "# audio-mic {}\n",
+                serde_json::to_string(name).unwrap()
+            ));
         }
         if let Some(mode) = self.stick {
             out.push_str(&format!("# stick {}\n", mode.label()));
@@ -302,6 +469,115 @@ pub fn chord_action(mods: &[String], main: Option<&str>) -> String {
 mod tests {
     use super::*;
     #[test]
+    fn microphone_identity_round_trips_without_command_injection_or_mode_loss() {
+        let mut p = Profile {
+            display: Display::Audio,
+            audio_mic: Some("USB \"Mic\" 日本語\nsource".into()),
+            ..Profile::default()
+        };
+        let text = p.to_text();
+        assert_eq!(
+            text.lines()
+                .filter(|s| s.starts_with("# audio-mic "))
+                .count(),
+            1
+        );
+        assert_eq!(Profile::parse(&text).0, p);
+        // The mic is kept under any display: the mic bindings use it too.
+        p.display = Display::Pressure;
+        assert_eq!(Profile::parse(&p.to_text()).0.audio_mic, p.audio_mic);
+        assert!(Profile::parse("# audio on").0.audio_mic.is_none());
+        for bad in [
+            "# audio-mic not-json",
+            "# audio-mic \"\"",
+            "# audio-mic \"\\u0000\"",
+        ] {
+            assert!(!Profile::parse(bad).1.is_empty());
+        }
+    }
+    /// Every display writes one line of its own and reads back; the picture, mic and
+    /// bindings underneath stay. The words are the ones 0.2.85 wrote, so files from
+    /// either side of the `Display` change read the same.
+    #[test]
+    fn every_display_round_trips_and_keeps_the_rest() {
+        const WORDS: [&str; 5] = [
+            "# health ",
+            "# mpv on",
+            "# pressure on",
+            "# audio on",
+            "# mpd on",
+        ];
+        let mut p = Profile::parse("# lcd kept\nbind G1 KEY_A\n# audio-mic \"usb.mic\"\n").0;
+        assert_eq!(p.display, Display::Picture);
+        assert!(!p.needs_watcher());
+        for display in Display::ALL {
+            p.display = display;
+            let text = p.to_text();
+            let lines = text
+                .lines()
+                .filter(|l| WORDS.iter().any(|w| l.starts_with(w)))
+                .count();
+            assert_eq!(lines, (display != Display::Picture) as usize, "{text}");
+            let (again, notes) = Profile::parse(&text);
+            assert!(notes.is_empty(), "{notes:?}");
+            assert_eq!(again, p);
+            assert_eq!(p.lcd.as_deref(), Some("kept"));
+            assert_eq!(p.audio_mic.as_deref(), Some("usb.mic"));
+            assert_eq!(p.binds["G1"], "KEY_A");
+            assert_eq!(p.needs_watcher(), display != Display::Picture);
+            assert_eq!(p.health().is_some(), matches!(display, Display::Health(_)));
+        }
+        assert_eq!(Display::ALL.len(), 10);
+        assert_eq!(
+            Profile::parse("# health cs2").0.display.line().as_deref(),
+            Some("health cs2")
+        );
+    }
+    /// Expected values worked out by hand from the rule, not from running the parser: the
+    /// last live-display line wins, a replaced one is noted, `off` clears only its own.
+    #[test]
+    fn last_live_display_line_wins_and_off_clears_only_its_own() {
+        use crate::meter::Reader;
+        for (text, display, notes) in [
+            ("# health feed\n# pressure on", Display::Pressure, 1),
+            (
+                "# pressure on\n# health feed",
+                Display::Health(Reader::Feed),
+                1,
+            ),
+            ("# mpv on\n# pressure on", Display::Pressure, 1),
+            ("# audio on\n# pressure on", Display::Pressure, 1),
+            ("# pressure on\n# audio on", Display::Audio, 1),
+            ("# mpd on\n# mpv on", Display::Mpv, 1),
+            ("# mpv on\n# mpd on", Display::Mpd, 1),
+            ("# health feed\n# pressure on\n# mpv on", Display::Mpv, 2),
+            ("# mpd on\n# mpv off", Display::Mpd, 0),
+            ("# mpd on\n# mpd off", Display::Picture, 0),
+            ("# health cs2\n# health off", Display::Picture, 0),
+            (
+                "# health cs2\n# health cs2",
+                Display::Health(Reader::Cs2),
+                0,
+            ),
+            (
+                "# health cs2\n# health log",
+                Display::Health(Reader::Log),
+                1,
+            ),
+            ("# pressure nonsense", Display::Picture, 1),
+            ("# health yes", Display::Picture, 1),
+            ("# audio nonsense", Display::Picture, 1),
+            ("# mpd nonsense", Display::Picture, 1),
+            ("# mpv maybe", Display::Picture, 1),
+            ("# mpvish on", Display::Picture, 0),
+            ("# health", Display::Picture, 1),
+        ] {
+            let (p, got) = Profile::parse(text);
+            assert_eq!(p.display, display, "{text:?}");
+            assert_eq!(got.len(), notes, "{text:?}: {got:?}");
+        }
+    }
+    #[test]
     fn controller_metadata_round_trips_without_becoming_a_driver_command() {
         let (p, notes) = Profile::parse("# gamepad right r3 1 1 0\nbind G1 KEY_A\n");
         assert!(notes.is_empty());
@@ -327,21 +603,36 @@ mod tests {
         let (again, _) = Profile::parse(&p.to_text());
         assert_eq!(again, p);
     }
+    /// Before 0.2.3x the meter was a picture name (`# lcd health cs2`). Such a file reads
+    /// as the health display with no picture of its own; a live display chosen beside it
+    /// wins, and the stale name is dropped either way.
     #[test]
-    fn health_mode_is_its_own_line_and_old_picture_names_migrate() {
+    fn old_meter_picture_names_migrate_to_the_health_line() {
         use crate::meter::Reader;
+        for (text, display) in [
+            ("# lcd health log\n", Display::Health(Reader::Log)),
+            ("# lcd health cs2\n", Display::Health(Reader::Cs2)),
+            ("# lcd health\n", Display::Health(Reader::Feed)),
+            ("# lcd health log\n# pressure on", Display::Pressure),
+            ("# lcd health log\n# mpv on", Display::Mpv),
+            (
+                "# health feed\n# lcd health cs2",
+                Display::Health(Reader::Feed),
+            ),
+        ] {
+            let (p, _) = Profile::parse(text);
+            assert_eq!(p.display, display, "{text:?}");
+            assert_eq!(p.lcd, None, "{text:?}");
+            let written = p.to_text();
+            assert!(!written.contains("# lcd "), "{written}");
+            assert_eq!(Profile::parse(&written).0, p);
+        }
+        // A real picture beside the health line is kept.
         let (p, notes) = Profile::parse("# lcd my pic\n# health cs2\n");
         assert!(notes.is_empty());
-        assert_eq!(p.health, Some(Reader::Cs2));
+        assert_eq!(p.display, Display::Health(Reader::Cs2));
         assert_eq!(p.lcd.as_deref(), Some("my pic"));
         assert!(p.to_text().contains("# health cs2\n"));
-        assert_eq!(Profile::parse(&p.to_text()).0, p);
-        let (old, _) = Profile::parse("# lcd health log\n");
-        assert_eq!((old.health, old.lcd.clone()), (Some(Reader::Log), None));
-        assert!(old.to_text().contains("# health log\n"));
-        let (bad, notes) = Profile::parse("# health yes\n");
-        assert_eq!(bad.health, None);
-        assert_eq!(notes.len(), 1);
     }
     #[test]
     fn stick_preferences_are_metadata_and_legacy_profiles_preserve_the_mode() {

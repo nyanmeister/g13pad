@@ -89,6 +89,11 @@ void G13_Manager::InitKeynames() {
   }
 
   // setup maps to let us convert between strings and linux button names
+  for (int i = 0; i < G13_PAD_COUNT; ++i) {
+    const std::string name = std::string("PAD_") + G13_PAD_SEQ[i];
+    input_key_to_name[BTN_TRIGGER_HAPPY1 + i] = name;
+    input_name_to_key[name] = BTN_TRIGGER_HAPPY1 + i;
+  }
   for (auto &symbol : G13::G13_BTN_SEQ) {
     auto name = std::string("M" + std::string(symbol));
     auto keyname = std::string("BTN_" + std::string(symbol));

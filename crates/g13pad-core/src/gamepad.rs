@@ -1,6 +1,41 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 use std::{fs::OpenOptions, io::Read, os::unix::fs::OpenOptionsExt, path::Path};
 
+/// Fixed private evdev channels. Keep this order in sync with G13_PAD_SEQ.
+/// Controller inputs remain distinct from the source device's keyboard events.
+pub const BUTTONS: [(&str, &str, &str); 17] = [
+    ("PAD_A", "A", "a"),
+    ("PAD_B", "B", "b"),
+    ("PAD_X", "X", "x"),
+    ("PAD_Y", "Y", "y"),
+    ("PAD_LB", "Left shoulder (LB)", "lb"),
+    ("PAD_RB", "Right shoulder (RB)", "rb"),
+    ("PAD_BACK", "Back / Select", "back"),
+    ("PAD_START", "Start", "start"),
+    ("PAD_GUIDE", "Guide", "guide"),
+    ("PAD_L3", "Left stick click (L3)", "TL"),
+    ("PAD_R3", "Right stick click (R3)", "TR"),
+    ("PAD_LT", "Left trigger (LT)", "lt"),
+    ("PAD_RT", "Right trigger (RT)", "rt"),
+    ("PAD_UP", "D-pad up", "du"),
+    ("PAD_DOWN", "D-pad down", "dd"),
+    ("PAD_LEFT", "D-pad left", "dl"),
+    ("PAD_RIGHT", "D-pad right", "dr"),
+];
+
+pub fn button_label(action: &str) -> Option<&'static str> {
+    BUTTONS.iter().find(|b| b.0 == action).map(|b| b.1)
+}
+
+pub fn keymap() -> String {
+    BUTTONS
+        .iter()
+        .enumerate()
+        .map(|(i, b)| format!("BTN_TRIGGER_HAPPY{}={}", i + 1, b.2))
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Stick {
     #[default]
@@ -72,11 +107,10 @@ impl Click {
             Self::None => "none",
         }
     }
-    pub fn source_button(self) -> &'static str {
+    pub fn action(self) -> String {
         match self {
-            Self::L3 | Self::None => "TL",
-            Self::R3 => "TR",
-            _ => self.token(),
+            Self::None => "KEY_RESERVED".into(),
+            _ => format!("PAD_{}", self.token().to_ascii_uppercase()),
         }
     }
 }
@@ -233,6 +267,26 @@ impl Mapping {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn controller_channels_are_unique_and_clicks_use_the_same_channels() {
+        let map = keymap();
+        let mut actions = std::collections::BTreeSet::new();
+        let mut outputs = std::collections::BTreeSet::new();
+        for (i, &(action, label, output)) in BUTTONS.iter().enumerate() {
+            assert!(actions.insert(action));
+            assert!(outputs.insert(output));
+            assert_eq!(button_label(action), Some(label));
+            assert!(map
+                .split(',')
+                .any(|s| s == format!("BTN_TRIGGER_HAPPY{}={output}", i + 1)));
+        }
+        for click in Click::ALL {
+            if click != Click::None {
+                assert!(button_label(&click.action()).is_some());
+            }
+        }
+        assert!(button_label("PAD_UNKNOWN").is_none());
+    }
     #[test]
     fn all_mappings_round_trip_and_preserve_axis_calibration_identity() {
         for stick in [Stick::Left, Stick::Right] {

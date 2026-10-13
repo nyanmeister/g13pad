@@ -304,6 +304,15 @@ pub fn action_label(action: &str, layout: &HashMap<String, String>) -> String {
     if action.is_empty() {
         return "—".into();
     }
+    if let Some(action) = crate::music::Action::from_binding(action) {
+        return action.label().into();
+    }
+    if let Some(action) = crate::audio::Action::from_binding(action) {
+        return action.label().into();
+    }
+    if let Some(label) = crate::gamepad::button_label(action) {
+        return format!("Controller {label}");
+    }
     if let Some(t) = action.strip_prefix('>') {
         return format!("pipe: {t}");
     }

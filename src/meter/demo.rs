@@ -10,7 +10,7 @@ pub fn demo() -> Result<String, String> {
     // Health mode is the profile's own line since 0.2.3x; an old picture name still counts.
     let shows = crate::load(&active)
         .ok()
-        .is_some_and(|(p, _)| p.health.is_some() || selects(p.lcd.as_deref()).is_some());
+        .is_some_and(|(p, _)| p.health().is_some());
     if !shows {
         println!(
             "note: profile '{active}' has no health mode (g13map profile health '{active}' \

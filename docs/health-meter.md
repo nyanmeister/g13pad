@@ -22,10 +22,19 @@ profile's colour.
 
 ## Choosing it per profile
 
-A profile has a **Health mode** tick in the editor's LCD section (or `g13map profile
-health deeprock feed`), so the window rules put the meter on the game's windows and
-nowhere else; the profile's own picture stays kept and shows again when the tick comes
-off. The mode names the reader:
+Click the screen in the editor and choose the game's entry under **Shows**: **Game
+health (mod or script)**, **Counter-Strike 2 health** or **Doom health (console log)**
+(or use `g13map profile health deeprock feed`). Window rules put it on the game's
+windows; the profile's own picture stays kept and shows again when the choice goes
+back to **Picture**. **Computer load**, in the same list, is an alternative display of
+CPU, memory and I/O stalls. A profile shows one thing at a time; see
+[System pressure](system-pressure.md).
+
+The selector also includes RetroArch achievements, Dolphin achievements and
+[mpv playback](mpv-playback.md). Existing saved profiles keep their selection;
+the CLI and `# health`/`# mpv` metadata remain compatible.
+
+Game integrations use these reader names in the CLI:
 
 - `feed`: something else writes the feed (a game mod, a script, `g13map health`).
   Without a feed the panel waits, searching for a pulse.
@@ -67,7 +76,11 @@ Any program can feed the meter by writing one line to
 `$XDG_RUNTIME_DIR/g13map-g13-0.health` (the suffix follows the daemon's pipe name) or to
 `~/.local/state/g13map/health` (`$XDG_STATE_HOME`); the newest file wins. A game inside
 Steam's container has a private `/run/user` and shares only the home directory, so a
-mod in there uses the second:
+mod in there uses the second.
+
+Unparseable files are ignored. A newer `off` or expired line suppresses older health
+in the other file. At equal modification times, off/expiry wins over live data;
+between live lines, the runtime file wins. Removing one file lets the other decide.
 
 ```
 wait                               connected, no health yet
@@ -75,14 +88,15 @@ HEALTH[/MAX] [shield S[/MAX]] [helmet on|off]
                                    health (over 100% is an overshield), the shield, and
                                    whether the head is covered (the shield bar is solid)
 ... ttl SECONDS                    the line expires unless rewritten in time
-off                                no game (removing the file does the same)
+off                                no game; suppress older feeds
 ```
 
 `g13map health ...` writes the file with the same words, so a shell script can feed it:
-`g13map health 87 shield 50`, `g13map health wait`, `g13map health off`. Write the file
-atomically (beside, then rename) if you write it yourself. Give a feeder that could die
-with the game a `ttl`, so its meter dies with it; a feeder that only speaks on changes
-needs no `ttl`. The watcher reads the feed ten times a second and renders the meter
+`g13map health 87 shield 50`, `g13map health wait`, `g13map health off` (removes both
+files). Write the file atomically (beside, then rename) if you write it yourself.
+Give a feeder that could die with the game a `ttl`, so its meter dies with it;
+a feeder that only speaks on changes needs no `ttl`. The watcher reads the feed ten
+times a second and renders the meter
 itself. Default health visuals retain a 100 ms logical step; LCD presentation can
 run independently at up to 100 FPS for local event animations. See the
 [developer timing contract](health-architecture.md).

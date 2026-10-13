@@ -130,6 +130,9 @@ int G13CreateUinput(G13_Device *g13) {
     ioctl(ufile, UI_SET_KEYBIT, i);
   }
   ioctl(ufile, UI_SET_KEYBIT, BTN_THUMB);
+  for (int i = 0; i < G13_PAD_COUNT; ++i) {
+    ioctl(ufile, UI_SET_KEYBIT, BTN_TRIGGER_HAPPY1 + i);
+  }
 
   int retcode = write(ufile, &uinp, sizeof(uinp));
   if (retcode < 0) {
@@ -162,6 +165,19 @@ int G13CreateUinput(G13_Device *g13) {
 // *************************************************************************
 
 void G13_Device::SendEvent(int type, int code, int val) {
+  // Multiple physical controls may share one controller button. Preserve the
+  // first press until the last release, including TOP and held old bindings.
+  if (type == EV_KEY && code >= BTN_TRIGGER_HAPPY1 &&
+      code < BTN_TRIGGER_HAPPY1 + G13_PAD_COUNT) {
+    auto &holds = pad_holds[code - BTN_TRIGGER_HAPPY1];
+    if (val == 1) {
+      if (holds++ != 0) return;
+    } else if (val == 0) {
+      if (holds == 0 || --holds != 0) return;
+    } else {
+      return;
+    }
+  }
   memset(&m_event, 0, sizeof(m_event));
   gettimeofday(&m_event.time, nullptr);
   m_event.type = type;

@@ -59,6 +59,14 @@ static const int UINPUT_KEY_CODES = 256;
 
 // clang-format off
 static const char* G13_BTN_SEQ[] = { "LEFT", "RIGHT", "MIDDLE", "SIDE", "EXTRA" };
+
+// Private adapter channels, not gamepad capabilities on the keyboard source.
+// Their order is the BTN_TRIGGER_HAPPY1..17 wire contract with g13pad-analog.
+static const char* G13_PAD_SEQ[] = {
+  "A", "B", "X", "Y", "LB", "RB", "BACK", "START", "GUIDE", "L3", "R3",
+  "LT", "RT", "UP", "DOWN", "LEFT", "RIGHT"
+};
+static const int G13_PAD_COUNT = sizeof(G13_PAD_SEQ) / sizeof(G13_PAD_SEQ[0]);
 // clang-format on
 
 typedef int G13_KEY_INDEX;

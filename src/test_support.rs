@@ -75,6 +75,9 @@ impl Sandbox {
             ("G13MAP_UNIT", PathBuf::from("0")),
             ("G13MAP_DAEMON_CONFIG", s.dir.join("daemon-default.bind")),
             ("I3SOCK", s.dir.join("absent-i3.sock")),
+            ("MPD_HOST", s.dir.join("mpd.socket")),
+            ("MPD_PORT", PathBuf::from("6600")),
+            ("PULSE_SERVER", s.dir.join("absent-pulse.socket")),
             ("XDG_STATE_HOME", s.dir.join("state")),
         ] {
             s.saved.push((key, env::var_os(key)));

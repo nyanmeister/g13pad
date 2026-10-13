@@ -30,7 +30,8 @@ user permission under Linux's restricted ptrace policy. There is no privileged
 service and no change to that policy. The wrapper preserves argument boundaries
 and returns the launched command's exit status even when telemetry is unavailable.
 
-Create a profile in Health mode `feed` and a window rule for Factorio's window
+Create a profile with Program integration set to Game telemetry (mod/script)
+(`feed` in the CLI) and a window rule for Factorio's window
 class (inspect with `g13map focus windows`). The feed supplies:
 
 - Character health/current effective maximum and total equipment shields/maximum.
