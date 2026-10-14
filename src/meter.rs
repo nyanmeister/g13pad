@@ -48,7 +48,10 @@ pub use fortress::{dfhack_install, dfhack_remove};
 pub use travel::Travel;
 
 mod state;
-pub use state::{Count, CountLabel, Extra, Foe, Label, Resource, State, COUNTS, RANKS};
+pub use state::{
+    Count, CountLabel, Deck, Extra, Foe, Label, Resource, State, COUNTS, DECK_ICONS, DECK_SHOWN,
+    RANKS,
+};
 mod tuning;
 pub use tuning::{Band, Flash, Sprite, Tuning, VehicleStyle};
 mod feed;

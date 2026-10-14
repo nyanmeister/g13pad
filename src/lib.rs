@@ -20,6 +20,7 @@ mod cli;
 mod daemon;
 mod demo;
 mod display_clock;
+pub mod doctor;
 mod draw;
 mod focus;
 #[cfg(feature = "editor")]

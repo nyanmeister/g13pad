@@ -155,6 +155,16 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                     max: res.maximum,
                 });
             }
+            "deck" => {
+                let State::Health { extra, .. } = &mut state else {
+                    return None;
+                };
+                // `value` is AT, then NEXT; the icons are every following 64-digit hex
+                // word, so the deck is the last thing on a line (a `ttl` goes before it).
+                let next = words.next()?;
+                let icons: Vec<&str> = words.by_ref().collect();
+                extra.deck = Some(Deck::parse(value, next, icons.into_iter())?);
+            }
             _ => return None,
         }
     }

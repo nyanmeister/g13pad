@@ -245,8 +245,8 @@ updates the label/token, and Ctrl+S persists `>MPD:rate-up;`. Tests do not requi
 desktop pointer movement or manipulating the real MPD queue/ratings. Private GUI
 runtime/config/data/cache/state paths must be exported **before** dbus-run-session.
 
-The deployment review/checkpoint lives under `~/Documents/algorithmic-reviews/MPD
-Review/extensions-20261012/` on the development machine, including exact versions,
+The deployment review/checkpoint lives in the private maintenance notes (MPD Review,
+extensions-20261012) on the development machine, including exact versions,
 commits, installation state, rollback and empirical limits. Repository docs remain
 the portable contract; private checkpoints carry machine-specific evidence.
 

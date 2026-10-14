@@ -1,0 +1,11 @@
+# The analog source's udev rule tags the node for systemd (0.3.0). A pad already plugged
+# when the rule arrives keeps its old properties until the rule runs again, and without
+# the tag g13-analog.service cannot bind to its device unit; so run the rule on it now.
+_retag() {
+  if command -v udevadm >/dev/null 2>&1; then
+    udevadm control --reload 2>/dev/null || true
+    udevadm trigger --action=add --subsystem-match=input --attr-match=name=G13 2>/dev/null || true
+  fi
+}
+post_install() { _retag; }
+post_upgrade() { _retag; }

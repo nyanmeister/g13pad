@@ -10,6 +10,7 @@ const HELP: &str = "g13map — Logitech G13 configuration
 
   g13map edit                         open the graphical editor
   g13map status                       connection, profile and configuration paths
+  g13map doctor                       check the driver, the stick adapter, the watcher and the profile; say what to fix
   g13map profiles                     list saved profiles (* is active)
   g13map show [NAME]                   print a saved profile
   g13map use NAME                      apply and select a saved profile
@@ -17,8 +18,9 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile create NAME [FROM]    create empty or copy a saved profile
   g13map profile bind NAME KEY ACTION  save a KEY_* key/chord, PAD_* controller button or raw action
   g13map profile unbind NAME KEY       remove a saved binding
-  g13map profile run NAME KEY PROGRAM [ARGS...]  start a program or script on the key
-                                       (a path, ~ is home, or a name; g13map-watch runs it)
+  g13map profile run NAME KEY [WHEN] PROGRAM [ARGS...]  a program or script on the key
+                                       (a path, ~ is home, or a name; g13map-watch runs it;
+                                       WHEN: pressed, released, both or hold)
   g13map profile rgb NAME R G B        save backlight colour (0–255)
   g13map profile leds NAME BITS        save M-key LED mask (0–15)
   g13map profile stick NAME MODE       analog, keys or current
@@ -170,10 +172,11 @@ fn profile(args: &[&str]) -> Result<String, String> {
         }
         ("run", [key, program @ ..]) if !program.is_empty() => {
             control(key)?;
-            let program = crate::run::Program::parse(&program.join(" "))?;
-            program.resolve()?;
-            p.runs.insert((*key).into(), program.line());
-            p.binds.insert((*key).into(), crate::run::binding(key));
+            let run = crate::run::Run::parse(&program.join(" "))?;
+            run.program.resolve()?;
+            p.binds
+                .insert((*key).into(), crate::run::binding(key, run.when));
+            p.runs.insert((*key).into(), run);
         }
         ("rgb", [r, g, b]) => {
             p.rgb = Some([
@@ -361,6 +364,7 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
             profiles_dir().display(),
             daemon::pipe_path().display()
         )),
+        ["doctor"] => crate::doctor::run(),
         ["profiles"] => {
             let active = active_name();
             Ok(profile_names()
@@ -555,11 +559,27 @@ mod tests {
         call(&["profile", "create", "run"]).unwrap();
         call(&["profile", "run", "run", "G4", "sh", "-c", "true"]).unwrap();
         let p = load("run").unwrap().0;
-        assert_eq!(p.runs.get("G4").map(String::as_str), Some("sh -c true"));
+        assert_eq!(
+            p.runs.get("G4").map(|r| r.line()),
+            Some("sh -c true".into())
+        );
         assert_eq!(p.binds.get("G4").map(String::as_str), Some(">RUN:G4;"));
+        // A mode word before the program binds the release half too.
+        call(&["profile", "run", "run", "G6", "hold", "sh", "-c", "true"]).unwrap();
+        let p = load("run").unwrap().0;
+        assert_eq!(p.runs["G6"].when, crate::run::When::Hold);
+        assert_eq!(
+            p.binds.get("G6").map(String::as_str),
+            Some(">RUN:G6; RELEASE:G6;")
+        );
         let text = fs::read_to_string(profile_path("run")).unwrap();
         assert!(text.contains("# run G4 sh -c true\n"), "{text}");
         assert!(text.contains("bind G4 >RUN:G4;\n"), "{text}");
+        assert!(text.contains("# run G6 hold sh -c true\n"), "{text}");
+        assert!(text.contains("bind G6 >RUN:G6; RELEASE:G6;\n"), "{text}");
+        call(&["profile", "unbind", "run", "G6"]).unwrap();
+        let text = fs::read_to_string(profile_path("run")).unwrap();
+        assert!(!text.contains("G6"), "{text}");
         for args in [
             vec!["profile", "run", "run", "G5", "g13map-no-such-program-xyz"],
             vec!["profile", "run", "run", "G5"],

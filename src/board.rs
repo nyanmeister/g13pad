@@ -519,8 +519,7 @@ impl Board {
                             return profile
                                 .runs
                                 .get(k)
-                                .and_then(|t| crate::run::Program::parse(t).ok())
-                                .map(|p| p.name().to_string())
+                                .map(|r| r.program.name().to_string())
                                 .unwrap_or_else(|| "Program".into());
                         }
                         if let Some(action) = crate::audio::Action::from_binding(a) {

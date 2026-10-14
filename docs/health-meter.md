@@ -95,7 +95,14 @@ HEALTH[/MAX] [shield S[/MAX]] [helmet on|off]
                                    of letters, digits, `-_.`, underscores shown as spaces
 ... foe LABEL CUR/MAX              a targeted enemy: its name and a wide HP bar take the
                                    panel while present (the heart and trace give way)
-off                                no game; suppress older feeds
+... deck AT NEXT ICON [ICON ...]   a strip of the feeder's own 16x16 icons (a wand's
+                                   spells, a weapon rack) at the top centre in the
+                                   feeder's order, up to four shown of six sent (the
+                                   view slides to keep the frame in sight); NEXT icons
+                                   from AT (0-based) framed together as what comes
+                                   next, so the frame walks as the deck is played.
+                                   Each ICON is 64 hex digits, 16 rows of two bytes,
+                                   high bit leftmost. Last on the line.
 ```
 
 `g13map health ...` writes the file with the same words, so a shell script can feed it:
@@ -110,6 +117,16 @@ run independently at up to 100 FPS for local event animations. See the
 
 `g13map health demo` runs through every state in about forty seconds, for a look at the
 meter without a game.
+
+## Noita
+
+A read-only memory reader, not a mod, because any enabled mod turns the game's
+achievements off. Use `g13map-noita %command%` in Steam (the feeder must be the game's
+parent to read it) and Health mode `feed` on the game's profile (window class
+`steam_app_881100`). It sends health, the held wand's mana and recharge frames, the
+lifetime death count, and the wand's deck as a `deck` strip of the game's own spell
+icons with the next cast framed. Tested with the Jan 25 2025 build; other builds are
+attempted through the reader's discovery pass. `docs/notes/noita.md` has the rest.
 
 ## Counter-Strike 2
 

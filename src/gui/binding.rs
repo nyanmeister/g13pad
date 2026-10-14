@@ -134,9 +134,9 @@ impl App {
         let [mine, shipped] = crate::run::dirs();
         ui.label(
             RichText::new(format!(
-                "Starts a program or script when the key is pressed. A path (~ is home) or a \
-                 name on PATH, then its arguments, split on spaces; a bare name is looked for \
-                 in {} and {} first. It gets G13MAP_KEY and G13MAP_PROFILE in its environment \
+                "Starts a program or script on the key. A path (~ is home) or a name on PATH, \
+                 then its arguments, split on spaces; a bare name is looked for in {} and {} \
+                 first. It gets G13MAP_KEY, G13MAP_PROFILE and G13MAP_EDGE in its environment \
                  and runs as a unit of your session, so it outlives the watcher. A script needs \
                  a #! line and the executable bit.",
                 crate::run::tilde(&mine),
@@ -179,15 +179,28 @@ impl App {
             }
             Err(_) => {}
         }
+        ui.horizontal(|ui| {
+            ui.label("When:");
+            for when in crate::run::When::ALL {
+                ui.radio_value(&mut self.run_when, when, when.label())
+                    .on_hover_text(when.hover());
+            }
+        });
+        let saved = self.profile.runs.get(key);
+        let changed =
+            saved.is_none_or(|r| r.when != self.run_when || r.program.line() != self.run_text);
         let set = ui
-            .add_enabled(check.is_ok(), egui::Button::new("Set"))
+            .add_enabled(check.is_ok() && changed, egui::Button::new("Set"))
             .clicked();
         if let (true, Ok((program, _))) = (set || submit, check) {
-            let binding = crate::run::binding(key);
+            let when = self.run_when;
+            let binding = crate::run::binding(key, when);
             self.set_action(Some(binding.clone()));
             if self.profile.binds.get(key) == Some(&binding) {
-                self.profile.runs.insert(key.to_string(), program.line());
                 self.run_text = program.line();
+                self.profile
+                    .runs
+                    .insert(key.to_string(), crate::run::Run { when, program });
             }
         }
     }

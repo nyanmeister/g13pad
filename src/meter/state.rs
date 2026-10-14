@@ -65,6 +65,10 @@ pub struct Extra {
     /// `foe LABEL CUR/MAX`: the Z-targeted enemy/boss. When present it overrides the panel
     /// with the enemy's HP — a reusable lock-on element for any game that sends it.
     pub foe: Option<Foe>,
+    /// `deck AT NEXT ICON...`: a strip of the feeder's own 16x16 icons (a wand's spells, a
+    /// weapon rack) in their fixed order, NEXT of them from AT framed as what comes
+    /// next; the frame walks along the strip. Drawn at the top centre.
+    pub deck: Option<Deck>,
 }
 
 impl Extra {
@@ -87,6 +91,7 @@ impl Extra {
         deaths: None,
         counts: [None; COUNTS],
         foe: None,
+        deck: None,
     };
 }
 
@@ -165,6 +170,77 @@ pub struct Foe {
     pub label: CountLabel,
     pub current: u32,
     pub max: u32,
+}
+
+/// A strip of up to `DECK_ICONS` 16x16 icons the feeder draws itself, sent as 64 hex
+/// digits each (16 rows, two bytes per row, the high bit the leftmost pixel). The
+/// `next` icons from `at` are framed together: the cards the next cast will draw. The
+/// strip keeps the feeder's order, so the frame moves as the deck is played (asked
+/// 2026-10-13, watching two bolts: a frame that stays put says nothing).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Deck {
+    pub icons: [[u8; 32]; DECK_ICONS],
+    pub len: u8,
+    pub at: u8,
+    pub next: u8,
+}
+
+/// How many icons a `deck` may carry; the glass shows `DECK_SHOWN` of them at once, a
+/// window that slides to keep the frame in view.
+pub const DECK_ICONS: usize = 6;
+pub const DECK_SHOWN: usize = 4;
+
+impl Deck {
+    /// `AT NEXT` then one to six icons, each exactly 64 hex digits; the framed run must
+    /// lie inside the strip (`next` may be 0: nothing framed). Anything else is no deck.
+    pub(super) fn parse<'a>(
+        at: &str,
+        next: &str,
+        icons: impl Iterator<Item = &'a str>,
+    ) -> Option<Self> {
+        let at = at.parse::<u8>().ok()?;
+        let next = next.parse::<u8>().ok()?;
+        let mut deck = Deck {
+            icons: [[0; 32]; DECK_ICONS],
+            len: 0,
+            at: 0,
+            next: 0,
+        };
+        for hex in icons {
+            if deck.len as usize == DECK_ICONS || hex.len() != 64 {
+                return None;
+            }
+            for (i, pair) in hex.as_bytes().chunks(2).enumerate() {
+                let s = std::str::from_utf8(pair).ok()?;
+                deck.icons[deck.len as usize][i] = u8::from_str_radix(s, 16).ok()?;
+            }
+            deck.len += 1;
+        }
+        if deck.len == 0 || at >= deck.len || at.checked_add(next)? > deck.len {
+            return None;
+        }
+        deck.at = at;
+        deck.next = next;
+        Some(deck)
+    }
+    /// The first icon on the glass: the strip slides just enough to keep the whole
+    /// framed run in view, and no further than the strip's end.
+    pub fn window(&self) -> usize {
+        let len = self.len as usize;
+        let last_framed = self.at as usize + (self.next as usize).max(1);
+        last_framed
+            .saturating_sub(DECK_SHOWN)
+            .min(len.saturating_sub(DECK_SHOWN))
+    }
+    /// The icons as sprite rows for the drawing kit, one string per row.
+    pub(super) fn rows(&self, i: usize) -> [String; 16] {
+        std::array::from_fn(|y| {
+            let bits = u16::from_be_bytes([self.icons[i][2 * y], self.icons[i][2 * y + 1]]);
+            (0..16)
+                .map(|x| if bits & (0x8000 >> x) != 0 { '#' } else { ' ' })
+                .collect()
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

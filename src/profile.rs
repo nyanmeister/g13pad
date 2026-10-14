@@ -203,10 +203,10 @@ pub struct Profile {
     /// None preserves the current mode. A comment so the service remains its only owner.
     pub stick: Option<StickMode>,
     pub gamepad: Option<crate::gamepad::Mapping>,
-    /// `# run KEY PROGRAM [ARGS...]`: the program `bind KEY >RUN:KEY;` starts (the text
-    /// after the key; `g13map watch` splits it on whitespace). A comment: the daemon never
-    /// runs anything, the watcher does, from the user's own file.
-    pub runs: BTreeMap<String, String>,
+    /// `# run KEY [WHEN] PROGRAM [ARGS...]`: the program `bind KEY >RUN:KEY;` (or, with a
+    /// release half, `>RUN:KEY; RELEASE:KEY;`) starts, and when. A comment: the daemon
+    /// never runs anything, the watcher does, from the user's own file.
+    pub runs: BTreeMap<String, crate::run::Run>,
     /// Other command lines, kept verbatim (stickzone bounds, font, ...).
     pub extra: Vec<String>,
 }
@@ -291,9 +291,9 @@ impl Profile {
                     let mut it = rest.trim().splitn(2, char::is_whitespace);
                     let key = it.next().unwrap_or("");
                     let program = it.next().unwrap_or("").trim();
-                    match crate::run::Program::parse(program) {
-                        Ok(program) if !key.is_empty() => {
-                            p.runs.insert(key.to_string(), program.line());
+                    match crate::run::Run::parse(program) {
+                        Ok(run) if !key.is_empty() => {
+                            p.runs.insert(key.to_string(), run);
                         }
                         Ok(_) => notes.push(format!("ignored malformed line: {line}")),
                         Err(why) => notes.push(format!("ignored run line `{line}`: {why}")),
@@ -352,10 +352,17 @@ impl Profile {
                 }
             }
         }
-        for key in p.runs.keys() {
-            if p.binds.get(key) != Some(&crate::run::binding(key)) {
+        for (key, run) in &p.runs {
+            let bound = p.binds.get(key).map(String::as_str).unwrap_or("");
+            if crate::run::key_of_binding(bound) != Some(key) {
                 notes.push(format!(
                     "`# run {key}` names a program but {key} is not bound `>RUN:{key};`"
+                ));
+            } else if run.when.needs_release() && !crate::run::binding_reports_release(bound) {
+                notes.push(format!(
+                    "`# run {key} {}` needs the release too: bind {key} `{}`",
+                    run.when.word(),
+                    crate::run::binding(key, run.when)
                 ));
             }
         }
@@ -395,8 +402,8 @@ impl Profile {
         if let Some(mapping) = self.gamepad {
             out.push_str(&format!("# gamepad {}\n", mapping.compact()));
         }
-        for (key, program) in &self.runs {
-            out.push_str(&format!("# run {key} {program}\n"));
+        for (key, run) in &self.runs {
+            out.push_str(&format!("# run {key} {}\n", run.line()));
         }
         out.push_str(&self.commands(None, false));
         out
@@ -633,7 +640,8 @@ mod tests {
         let text = "# run G5 ~/bin/lights.sh on\nbind G5 >RUN:G5;\nbind G6 KEY_A\n";
         let (p, notes) = Profile::parse(text);
         assert!(notes.is_empty(), "{notes:?}");
-        assert_eq!(p.runs["G5"], "~/bin/lights.sh on");
+        assert_eq!(p.runs["G5"].line(), "~/bin/lights.sh on");
+        assert_eq!(p.runs["G5"].when, crate::run::When::Pressed);
         assert_eq!(p.binds["G5"], ">RUN:G5;");
         assert!(p.needs_watcher());
         let again = p.to_text();
@@ -649,9 +657,23 @@ mod tests {
             ("bind G5 >RUN:G5;\n", 1),
             ("# run G5\n", 1),
             ("# run G5 a\u{7}b\nbind G5 >RUN:G5;\n", 2),
+            // A mode with a release half needs the two-group bind; the mode word alone
+            // names no program.
+            ("# run G7 hold arecord\nbind G7 >RUN:G7;\n", 1),
+            ("# run G7 hold\n", 1),
+            ("# run G7 both arecord\nbind G7 >RUN:G7; RELEASE:G7;\n", 0),
+            ("# run G7 arecord\nbind G7 >RUN:G7; RELEASE:G7;\n", 0),
         ] {
             assert_eq!(Profile::parse(half).1.len(), notes_expected, "{half:?}");
         }
+        // A held program round-trips with its mode word and its two-group bind.
+        let text = "# run G7 hold arecord -f cd ~/clip.wav\nbind G7 >RUN:G7; RELEASE:G7;\n";
+        let (p, notes) = Profile::parse(text);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(p.runs["G7"].when, crate::run::When::Hold);
+        let again = p.to_text();
+        assert!(again.contains(text), "{again}");
+        assert_eq!(Profile::parse(&again).0, p);
     }
     #[test]
     fn round_trip_and_stickmode_drop() {

@@ -6,7 +6,7 @@ Read the note for an area before touching it:
 | Area | Note |
 |---|---|
 | The feed line, where a feeder may write, choosing the profile | [feed-contract](docs/notes/feed-contract.md) |
-| Games: DRG/UE4SS, CS2, Doom engines, GoldSource, Source, Terraria, ULTRAKILL, Factorio, Dwarf Fortress | [deep-rock-galactic-ue4ss](docs/notes/deep-rock-galactic-ue4ss.md), [counter-strike-2](docs/notes/counter-strike-2.md), [doom-engines](docs/notes/doom-engines.md), [goldsource](docs/notes/goldsource.md), [terraria](docs/notes/terraria.md), [ultrakill-bepinex](docs/notes/ultrakill-bepinex.md), [factorio](docs/notes/factorio.md), [dwarf-fortress-dfhack](docs/notes/dwarf-fortress-dfhack.md) |
+| Games: DRG/UE4SS, CS2, Doom engines, GoldSource, Source, Terraria, ULTRAKILL, Factorio, Dwarf Fortress, Noita | [deep-rock-galactic-ue4ss](docs/notes/deep-rock-galactic-ue4ss.md), [counter-strike-2](docs/notes/counter-strike-2.md), [doom-engines](docs/notes/doom-engines.md), [goldsource](docs/notes/goldsource.md), [terraria](docs/notes/terraria.md), [ultrakill-bepinex](docs/notes/ultrakill-bepinex.md), [factorio](docs/notes/factorio.md), [dwarf-fortress-dfhack](docs/notes/dwarf-fortress-dfhack.md), [noita](docs/notes/noita.md) |
 | RetroArch and Dolphin readers | [retroachievements-readers](docs/notes/retroachievements-readers.md) |
 | System tools: audio, microphone, MPD, pressure | [system-tools-and-audio](docs/notes/system-tools-and-audio.md), [mpd-music-companion](docs/notes/mpd-music-companion.md) |
 | Controller bindings | [controller-bindings](docs/notes/controller-bindings.md) |
@@ -77,3 +77,7 @@ Read the note for an area before touching it:
 - Every binary we ship answers `--version` without hardware or a GUI.
 - The G13 takes a frame every 10 ms; a 100 ms poll does not limit animation. Collectors,
   presentation clocks and USB timeouts stay independent; skip missed frames.
+- A `cmd &` load generator in a test command outlives the call. Kill its PIDs in the same
+  command (`trap 'kill $pids' EXIT`) and `pgrep` for leftovers after a contention test:
+  nine `taskset -c 0 sh -c 'while :; do :; done'` shells from the 2026-10-13 overlay timing
+  run spun on core 0 for seven and a half hours.

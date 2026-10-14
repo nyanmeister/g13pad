@@ -770,6 +770,245 @@ mod behaviour {
 #[cfg(test)]
 mod dump {
     use super::*;
+    const NOITA_ICONS: &[(&str, &[&str])] = &[
+        // gun_actions/light_bullet.png 16x16
+        (
+            "light_bullet",
+            &[
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "       #    #   ",
+                "     #  ## ###  ",
+                "  #  ### #### # ",
+                "    #  ##### #  ",
+                "        # #     ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+            ],
+        ),
+        // gun_actions/light_bullet_trigger.png 16x16
+        (
+            "light_bullet_trigger",
+            &[
+                "                ",
+                "    #           ",
+                "  # # #         ",
+                "   ###          ",
+                " #######        ",
+                "   ###          ",
+                "  # # #         ",
+                "    #           ",
+                "                ",
+                "       #    #   ",
+                "     #  ## ###  ",
+                "  #  ### #### # ",
+                "    #  ##### #  ",
+                "        # #     ",
+                "                ",
+                "                ",
+            ],
+        ),
+        // gun_actions/chainsaw.png 16x16
+        (
+            "chainsaw",
+            &[
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "   ## # # # #   ",
+                " #############  ",
+                "  ############# ",
+                "  ############  ",
+                " ############ # ",
+                "   ### # # # #  ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+                "                ",
+            ],
+        ),
+        // gun_actions/bomb.png 16x16
+        (
+            "bomb",
+            &[
+                "                ",
+                "                ",
+                "        ##      ",
+                "       #  ##    ",
+                "       #        ",
+                "      ###       ",
+                "     #####      ",
+                "    # #####     ",
+                "   # #######    ",
+                "   # #######    ",
+                "   #  ######    ",
+                "       ## #     ",
+                "         #      ",
+                "      ###       ",
+                "                ",
+                "                ",
+            ],
+        ),
+        // gun_actions/damage.png 16x16
+        (
+            "damage",
+            &[
+                "                ",
+                "           ##   ",
+                "           ##   ",
+                "         ###### ",
+                "         ###### ",
+                "           ##   ",
+                "  ## ## ## ##   ",
+                "  ## ## ##      ",
+                "        ##      ",
+                " #####  ##      ",
+                " #####  ##      ",
+                " ##   # ##      ",
+                " ## ####        ",
+                "  ########      ",
+                "   ######       ",
+                "                ",
+            ],
+        ),
+        // status/on_fire.png 12x12
+        (
+            "on_fire",
+            &[
+                "            ",
+                "       #    ",
+                "     # #    ",
+                "       #    ",
+                "   # # #    ",
+                "   ### ##   ",
+                "   ######   ",
+                "   ######   ",
+                "   ######   ",
+                "   ######   ",
+                "    ####    ",
+                "            ",
+            ],
+        ),
+        // status/poisoned.png 12x12
+        (
+            "poisoned",
+            &[
+                "            ",
+                "   ###      ",
+                "  #  ##     ",
+                "  #   #     ",
+                "  #   #     ",
+                "   ###  #   ",
+                "       # #  ",
+                "        #   ",
+                "     #      ",
+                "    # #     ",
+                "     #      ",
+                "            ",
+            ],
+        ),
+        // status/wet.png 12x12
+        (
+            "wet",
+            &[
+                "            ",
+                "            ",
+                "     #      ",
+                "     #      ",
+                "    ###     ",
+                "    ###     ",
+                "   #####    ",
+                "   #####    ",
+                "   #####    ",
+                "    ###     ",
+                "            ",
+                "            ",
+            ],
+        ),
+        // status/bloody.png 12x12
+        (
+            "bloody",
+            &[
+                "            ",
+                "            ",
+                "     #      ",
+                "     #      ",
+                "    ###     ",
+                "    ###     ",
+                "   #####    ",
+                "   #####    ",
+                "   #####    ",
+                "    ###     ",
+                "            ",
+                "            ",
+            ],
+        ),
+        // status/polymorph.png 12x12
+        (
+            "polymorph",
+            &[
+                "            ",
+                "            ",
+                "   ## ###   ",
+                "  ########  ",
+                " ########## ",
+                " ########## ",
+                " ########## ",
+                "  ######### ",
+                "  # #####   ",
+                "  # # # #   ",
+                "            ",
+                "            ",
+            ],
+        ),
+        // status/frozen.png 12x12
+        (
+            "frozen",
+            &[
+                "            ",
+                "            ",
+                "  ########  ",
+                "   ######   ",
+                "   ## ###   ",
+                "    #  ##   ",
+                "    #  #    ",
+                "       #    ",
+                "       #    ",
+                "            ",
+                "            ",
+                "            ",
+            ],
+        ),
+        // status/electrocution.png 12x12
+        (
+            "electrocution",
+            &[
+                "            ",
+                "     #      ",
+                "     #      ",
+                "    ##      ",
+                "    ##      ",
+                "    #####   ",
+                "   #####    ",
+                "      ##    ",
+                "      ##    ",
+                "      #     ",
+                "      #     ",
+                "            ",
+            ],
+        ),
+    ];
+
     fn pbm(dir: &std::path::Path, name: &str, bm: &Bitmap) {
         let mut bytes = format!("P4\n{W} {H}\n").into_bytes();
         for y in 0..H {
@@ -864,6 +1103,218 @@ mod dump {
             index.push_str(&format!("{tag} {r} {g} {b}\n"));
         }
         fs::write(dir.join("mocks.index"), index).unwrap();
+    }
+    /// The four icons of the picked mock as feed words (64 hex digits each).
+    fn deck_hex(names: &[&str]) -> String {
+        names
+            .iter()
+            .map(|name| {
+                let rows = NOITA_ICONS.iter().find(|(n, _)| n == name).unwrap().1;
+                let mut hex = String::new();
+                for row in rows {
+                    let mut bits = 0u16;
+                    for (x, c) in row.bytes().enumerate() {
+                        if c == b'#' {
+                            bits |= 0x8000 >> x;
+                        }
+                    }
+                    hex.push_str(&format!("{bits:04x}"));
+                }
+                hex
+            })
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    #[test]
+    fn deck_word_parses_hand_built_icons() {
+        // One icon: row 0 lights the two edge pixels, row 15 the leftmost; the rest dark.
+        let mut hex = String::from("8001");
+        hex.push_str(&"0000".repeat(14));
+        hex.push_str("8000");
+        let line = format!("62/100 deck 0 1 {hex}");
+        let State::Health { extra, .. } =
+            parse(&line, SystemTime::now(), SystemTime::now()).unwrap()
+        else {
+            panic!("not health");
+        };
+        let deck = extra.deck.unwrap();
+        assert_eq!((deck.len, deck.at, deck.next), (1, 0, 1));
+        let rows = deck.rows(0);
+        assert_eq!(rows[0], "#              #");
+        assert_eq!(rows[1], "                ");
+        assert_eq!(rows[15], "#               ");
+        // The other words still parse beside it; the deck is the last thing on the line.
+        let line = format!("62/100 count MANA 121/125 ttl 3 deck 1 0 {hex} {hex}");
+        let State::Health { extra, .. } =
+            parse(&line, SystemTime::now(), SystemTime::now()).unwrap()
+        else {
+            panic!("not health");
+        };
+        assert_eq!(extra.counts[0].unwrap().value, 121);
+        assert_eq!(
+            (
+                extra.deck.unwrap().len,
+                extra.deck.unwrap().at,
+                extra.deck.unwrap().next
+            ),
+            (2, 1, 0)
+        );
+    }
+
+    #[test]
+    fn deck_word_rejects_what_it_should() {
+        let ok = "0".repeat(64);
+        let now = SystemTime::now();
+        let bad = [
+            format!("62 deck 0 1 {}", "0".repeat(63)), // short icon
+            format!("62 deck 0 1 {}", "0".repeat(65)), // long icon
+            format!("62 deck 0 1 {}", "g".repeat(64)), // not hex
+            format!("62 deck 0 2 {ok}"),               // framed run past the end
+            format!("62 deck 1 0 {ok}"),               // at past the end
+            format!("62 deck 1 1 {ok} {ok}"),          // at 1 + next 1 = 2: fits
+            "62 deck 0 1".to_string(),                 // no icons
+            format!("62 deck 0 x {ok}"),               // next not a number
+            format!("62 deck 0 1 {ok} {ok} {ok} {ok} {ok} {ok} {ok}"), // seven icons
+            format!("62 deck 0 1 {ok} ttl 3"),         // ttl after the deck reads as an icon
+            format!("wait deck 0 1 {ok}"),             // no health to hang it on
+        ];
+        // The sixth line is the one that fits: everything else must be refused.
+        let fits = bad[5].clone();
+        let bad: Vec<String> = bad.into_iter().filter(|l| *l != fits).collect();
+        assert!(parse(&fits, now, now).is_some(), "{fits}");
+        for line in &bad {
+            assert!(parse(line, now, now).is_none(), "{line}");
+        }
+        let six = format!("62 deck 5 1 {ok} {ok} {ok} {ok} {ok} {ok}");
+        let State::Health { extra, .. } = parse(&six, now, now).unwrap() else {
+            panic!("not health");
+        };
+        assert_eq!(extra.deck.unwrap().len, 6);
+    }
+
+    #[test]
+    fn deck_strip_matches_the_picked_mock() {
+        // The mock the owner picked (b-wand, 2026-10-13) was drawn by hand on top of a
+        // frame; the renderer must reproduce it from the feed word, pixel for pixel.
+        use crate::draw::Draw;
+        let names = ["light_bullet_trigger", "light_bullet", "chainsaw", "damage"];
+        let icon = |name: &str| NOITA_ICONS.iter().find(|(n, _)| *n == name).unwrap().1;
+        let settle = |line: &str| {
+            let state = parse(line, SystemTime::now(), SystemTime::now()).unwrap();
+            let mut m = Meter::default();
+            let mut bm = m.frame(state);
+            for _ in 0..12 {
+                bm = m.frame(state);
+            }
+            bm
+        };
+        let mut expected = settle("62/100 count MANA 121/125 count RLD 24");
+        expected.halo(44, 1, 4 * 18 - 2, 16);
+        for (i, name) in names.iter().enumerate() {
+            expected.sprite(44 + 18 * i as i32, 1, icon(name));
+        }
+        let (x0, y0, x1, y1) = (42, 0, 44 + 18 * 2 - 3, 17);
+        expected.line(x0, y0, x1, y0);
+        expected.line(x0, y1, x1, y1);
+        expected.line(x0, y0, x0, y1);
+        expected.line(x1, y0, x1, y1);
+        let actual = settle(&format!(
+            "62/100 count MANA 121/125 count RLD 24 deck 0 2 {}",
+            deck_hex(&names)
+        ));
+        assert_eq!(
+            actual.0, expected.0,
+            "deck strip differs from the picked mock"
+        );
+        // The frame walks: at 2, next 1 frames the third icon alone (x 78..95), and
+        // nothing is framed at the first icon's left edge any more.
+        let bm = settle(&format!("62/100 deck 2 1 {}", deck_hex(&names)));
+        assert!(bm.get(78, 0) && bm.get(95, 0) && bm.get(78, 17) && bm.get(95, 17));
+        assert!(!bm.get(42, 0) && !bm.get(77, 0), "the old frame is gone");
+        // Six icons, the frame on the last two: the view slides so icons 2..6 show and
+        // the frame sits on the third and fourth drawn (x 78..113); no fifth icon.
+        let six = format!(
+            "62/100 deck 4 2 {}",
+            deck_hex(&["bomb", "bomb", "bomb", "bomb", "chainsaw", "damage"])
+        );
+        let bm = settle(&six);
+        assert!(!bm.get(44 + 18 * 4, 8), "a fifth icon was drawn");
+        assert!(
+            bm.get(78, 0) && bm.get(113, 0) && bm.get(113, 17),
+            "frame on the last two shown"
+        );
+        // Four icons, the frame on the fourth: no slide, the frame at x 98..113.
+        let bm = settle(&format!("62/100 deck 3 1 {}", deck_hex(&names)));
+        assert!(bm.get(98, 0) && bm.get(113, 0));
+    }
+
+    #[test]
+    #[ignore]
+    fn noita_mocks() {
+        // Mock round for the Noita screen (2026-10-13): four directions through the real
+        // meter. A and D are the shipped grammar alone; B and C add the two custom
+        // elements under consideration (a spell strip; status icons with timers).
+        // `G13MAP_METER_DUMP=DIR cargo test --release --lib meter::tests::dump::noita_mocks -- --ignored`
+        use crate::draw::Draw;
+        let Some(dir) = std::env::var_os("G13MAP_METER_DUMP") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        fs::create_dir_all(&dir).unwrap();
+        let icon = |name: &str| NOITA_ICONS.iter().find(|(n, _)| *n == name).unwrap().1;
+        let render = |tag: &str, line: &str, custom: &dyn Fn(&mut Bitmap)| {
+            let state = parse(line, SystemTime::now(), SystemTime::now()).unwrap();
+            let mut m = Meter::default();
+            let mut bm = m.frame(state);
+            for _ in 0..12 {
+                bm = m.frame(state);
+            }
+            custom(&mut bm);
+            pbm(&dir, &format!("{tag}.pbm"), &bm);
+        };
+        render(
+            "a-kit",
+            "62/100 deaths 3 count LEV 77/100 count MP 97",
+            &|_| {},
+        );
+        render("b-wand", "62/100 count MANA 121/125 count RLD 24", &|bm| {
+            // The held wand's deck in the top-middle slot, 16 px icons at native size;
+            // the next cast (spells/cast = 2) framed.
+            bm.halo(44, 1, 4 * 18 - 2, 16);
+            for (i, name) in ["light_bullet_trigger", "light_bullet", "chainsaw", "damage"]
+                .iter()
+                .enumerate()
+            {
+                bm.sprite(44 + 18 * i as i32, 1, icon(name));
+            }
+            let (x0, y0, x1, y1) = (42, 0, 44 + 18 * 2 - 3, 17);
+            bm.line(x0, y0, x1, y0);
+            bm.line(x0, y1, x1, y1);
+            bm.line(x0, y0, x0, y1);
+            bm.line(x1, y0, x1, y1);
+        });
+        render("c-survival", "62/100 deaths 3", &|bm| {
+            // Damage multipliers from perks in the top-middle slot; active effects with
+            // their seconds left along the band, the death tally keeping the right.
+            bm.halo(43, 2, 53, 7);
+            text(bm, 43, 2, "FIRE 50%", 1);
+            bm.halo(43, 10, 53, 7);
+            text(bm, 43, 10, "EXPL 70%", 1);
+            for (i, (name, left)) in [("on_fire", "4S"), ("poisoned", "12S")].iter().enumerate() {
+                let x = 2 + 37 * i as i32;
+                bm.halo(x, 19, 12, 12);
+                bm.sprite(x, 19, icon(name));
+                let w = left.len() as i32 * 6 - 1;
+                bm.halo(x + 14, 22, w, 7);
+                text(bm, x + 14, 22, left, 1);
+            }
+        });
+        render(
+            "d-run",
+            "62/100 deaths 3 time 46800 count TEMPLE 312 count ORBS 2",
+            &|_| {},
+        );
     }
     #[test]
     #[ignore]

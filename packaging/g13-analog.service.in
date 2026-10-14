@@ -1,7 +1,7 @@
 [Unit]
 Description=g13pad analog stick as an Xbox-compatible controller
-BindsTo=g13.service
-After=g13.service
+BindsTo=g13.service dev-input-g13\x2danalog\x2dsource.device
+After=g13.service dev-input-g13\x2danalog\x2dsource.device
 PartOf=g13.service
 StartLimitIntervalSec=0
 

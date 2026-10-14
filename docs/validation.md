@@ -1,5 +1,109 @@
 # Validation record
 
+## 0.3.0 — release actions and hold on a program key; the adapter follows the cable; g13map doctor — 2026-10-14
+
+- Asked 2026-10-14 (the morning's stray processes): the milestone is "better handling and
+  a genuinely new feature". **Release actions.** The driver's pipe-out action takes a
+  second space-separated group written on release (`bind G5 >RUN:G5; RELEASE:G5;`);
+  `>RUN:G5;` alone stays press-only, so every existing profile, the M-key routes and the
+  audio and music tokens are untouched. The `# run` line takes an optional mode word before
+  the program: `pressed` (default, never written), `released`, `both` (the script reads
+  `G13MAP_EDGE`, set on every start) and `hold` (started on press as the transient unit
+  `g13map-hold-KEY`, stopped with SIGTERM on release; a second press while it runs is
+  refused). The editor's Program pane gets a **When** row with hover detail, picked from a
+  mockup sheet of four directions (private maintenance notes, mockup-20261014: C, one script told which
+  edge, with D's hold as a fourth radio); the CLI takes the same word.
+- **The adapter follows the cable.** Found at 04:16: `xboxdrv` at a full core with eight
+  hours of CPU, fd 8 on `/dev/input/event10 (deleted)`: the pad had dropped off USB at
+  21:25 the night before, g13d rebuilt its uinput device, udev repointed the symlink, and
+  xboxdrv's glib callback never gives up on a dead fd (ppoll/read/ENODEV, ~9,400 loops a
+  second). The source node is now tagged `systemd`, `g13-analog.service` binds to
+  `dev-input-g13\x2danalog\x2dsource.device`, and the watcher's reconnect restore starts
+  the adapter again when the profile wants it. `packaging/g13pad.install` re-runs the rule
+  on an already plugged pad after the upgrade. Decided with the owner: Linux only, the
+  systemd dependency accepted; the fold-into-g13d route stays in the controller note.
+- **`g13map doctor`**: driver, pipe, source node, device unit, adapter staleness (started
+  before the current symlink), profile notes, stick state, watcher, display: one line each
+  with the fix beside it, exit 1 when something needs fixing. On the host before the
+  upgrade it named the untagged node; the adapter line read the right pid only after a
+  bug was fixed on the spot: `systemctl show` prints properties in its own order, not the
+  order asked for, so `--value` alone had put the timestamp where the pid belonged.
+- Checks: 194 passed, 17 ignored (`cargo test --lib`; the ignored are the live-hardware,
+  audio-server and fuzzer boundaries, none of which this release touches). New: the grammar
+  both ways, both bind shapes and that the halves must name the same key, the token per
+  edge, `G13MAP_EDGE` in a started script's output, a held script appending `started` and
+  `stopped` from its TERM trap (the test fails with SIGKILL in place of SIGTERM; tried), the
+  driver proof `check_pipe_out_release` (hand-derived bytes), the doctor's staleness and
+  property picking. `cargo test --lib --all-features` fails one unrelated test
+  (`obs::tests::committed_asset_is_current`): the `noita` feature's dependency turns on
+  serde_json's `preserve_order`, so the asset's key order differs; not this release's.
+- Package 0.3.0-1: 53/53. On Arch-Virtual with the pad passed through (installed 05:12,
+  driver and watcher restarted): the source node carries `TAGS=:power-switch:systemd:`,
+  `dev-input-g13\x2danalog\x2dsource.device` is plugged, the adapter shows the two
+  `BindsTo=`, `g13map doctor` reports every line ok. The owner on the VM's pad, profile
+  `hold-test` (`G5 hold held.sh`, `G6 both edge.sh`, `G7 released edge.sh`): G5 held
+  2.3 s wrote `started G5 press` and, from its TERM trap, `stopped G5`, the watcher logging
+  `hold G5: ... (a unit of the session)` and `hold G5: stopped g13map-hold-G5`, no
+  `g13map-hold-*` unit left; G6 wrote `press` then `release` 210 ms apart; G7 wrote only
+  `release`. Evidence: the private maintenance notes (release-0.3.0-20261014, vm/).
+- The cable, on the VM. A physical replug at 05:14 (the pad passed through from the
+  server): `g13-analog.service` "Deactivated successfully" (no restart counter, no
+  xboxdrv left), the device unit plugged again, the watcher restored the profile. On the
+  VM the driver itself dies on the unplug (`Input/Output Error`) and is restarted, so that
+  replug also went through the old `PartOf=` path; the new binding was then proven on its
+  own at 05:15: with g13d alive (pid unchanged), `udevadm trigger --action=remove` on the
+  source node alone stopped the adapter cleanly and left no xboxdrv, `--action=add`
+  brought `dev-input-g13\x2danalog\x2dsource.device` back, and `g13map apply` started
+  the adapter on the new node. That is the host's 2026-10-13 incident, with the pad
+  staying on the driver, now ending in a clean stop (vm/replug-20261014.txt there).
+- Host, the owner's desktop: 0.3.0-1 installed 05:17 with `g13.service` restarted (0.2.99's
+  install had left the 0.2.99 g13d running since the 13th). With the pad still on the VM,
+  `doctor` reported the missing pipe and node and the profile wanting a stick the adapter
+  was not giving; the wording for "no pad" is a 0.3.1 item. The pad returned at 05:18:
+  the new rule tagged the node on arrival (`TAGS=:power-switch:systemd:`), the device
+  unit plugged, the adapter bound and started on the current node, the watcher restored
+  `default`, `doctor` all ok (host/pad-return-and-doctor-20261014-0518.txt there).
+
+## 0.2.99 — Noita, read from memory — 2026-10-13
+
+- Asked 2026-10-13: a Noita integration, with the condition (mid-survey) that
+  achievements keep unlocking. Any enabled mod disables them, so this is the project's
+  first *Proton* memory reader: `g13map-noita %command%` in Steam wraps the game (its
+  parent may read it under Yama's default scope with no capability) and reads
+  `noita.exe` with necauqua's `noita-engine-reader` (MIT, a pinned git dependency,
+  `lookup` feature off). The feed gets health (`hp * 25`), the lifetime death tally, the
+  held wand's mana and recharge frames, and a new generic word, `deck AT NEXT ICON...`: up
+  to six 16x16 icons as 64 hex digits each, four drawn in the top-middle slot (the view
+  slides to keep the frame in sight), NEXT of them from AT framed as the next cast. The icons are the game's own spell sprites out of
+  `data.wak`; the deck pointer is reconstructed from the shot counter by the gun script's
+  draw rules, read from the same archive. Note: `docs/notes/noita.md`.
+- Check: `cargo test` 190 passed, 17 ignored (one new: the mock-frame dump); the feeder's
+  own 4 (the hand rule on real spell ids with the draw counts stated by hand; the pointer
+  advancing per shot, wrapping at the end, resetting on recharge and on a wand change;
+  the Lua parser on the script's real shape with a commented-out draw ignored; the
+  one-bit threshold on four hand-placed pixels). The parser: a hand-built icon's rows,
+  ten rejections (short, long, non-hex, the framed run past the end, AT past the end, no
+  icons, NEXT not a number, seven icons, a ttl after the deck, no health) and the edge
+  that fits (AT 1 + NEXT 1 of 2). The renderer is pinned pixel-for-pixel to the mock the owner
+  picked, which was drawn by separate code before the renderer existed; changing the icon
+  pitch from 18 to 17 made it fail. The frame walking (AT 2 of 4, AT 3 of 4) and the
+  sliding view (AT 4 of 6) are checked at hand-worked x positions. On the glass the owner
+  saw the first form's frame stay put on a two-bolt wand ("the square doesn't move
+  forward"): the strip was rotated so the next card was always first; now the order is
+  fixed and the frame moves. With diagnostics on (`G13MAP_NOITA_DEBUG=1`) the pointer
+  then still read 0 through eleven shots: the reset test used `m_reload_frames_left`, a
+  constant; it compares the recharge's end frame with the frame counter now.
+  With that, the two-bolt wand's pointer alternated 0/1 with the shots and the owner
+  confirmed on the glass: "Frame steps forward as expected, nice!" `cargo clippy --all-targets --features noita`: the
+  pre-existing warning only.
+- Live: the feeder observed the owner's running game (health 60/125 and falling, a
+  swapped wand's mana 90/90 and 102/102, recharge 28 and 6 frames, the deck with one and
+  two bolts) and the pad showed it through the warm watcher; "Looking good so far!" on the
+  glass. Levitation seconds were verified against the HUD bar in the probe stage (30
+  samples, mean error 0.019) but are not on the screen yet. Six transient wand reads
+  failed with a null pointer over four minutes; the health line stands without the wand
+  words for that tick.
+
 ## 0.2.98 — a program on a key — 2026-10-13
 
 - Asked 2026-10-13: "Shell script on button press ... launch my web-browser from the pad,

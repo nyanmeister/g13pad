@@ -129,6 +129,8 @@ struct App {
     picker: Option<mpsc::Receiver<Result<PathBuf, String>>>,
     /// The program line being edited for the selected key (`# run KEY ...`).
     run_text: String,
+    /// When that program runs (the radio row under the line).
+    run_when: crate::run::When,
     /// A file dialog for a program, like `picker`.
     run_picker: Option<mpsc::Receiver<Result<PathBuf, String>>>,
     /// M-keys as profile selectors (`~/.config/g13map/modes`, served by `g13map watch`).
@@ -220,6 +222,7 @@ impl App {
             text_error: String::new(),
             picker: None,
             run_text: String::new(),
+            run_when: crate::run::When::default(),
             run_picker: None,
             modes: Modes::load(),
             rules: Rules::load(),
@@ -268,10 +271,9 @@ impl App {
             .cloned()
             .unwrap_or_default();
         self.raw = action.clone();
-        self.run_text = key
-            .and_then(|k| self.profile.runs.get(k))
-            .cloned()
-            .unwrap_or_default();
+        let run = key.and_then(|k| self.profile.runs.get(k));
+        self.run_text = run.map(|r| r.program.line()).unwrap_or_default();
+        self.run_when = run.map(|r| r.when).unwrap_or_default();
         match chord(&action) {
             Some((mods, main)) => {
                 self.mode = Mode::Keys;

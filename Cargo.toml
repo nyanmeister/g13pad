@@ -4,7 +4,7 @@ default-members = [".", "crates/g13pad-core", "crates/g13pad-analog", "crates/g1
 resolver = "2"
 
 [workspace.package]
-version = "0.2.98"
+version = "0.3.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -24,6 +24,8 @@ default = ["editor", "art"]
 editor = ["dep:eframe", "dep:egui", "dep:read-fonts", "dep:image", "art"]
 # The built-in LCD animations (src/art.rs): the editor's Animations window and g13map-anim.
 art = []
+# g13map-noita: the read-only Noita observer (a memory reader; no mod, achievements stay).
+noita = ["dep:noita-engine-reader", "dep:image", "dep:zerocopy"]
 
 [[bin]]
 name = "g13map-factorio"
@@ -33,6 +35,11 @@ path = "src/factorio_main.rs"
 name = "g13map-editor"
 path = "src/editor.rs"
 required-features = ["editor"]
+
+[[bin]]
+name = "g13map-noita"
+path = "src/noita_main.rs"
+required-features = ["noita"]
 
 [[bin]]
 name = "g13map-anim"
@@ -45,6 +52,7 @@ path = "src/obs_main.rs"
 required-features = ["editor"]
 
 [dependencies]
+libc = "0.2"
 g13pad-core.workspace = true
 g13pad-music = { path = "crates/g13pad-music" }
 eframe = { version = "0.36", optional = true, default-features = false, features = ["glow", "x11", "wayland", "default_fonts"] }
@@ -55,6 +63,11 @@ wayland-client = "0.31"
 wayland-protocols-wlr = { version = "0.3", features = ["client"] }
 read-fonts = { version = "0.41", optional = true }
 image = { version = "0.25", optional = true, default-features = false, features = ["jpeg", "png", "gif", "webp", "bmp"] }
+# necauqua's engine reader (MIT): entity tags, components and per-build globals of a
+# running noita.exe through process_vm_readv. Pinned; `lookup` off (no sysinfo), the
+# feeder finds the process itself.
+zerocopy = { version = "0.8", optional = true, default-features = false, features = ["derive"] }
+noita-engine-reader = { git = "https://github.com/necauqua/noita-utility-box", rev = "a73d8010c20b39f0e266faaad637376574230793", optional = true, default-features = false }
 
 [profile.dev]
 debug = "line-tables-only"

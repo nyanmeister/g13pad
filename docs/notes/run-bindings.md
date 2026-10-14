@@ -33,14 +33,40 @@ computer; shipping some under `/usr/share/g13pad/scripts/` is allowed, like the 
   to another action and `profile unbind` drop the `# run` line; the editor does the same
   in `set_action`.
 
-## Not done, and how it would be
+## Release actions and hold (0.3.0)
 
-- **Release actions.** `G13_Action_PipeOut::act` writes only on `is_down`. The key action
-  beside it takes two space-separated groups, press and release; giving pipe-out the same
-  (split the text on the first space in its constructor, write the second on release) is
-  about ten lines of C++ and a driver rebuild, and a `# release KEY PROGRAM` line in the
-  profile. A single token keeps firing on press only, so the M-key routes and the audio and
-  music bindings are untouched. On the radar (asked 2026-10-13), not in 0.2.98.
+Asked 2026-10-14, picked from a mockup sheet (private maintenance notes, mockup-20261014): one program,
+told which edge, with hold as a fourth choice. The pane's **When** row: Pressed, Released,
+Both, Hold; hovering a radio gives the detail.
+
+- **The driver reports both ends when asked.** `G13_Action_PipeOut` takes two
+  space-separated groups like the key action: `bind G5 >RUN:G5; RELEASE:G5;` writes
+  `RUN:G5;` on press and `RELEASE:G5;` on release; `>RUN:G5;` alone stays press-only, so
+  every existing profile, the M-key routes and the audio and music tokens are untouched.
+  Proof in `tools/driver-audit.cpp` (`check_pipe_out_release`, hand-derived bytes).
+- **The line says which ends matter.** `# run KEY [pressed|released|both|hold] PROGRAM
+  [ARGS...]`; the word is never written for `pressed`, so old files read and write the
+  same. `run::Run { when, program }` is the parsed shape; `run::binding(key, when)` picks
+  the bind. A profile whose mode needs the release but whose bind lacks the second group
+  gets a note like any other half-binding. A program that is itself named like a mode word
+  is given as a path (`./both`).
+- **The watcher** (`modes.rs`) matches `(when, edge)`: Pressed ignores the release token,
+  Released ignores the press, Both starts on each with `G13MAP_EDGE=press|release` (set on
+  every start, Pressed included), Hold goes to `run::Holds`.
+- **Hold** starts the program as the transient unit `g13map-hold-KEY` (`systemd-run
+  --unit=`), so the release is `systemctl --user stop g13map-hold-KEY`, which is SIGTERM
+  to the program and it gets to finish its file. A second press while the unit still runs
+  is refused ("still running"), not a second copy. Without a manager (`G13MAP_UNIT=0`, a
+  TTY) the child is kept by key and sent SIGTERM directly; `Child::kill` would be SIGKILL.
+- CLI: `g13map profile run NAME KEY [WHEN] PROGRAM [ARGS...]`.
+
+Checking it: `run.rs` tests the grammar both ways, both bind shapes (and that the two
+halves must name the same key), the token for each edge, `G13MAP_EDGE` in a started
+script's output (`G5 gaming press hello` / `... release hello`), and a held script that
+appends `started` on start and `stopped` from its TERM trap: press, refused second press,
+release, both words in order, then a fresh press after it ended. The boundary is the VM
+with the pad: a `hold` profile through the installed package, the unit visible under
+`systemctl --user list-units 'g13map-hold-*'` while the key is down and gone after.
 
 ## Checking it
 

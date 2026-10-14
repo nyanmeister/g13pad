@@ -8,7 +8,10 @@ live health meter for games, and an optional analog stick that games see as an X
 controller.
 
 RetroArch and Dolphin can also show a [local RetroAchievements progress bar and queued
-unlock notifications](docs/retroachievements.md), using their existing login without a Web API key.
+unlock notifications](docs/retroachievements.md), using their existing login without a Web
+API key; `g13map ra launch` starts RetroArch with the game readers attached, and two games
+have readers of their own (`g13map ra fzero`, `g13map ra bn2`: F-Zero GX race data and
+[Battle Network 2](docs/battle-network-2.md) style progress).
 
 Here is the editor, opened with `g13map edit`:
 
@@ -25,6 +28,14 @@ Here is the editor, opened with `g13map edit`:
   optional: everything it saves is a plain text file under `~/.config/g13map` that the
   CLI reads too.
 - **`g13pad-analog`**, the adapter that makes the stick an Xbox-style controller.
+- **Game observers** that wrap a Steam launch and feed the meter without a mod:
+  `g13map-factorio`, `g13map-noita`, `g13map-goldsrc`, `g13map-terraria`; the mods and
+  scripts for the other games are in `contrib/`.
+- **`g13music`** and its service, the MPD listening-history companion (SQLite), and
+  **`g13pad-obs`**, the OBS source plugin, with `g13map-obs` for the same picture as a
+  window without OBS.
+- **`g13map-anim`** and **`pbm2lpbm`**, for the built-in scenes and LCD bitmaps from a
+  terminal.
 - systemd services, udev rules and an Arch package recipe.
 
 Builds and package staging never touch the running system. Everything works on any X11
@@ -39,7 +50,7 @@ X11 clients only). Panel applets exist for LXQt, XFCE and Waybar.
 ![Tesseracts: two hypercubes turning through the fourth dimension](docs/images/tesseracts.gif)
 
 Two of the built-in LCD animations, shown in the panel's own two colours (sampled from a
-video of the glass). The editor's **Animations…** window previews all of them live and
+video of the glass). The editor's **Animations** view previews all of them live and
 keeps one with a click:
 
 <img width="992" height="712" alt="image" src="https://github.com/user-attachments/assets/58bd485a-212e-444c-b9c1-937033c7e3d3" />
@@ -54,8 +65,13 @@ green above 75, yellow, orange, red with a flash on every beat, blue over 100 fo
 overshield, and three dark seconds on a drop to zero before the search for a pulse.
 
 A game feeds it one line at a time through a small mod or script. Feeders for Deep Rock
-Galactic, Doom, Source engine games, ULTRAKILL and more are in `contrib/`; Counter-Strike 2
-posts straight to the watcher. In the editor, click the screen and choose the game's
+Galactic, the Doom engines, GoldSource and Source engine games, Terraria, ULTRAKILL and
+Dwarf Fortress are in `contrib/`; Counter-Strike 2 posts straight to the watcher; Factorio
+and Noita are read from outside the game by an observer that wraps the Steam launch
+(`g13map-factorio %command%`, `g13map-noita %command%`: no mod, so achievements keep
+unlocking). Noita's screen shows the held wand's spell deck as its real icons with the
+next cast framed, its mana and recharge, and the death tally; see
+[the health meter](docs/health-meter.md) for every game. In the editor, click the screen and choose the game's
 entry under **Shows**, so the window rules put it on the game's windows; the profile's
 own picture stays kept and returns when the choice goes back to **Picture**.
 `g13map health demo` runs the states on your own panel. See
@@ -94,7 +110,7 @@ The collector reads the game without changing it.
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.98.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.3.0.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -110,10 +126,12 @@ For game-handler development, start with the [Health Mode architecture and timin
 contract](docs/health-architecture.md). Telemetry polling and LCD animation have
 independent clocks; the reported display ceiling is 100 FPS.
 
-On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev libpulse log4cpp`
-and the GUI runtime dependencies listed in [the Arch recipe](packaging/PKGBUILD), including
-`libglvnd libxkbcommon libxkbcommon-x11 libx11`. A first Rust build downloads the
-versions pinned by Cargo.lock. For an already populated cache, add
+On Arch install the build dependencies `base-devel cmake ninja rust libusb libevdev libpulse
+libmpdclient sqlite log4cpp` (plus `obs-studio jansson lib32-glibc lua` for the OBS plugin,
+the 32-bit game modules and the DFHack checks) and the GUI runtime dependencies listed in
+[the Arch recipe](packaging/PKGBUILD), including `libglvnd libxkbcommon libxkbcommon-x11
+libx11`. A first Rust build downloads the versions pinned by Cargo.lock, one of them a git
+dependency (the Noita reader). For an already populated cache, add
 `-DG13PAD_CARGO_OFFLINE=ON`.
 
 ```sh
@@ -132,14 +150,17 @@ Options, for when you need them:
 - `-DBUILD_TESTING=OFF` omits tests.
 - `-DG13PAD_BUILD_EDITOR=OFF` skips the graphical editor and its GUI dependencies, keeping
   the driver, CLI/watcher and analog helper. Also disable `G13PAD_BUILD_CLI` and
-  `G13PAD_BUILD_ADAPTER` for the C++ driver only.
-- In a configured full build, `cmake --build build --target g13d`, `cli`, `editor` or
-  `adapter` builds just that component.
+  `G13PAD_BUILD_ADAPTER` for the C++ driver only. `G13PAD_BUILD_OBS`,
+  `G13PAD_BUILD_GOLDSRC_HEALTH` and `G13PAD_BUILD_SOURCE_HEALTH` (all on) take out the OBS
+  plugin and the native game modules; `G13PAD_BUILD_FUZZERS` (off) adds the libFuzzer
+  checks.
+- In a configured full build, `cmake --build build --target g13d`, `cli`, `editor`,
+  `adapter`, `anim`, `obs`, `factorio`, `noita` or `music` builds just that component.
 - `-DG13PAD_SANITIZER=address,undefined` with Clang enables instrumented driver checks.
 
-The Rust workspace contains the application (`g13map`), the mapping model (`g13pad-core`)
-and the adapter (`g13pad-analog`); the last two use only the standard library. For a
-quick helper check:
+The Rust workspace contains the application (`g13map`), the mapping model (`g13pad-core`),
+the adapter (`g13pad-analog`) and the music companion (`g13pad-music`); the core and the
+adapter use only the standard library. For a quick helper check:
 
 ```sh
 cargo test --offline --locked -p g13pad-core -p g13pad-analog
@@ -162,29 +183,50 @@ hand: CMake's installation copies configuration files and does not merge them.
 
 ### The command line
 
+A sampler; `g13map --help` lists everything.
+
 ```sh
-g13map --h
 g13map edit                         # editor
-g13map import FILE NAME             # keep an existing driver's bindings
-g13map apply                        # apply the selected saved profile
-g13map watch                        # profile switching and LCD playback
-g13map marquee 'Message' NAME        # keep reusable LCD text, no hardware write
-g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs2
+g13map status                       # connection, profile and paths
+g13map doctor                       # the driver, the stick adapter, the watcher, the profile: what to fix
+g13map profiles                     # saved profiles, the active one starred
+g13map use gaming                   # apply and select a saved profile
+g13map apply                        # reapply the selected profile
+g13map profile bind gaming G1 KEY_LEFTCTRL+KEY_D   # a key or chord; PAD_A for a controller button
 g13map profile run gaming G5 firefox # a program on a key; g13map-watch starts it
-g13map health source DIR            # Source engine game: install the LCD module + page
+g13map profile run gaming G6 hold arecord -f cd ~/clip.wav  # while the key is held
+g13map profile rgb gaming 31 0 127  # backlight; leds, stick, controller, lcd, mic likewise
+g13map profile health gaming feed   # the screen shows the meter (off, feed, cs2, log, retroarch, dolphin)
+g13map profile pressure gaming on   # or mpv, mpd, audio: the machine-wide displays
+g13map modes set 3 gaming           # M1+M2 held selects this profile; modes on|off|show
+g13map focus set steam gaming       # window rule by class; focus windows lists them
+g13map import FILE NAME             # keep an existing driver's bindings
+g13map marquee 'Message' NAME        # keep reusable LCD text, no hardware write
+g13map demo loop.gif 15             # show a file for 15 s; demo scenes, demo scene NAME
+g13map-anim keep aquarium           # keep a built-in scene; anim NAME DIR, pbm NAME DIR
+g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs2
+g13map health source DIR sp         # Source engine game: install the LCD module + page (sp|mp|remove)
+g13map health dfhack DIR             # Dwarf Fortress + DFHack: fortress or adventure LCD
 g13map-goldsrc %command%             # GoldSource handler for native Half-Life/mods
 g13map-factorio %command%            # read-only native Factorio observer, no game mod
-g13map health dfhack DIR             # Dwarf Fortress + DFHack: fortress or adventure LCD
-g13map --version
+g13map-noita %command%              # read-only Noita observer (Proton), no mod, achievements stay
+g13map-terraria %command%            # Terraria, through its launcher
+g13map ra launch                    # RetroArch with achievements and the game readers
+g13map audio mic-toggle             # audio inputs|status|COMMAND; music ACTION|status; mpd status
+g13map obs                          # the pad as a transparent window; glass matches its colours
 g13map panel xfce                   # XFCE Generic Monitor status and editor button
 g13map panel waybar                 # Waybar custom-module JSON
 g13map panel text                   # i3blocks/Polybar/tint2 or terminal status
+g13map --version
 ```
 
 `profile` commands save files; `use` and `apply` send settings to the device. Syntax and
 configuration errors go to stderr without changing the LCD. Missing hardware does not
 prevent saved configuration or help/version commands. `g13map status` shows the selected
-profile, connection and paths. The profile format is plain text, editable with any editor.
+profile, connection and paths; `g13map doctor` checks the driver, its pipe, the stick's
+source node and adapter, the profile, the watcher and the display, one line each with
+the fix beside anything wrong, and exits 1 when there is something to fix. The profile
+format is plain text, editable with any editor.
 
 Two services do the background work: `g13map-apply.service` restores the saved profile at
 login; `g13map-watch.service` switches profiles, plays animations, recovers from temporary
@@ -237,8 +279,22 @@ and `g13map-watch.service` (which the editor enables when a program is set) look
 up in the active profile's `# run` line and starts the program through `systemd-run
 --user`, so it has a unit of its own, outlives a watcher restart and logs to your journal
 under its own name (`systemctl --user list-units 'run-*'` while it runs). It gets
-`G13MAP_KEY` and `G13MAP_PROFILE` in its environment, so one script can serve several
-keys. Press only: the driver's pipe action has no release half yet.
+`G13MAP_KEY`, `G13MAP_PROFILE` and `G13MAP_EDGE` in its environment, so one script can
+serve several keys and both ends of one.
+
+Since 0.3.0 the pane's **When** row (hover a choice for the detail) says which end of the
+key the program belongs to, and the command line takes the same word before the program:
+
+| When | What happens | In the profile |
+|---|---|---|
+| Pressed | starts on press (the default; the word is not written) | `# run G5 lights.sh on` |
+| Released | starts on release | `# run G5 released lights.sh off` |
+| Both | starts on each; the script reads `G13MAP_EDGE` (`press` or `release`) | `# run G5 both lights.sh` |
+| Hold | starts on press, stopped (SIGTERM) on release: a recording, a microphone, a light, while held | `# run G5 hold arecord -f cd ~/clip.wav` |
+
+Anything but Pressed binds the key `>RUN:G5; RELEASE:G5;`, so the driver reports the
+release too. A held program runs as the unit `g13map-hold-G5`; a second press while it
+still runs is refused, not doubled.
 
 ### Profiles that follow the game
 
@@ -249,8 +305,13 @@ it reads the focused window from the root window's EWMH properties; on Wayland i
 foreign-toplevel protocol where a compositor offers it, the app id standing in for the
 class. The journal says which one it found (`window focus: Xfwm4 on display :0`).
 `g13map focus windows` lists the windows the manager knows with their classes and marks
-the focused one, so a rule can be written from a terminal; the editor's **Windows…** panel
-shows the same list.
+the focused one, so a rule can be written from a terminal; the editor's **Window rules**
+view shows the same list.
+
+The M-keys select profiles too: with M-key switching on (`g13map modes on`, or the
+checkbox in the same view), the sum of the lit M-keys (M1 = 1, M2 = 2, M3 = 4) picks a
+saved profile (`g13map modes set 3 gaming`); MR clears the sum, and a sum with no profile
+assigned leaves the current one.
 
 Where it works, as checked on a test machine with the pad attached (details in the
 [validation record](docs/validation.md)):
@@ -267,17 +328,20 @@ Where it works, as checked on a test machine with the pad attached (details in t
 ### Pictures, text and animations
 
 Images support crop, background, threshold/dither, inversion and animation. Text supports
-installed fonts, size, multiline wrapping/alignment and scrolling. **Animations…** offers
-built-in looping pixel art drawn in code (a rainy skyline, a starfield, Pong, Life, waves,
-cubes, digital rain, a heartbeat, an aquarium, tesseracts, an orrery); a click keeps one as
-a picture.
-`g13map-anim` lists and keeps the same scenes from a terminal, and `g13map-anim anim NAME
-DIR` writes one as `DIR/NAME.anim`, which any installed `g13map demo` plays without knowing
-the scene.
+installed fonts, size, multiline wrapping/alignment and scrolling. The **Animations** view
+offers built-in looping pixel art drawn in code (a rainy skyline, a starfield, Pong, Life,
+waves, cubes, digital rain, a heartbeat, an aquarium, tesseracts, an orrery); a click keeps
+one as a picture.
+`g13map-anim` lists the same scenes from a terminal, `g13map-anim keep NAME...` keeps
+them, `g13map-anim anim NAME DIR` writes one as `DIR/NAME.anim`, which any installed
+`g13map demo` plays without knowing the scene, and `pbm NAME DIR` writes its frames as
+bitmaps.
 
 `g13map demo FILE [SECONDS]` shows a file temporarily, then restores the current
 display. The default is 10 seconds; fractional seconds are accepted. With no file,
-it prints usage and exits. GIF, animated PNG/WebP and ordinary images use the editor
+it prints usage and exits. `g13map demo scenes` lists the built-in scenes and `demo scene
+NAME` plays one (or a kept `NAME.anim`); `demo --clear` ends a demo left behind by a killed
+process. GIF, animated PNG/WebP and ordinary images use the editor
 component's decoder without opening a window; white pixels light the LCD. Native
 sprite sheets whose dimensions are multiples of 160×43 play left-to-right, then
 top-to-bottom, at 200 ms per frame. Driver `.lpbm` and kept `.anim` files also work.
@@ -292,10 +356,16 @@ editor closes and with automatic profile switching off. The setting is on by def
 
 The meter (0.2.17, pictured above) is fed one line at a time: `g13map health 87` (or
 `87/125 shield 40/60`). `wait` is a game connected without health yet (a lobby); `off` or
-an expired `ttl` gives the panel back to the profile. A profile chooses it as its picture
-(`g13map profile lcd NAME health`, or `health cs2` for the watcher to run the
-Counter-Strike 2 Game State listener itself). The ladder, its colours and the rest of the
-look are lines in `~/.config/g13map/meter`, re-read live. See
+an expired `ttl` gives the panel back to the profile. The line can carry more than health:
+`helmet`, `mana`, `defense`, `breath`, a `deaths` tally, a `count` with a label, `foe` for
+the nearest enemy's health, `deck` for a strip of icons with one framed, and the words
+single games use (`cap`, `rank`, `style`, `time`, `dash`, `rail`, `battery`, `research`,
+`technology`, `attack`, `vehicle`, `pilot`); the [feed contract](docs/notes/feed-contract.md)
+has the grammar. The screen is drawn at up to 50 frames a second, the animations counted
+in 20 ms ticks. A profile chooses the meter for its screen (`g13map profile health NAME
+feed`, or `cs2` for the watcher to run the Counter-Strike 2 Game State listener itself,
+`log`, `retroarch` or `dolphin` for the other readers). The ladder, its colours and the
+rest of the look are lines in `~/.config/g13map/meter`, re-read live. See
 [the health meter](docs/health-meter.md).
 
 ### The OBS source
@@ -363,6 +433,13 @@ Calibration continues to follow physical X/Y when axes are swapped.
 `g13pad-analog check FILE` validates it without accessing hardware. The updated
 helper/services and group access are required for custom mappings.
 
+The adapter follows the cable (0.3.0): the source node carries a systemd device unit and
+`g13-analog.service` is bound to it, so a pad that drops off USB stops the adapter at
+once instead of leaving xboxdrv on a vanished node, and the watcher starts it again with
+the profile when the pad is back. `g13map doctor` says if the adapter is on a stale node,
+if the node lacks its unit (an older rule file; replug or `udevadm trigger`), and what
+else the pad needs.
+
 An optional [G13 Analog Steam Input template](packaging/steam-g13-analog.vdf) preserves
 continuous gamepad axes instead of converting them to keyboard directions. See
 [Steam Input setup](docs/steam-input.md). A template cannot make a game consume analog
@@ -370,13 +447,16 @@ input if its controller input path is inactive.
 
 ## Current limits
 
-Validated on Linux x86_64 with systemd. Window rules follow i3, any X11 window manager,
-and Wayland compositors with the foreign-toplevel protocol; on KDE Plasma and GNOME under
-Wayland only their X11 (Xwayland) clients. Pointer isolation targets X11/libinput. One G13 and one controlling login session are the initial scope.
-The inherited FIFO protocol requires coordinated writes; unrelated direct writers or
-multiple controlling sessions can bypass the editor's lock. Fresh login/reconnect and
-cross-distribution installation require hardware/environment-specific checks. Native
-Waybar and GNOME/KDE integrations were not exercised.
+Validated on Linux x86_64 with systemd, and only there: the services, the device binding
+and the program keys' transient units are systemd's. Window rules follow i3 and sway
+through their IPC, any X11 window manager, and Wayland compositors with the
+foreign-toplevel protocol; on KDE Plasma and GNOME under Wayland only their X11
+(Xwayland) clients. Pointer isolation targets X11/libinput. One G13 and one controlling
+login session are the initial scope. The inherited FIFO protocol requires coordinated
+writes; unrelated direct writers or multiple controlling sessions can bypass the editor's
+lock. A physical reconnect has been checked on the pad (the adapter follows it since
+0.3.0); a fresh login and cross-distribution installation still need their own checks.
+Native Waybar and GNOME/KDE integrations were not exercised.
 
 The physical test pad is connected to a server and passed through to a VM, isolating
 driver faults, generated input and GUI tests from the working desktop. Optional

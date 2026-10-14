@@ -2,4 +2,8 @@
 SUBSYSTEM=="usb", ATTR{idVendor}=="046d", ATTR{idProduct}=="c21c", GROUP="g13", MODE="0660"
 KERNEL=="uinput", SUBSYSTEM=="misc", GROUP="g13", MODE="0660"
 # Exact source device: retain keyboard handling, give the adapter an evdev path.
-ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="G13", ATTRS{id/vendor}=="046d", ATTRS{id/product}=="c21c", ENV{ID_INPUT_MOUSE}="", GROUP="g13", MODE="0660", SYMLINK+="input/g13-analog-source"
+ACTION!="remove", SUBSYSTEM=="input", KERNEL=="event*", ATTRS{name}=="G13", ATTRS{id/vendor}=="046d", ATTRS{id/product}=="c21c", ENV{ID_INPUT_MOUSE}="", GROUP="g13", MODE="0660", SYMLINK+="input/g13-analog-source", TAG+="systemd"
+# The "systemd" tag gives the source a device unit, dev-input-g13\x2danalog\x2dsource.device:
+# g13-analog.service binds to it, so a pad that drops off USB stops the adapter at once
+# instead of leaving it spinning on the vanished node (seen 2026-10-14). The watcher
+# starts it again when the profile wants the stick analog.

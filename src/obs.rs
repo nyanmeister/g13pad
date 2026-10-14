@@ -946,11 +946,12 @@ mod tests {
     fn committed_asset_is_current() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/obs");
         let (png, json) = generate();
-        assert_eq!(
-            fs::read_to_string(dir.join(JSON)).unwrap(),
-            json,
-            "assets/obs/{JSON} is stale"
-        );
+        // Compared as values: with the `noita` feature on, a dependency turns on
+        // serde_json's `preserve_order` and the keys come out in another order.
+        let committed_json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(dir.join(JSON)).unwrap()).unwrap();
+        let generated_json: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(committed_json, generated_json, "assets/obs/{JSON} is stale");
         let committed = image::load_from_memory(&fs::read(dir.join(PNG)).unwrap())
             .unwrap()
             .into_rgba8();

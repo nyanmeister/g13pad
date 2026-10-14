@@ -75,6 +75,7 @@ public:
     unsigned char r[8] = {0, x, y, 0, 0, 0, 0, 0};
     stick().ParseJoystick(r);
   }
+  void pipe_out(int fd) { m_output_pipe_fid = fd; }
   void pipe_read(const uint8_t *data, size_t n) {
     int fds[2];
     assert(pipe2(fds, O_NONBLOCK) == 0);
@@ -112,6 +113,35 @@ static void check_axis_modes() {
   d.Command("stickmode ABSOLUTE");
   assert(axes[0] == 245 && axes[1] == 127 && !down[KEY_RIGHT]);
   std::cout << "Analog mode publishes the latest position; keys/calibration center axes immediately\n";
+}
+
+// The pipe-out action writes its first group on press and its second, if any, on release:
+// hand-derived expectation, `RUN:G10;\n` then `RELEASE:G10;\n`, and press-only stays silent
+// on release (0.3.0).
+static void check_pipe_out_release() {
+  int fds[2];
+  assert(pipe2(fds, O_NONBLOCK) == 0);
+  Device d;
+  d.pipe_out(fds[1]);
+  const auto drain = [&] {
+    char buf[64];
+    const ssize_t n = read(fds[0], buf, sizeof buf);
+    return n > 0 ? std::string(buf, static_cast<size_t>(n)) : std::string();
+  };
+  d.Command("bind G10 >RUN:G10; RELEASE:G10;");
+  d.report(true);
+  assert(drain() == "RUN:G10;\n" && "press group");
+  d.report(false);
+  assert(drain() == "RELEASE:G10;\n" && "release group");
+  d.Command("bind G10 >RUN:G10;");
+  d.report(true);
+  assert(drain() == "RUN:G10;\n");
+  d.report(false);
+  assert(drain().empty() && "press-only must stay silent on release");
+  d.pipe_out(-1);
+  close(fds[0]);
+  close(fds[1]);
+  std::cout << "Pipe-out actions report the release when bound with a second group\n";
 }
 
 static void check_zone_commands() {
@@ -179,6 +209,7 @@ int main() {
   log4cpp::Category::getRoot().setPriority(log4cpp::Priority::CRIT);
   check_axis_modes();
   check_zone_commands();
+  check_pipe_out_release();
   {
     Device pad;
     auto *manager = G13::G13_Manager::Instance();

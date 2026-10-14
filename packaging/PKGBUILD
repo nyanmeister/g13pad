@@ -4,7 +4,7 @@
 # shellcheck disable=SC2034,SC2154
 # Build from a local committed source archive; no public release URL exists yet.
 pkgname=g13pad
-pkgver=0.2.98
+pkgver=0.3.0
 pkgrel=1
 pkgdesc='Logitech G13 driver, profile editor, LCD and analog-stick integration'
 arch=('x86_64')
@@ -15,6 +15,7 @@ optdepends=('obs-studio: the G13 pad as an OBS source (g13pad-obs)' 'xboxdrv: an
 conflicts=('g13-git')
 provides=('g13')
 backup=('etc/g13/default.bind' 'etc/g13/analog.conf')
+install=g13pad.install
 source=("$pkgname-$pkgver.tar.gz")
 # Locally created archive; publication must supply a verified checksum.
 sha256sums=('SKIP')

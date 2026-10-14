@@ -269,6 +269,10 @@ pub(super) fn gear(bm: &mut Bitmap, cx: i32, cy: i32, angle: f32, damaged: bool)
     }
 }
 
+/// The deck strip: where the first icon sits and the pitch between icons.
+pub(super) const DECK_X: i32 = 44;
+pub(super) const DECK_Y: i32 = 1;
+pub(super) const DECK_STEP: i32 = 18;
 pub(super) const BAR_X: i32 = 4;
 pub(super) const BAR_W: i32 = 152;
 
@@ -699,6 +703,36 @@ impl Meter {
                 bm.halo(tx, 26, tw, 7);
                 text(bm, tx, 26, &hm, 1);
             }
+        }
+        // Last, so its frame is not cut by the band's halos (the picked mock drew it last).
+        if let Some(deck) = extra.deck {
+            self.deck_strip(bm, deck);
+        }
+    }
+
+    /// The feeder's icon strip at the top centre: up to four 16x16 icons at native size,
+    /// 18 px apart from x 44, between the heart and the readout; the `next` icons from
+    /// `at` share one frame. The strip slides (`Deck::window`) to keep the frame in view.
+    fn deck_strip(&self, bm: &mut Bitmap, deck: Deck) {
+        let window = deck.window();
+        let shown = (deck.len as usize - window).min(DECK_SHOWN);
+        bm.halo(DECK_X, DECK_Y, shown as i32 * DECK_STEP - 2, 16);
+        for i in 0..shown {
+            let rows = deck.rows(window + i);
+            let rows: Vec<&str> = rows.iter().map(String::as_str).collect();
+            bm.sprite(DECK_X + DECK_STEP * i as i32, DECK_Y, &rows);
+        }
+        let first = (deck.at as usize).saturating_sub(window);
+        let last = (deck.at as usize + deck.next as usize)
+            .saturating_sub(window)
+            .min(shown);
+        if deck.next > 0 && first < last {
+            let (x0, y0) = (DECK_X + DECK_STEP * first as i32 - 2, DECK_Y - 1);
+            let (x1, y1) = (DECK_X + DECK_STEP * last as i32 - 3, DECK_Y + 16);
+            bm.line(x0, y0, x1, y0);
+            bm.line(x0, y1, x1, y1);
+            bm.line(x0, y0, x0, y1);
+            bm.line(x1, y0, x1, y1);
         }
     }
 

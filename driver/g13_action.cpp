@@ -80,20 +80,32 @@ void G13_Action_Keys::dump(std::ostream &out) const {
   }
 }
 
+// Like the key action, two space-separated groups: the first is written on press, the
+// second (if any) on release, so `>RUN:G5; RELEASE:G5;` reports both ends of the key.
 G13_Action_PipeOut::G13_Action_PipeOut(G13_Device &keypad,
                                        const std::string &out)
-    : G13_Action(keypad), _out(out + "\n") {}
+    : G13_Action(keypad) {
+  const auto space = out.find(' ');
+  _out = out.substr(0, space) + "\n";
+  if (space != std::string::npos) {
+    const auto up = out.substr(space + 1);
+    if (!up.empty()) _up = up + "\n";
+  }
+}
 
 G13_Action_PipeOut::~G13_Action_PipeOut() = default;
 
 void G13_Action_PipeOut::act(G13_Device &kp, bool is_down) {
   if (is_down) {
     kp.OutputPipeWrite(_out);
+  } else if (!_up.empty()) {
+    kp.OutputPipeWrite(_up);
   }
 }
 
 void G13_Action_PipeOut::dump(std::ostream &o) const {
   o << "WRITE PIPE : " << Helper::repr(_out);
+  if (!_up.empty()) o << " / RELEASE : " << Helper::repr(_up);
 }
 
 G13_Action_Command::G13_Action_Command(G13_Device &keypad, std::string cmd)

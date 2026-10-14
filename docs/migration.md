@@ -49,7 +49,7 @@ Rollback restores the immediately previous unit/drop-in configuration and binari
 reloads units/rules, starts the old driver, reapplies the saved active profile, and restores
 its watcher state. Keep the tested custom driver on rollback; do not accidentally fall
 back to stock 1e80eda's held-key/mode bugs. The development machine's existing rollback
-records remain in its G13 Review runbooks. Initial source consolidation did not install
+records remain in its private maintenance runbooks. Initial source consolidation did not install
 anything; the subsequent development-desktop migration is recorded below.
 
 ## Development desktop status — 2026-10-02

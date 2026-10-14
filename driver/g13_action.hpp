@@ -76,6 +76,8 @@ public:
   void dump(std::ostream &) const override;
 
   std::string _out;
+  /// Written on release when the action text had a second space-separated group.
+  std::string _up;
 };
 
 /*!

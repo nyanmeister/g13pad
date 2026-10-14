@@ -481,6 +481,7 @@ pub fn watch() -> Result<String, String> {
     // The panel: the active profile's picture, an animation playing, unless an editor is
     // open (it shows its own); when the editor closes, what it saved goes up.
     let mut panel = Panel::default();
+    let mut holds = crate::run::Holds::default();
     let mut editor_was = lcd::editor_open();
     let mut editor_checked = Instant::now();
     let mut meter_checked = Instant::now();
@@ -543,16 +544,27 @@ pub fn watch() -> Result<String, String> {
                                 .action(action);
                             continue;
                         }
-                        if let Some(key) = crate::run::key_of_token(&tok) {
+                        if let Some((key, edge)) = crate::run::token(&tok) {
+                            use crate::run::{Edge, When};
                             let profile = active_name();
                             let r = load(&profile).and_then(|(p, _)| {
-                                let text = p.runs.get(key).ok_or_else(|| {
+                                let run = p.runs.get(key).ok_or_else(|| {
                                     format!("no `# run {key}` line in profile {profile}")
                                 })?;
-                                let program = crate::run::Program::parse(text)?;
-                                crate::run::start(key, &profile, &program)
+                                // The driver reports both ends once a release half is
+                                // bound; the line says which ends matter.
+                                match (run.when, edge) {
+                                    (When::Hold, Edge::Press) => {
+                                        holds.press(key, &profile, &run.program)
+                                    }
+                                    (When::Hold, Edge::Release) => holds.release(key),
+                                    (When::Pressed, Edge::Release)
+                                    | (When::Released, Edge::Press) => Ok(String::new()),
+                                    _ => crate::run::start(key, &profile, &run.program, edge),
+                                }
                             });
                             match r {
+                                Ok(line) if line.is_empty() => {}
                                 Ok(line) => eprintln!("g13map watch: {line}"),
                                 Err(e) => eprintln!("g13map watch: run {key}: {e}"),
                             }
