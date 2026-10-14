@@ -12,6 +12,7 @@ Read the note for an area before touching it:
 | Controller bindings | [controller-bindings](docs/notes/controller-bindings.md) |
 | Demos, telemetry and display clocks | [telemetry-timing-and-demos](docs/notes/telemetry-timing-and-demos.md) |
 | OBS overlay and the driver's state files | [obs-overlay](docs/notes/obs-overlay.md) |
+| A program on a key (run bindings) | [run-bindings](docs/notes/run-bindings.md) |
 | Iterating without the package cycle | [iterating-without-packaging](docs/notes/iterating-without-packaging.md) |
 
 ## The shape

@@ -18,6 +18,9 @@ A feeder writes `HEALTH[/MAX] [shield S[/MAX]] [helmet on|off] [ttl SECONDS]`, o
 `wait`, to `$XDG_RUNTIME_DIR/g13map-g13-0.health` or `~/.local/state/g13map/health`.
 `g13map watch` reads both ten times a second and the newest wins. That is the whole
 interface: no socket, no protocol, nothing to link against. A shell loop can feed it.
+Since 0.2.97 three generic words ride the same line: `deaths N`, `count LABEL VALUE[/MAX]`
+(up to four) and `foe LABEL CUR/MAX`; the grammar block in [health-meter](../health-meter.md)
+has them. A named word earns its place by recurring across games; anything else is a `count`.
 
 - Always send `ttl` from a feeder that can die with the game; the watcher then ends the
   meter by itself. A feeder that only speaks on changes should still rewrite every few

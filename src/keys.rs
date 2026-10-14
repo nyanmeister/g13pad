@@ -313,6 +313,9 @@ pub fn action_label(action: &str, layout: &HashMap<String, String>) -> String {
     if let Some(label) = crate::gamepad::button_label(action) {
         return format!("Controller {label}");
     }
+    if let Some(k) = crate::run::key_of_binding(action) {
+        return format!("Program ({k})");
+    }
     if let Some(t) = action.strip_prefix('>') {
         return format!("pipe: {t}");
     }
@@ -477,6 +480,7 @@ mod tests {
         assert_eq!(action_label("KEY_A KEY_B"), "A, on release B");
         assert_eq!(action_label("MEXTRA"), "Mouse extra");
         assert_eq!(action_label(">hi there"), "pipe: hi there");
+        assert_eq!(action_label(">RUN:G5;"), "Program (G5)");
         assert_eq!(action_label("KEY_RESERVED"), "—");
     }
     #[test]

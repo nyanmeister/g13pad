@@ -543,6 +543,21 @@ pub fn watch() -> Result<String, String> {
                                 .action(action);
                             continue;
                         }
+                        if let Some(key) = crate::run::key_of_token(&tok) {
+                            let profile = active_name();
+                            let r = load(&profile).and_then(|(p, _)| {
+                                let text = p.runs.get(key).ok_or_else(|| {
+                                    format!("no `# run {key}` line in profile {profile}")
+                                })?;
+                                let program = crate::run::Program::parse(text)?;
+                                crate::run::start(key, &profile, &program)
+                            });
+                            match r {
+                                Ok(line) => eprintln!("g13map watch: {line}"),
+                                Err(e) => eprintln!("g13map watch: run {key}: {e}"),
+                            }
+                            continue;
+                        }
                         if !modes.on {
                             continue;
                         }

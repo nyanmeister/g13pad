@@ -88,6 +88,13 @@ HEALTH[/MAX] [shield S[/MAX]] [helmet on|off]
                                    health (over 100% is an overshield), the shield, and
                                    whether the head is covered (the shield bar is solid)
 ... ttl SECONDS                    the line expires unless rewritten in time
+... deaths N                       a death tally, at the right of the lower band (a
+                                   `time` stacks beneath it as H:MM)
+... count LABEL VALUE[/MAX]        a labelled readout, up to four from the left; a thin
+                                   gauge under it when MAX is given; LABEL is at most ten
+                                   of letters, digits, `-_.`, underscores shown as spaces
+... foe LABEL CUR/MAX              a targeted enemy: its name and a wide HP bar take the
+                                   panel while present (the heart and trace give way)
 off                                no game; suppress older feeds
 ```
 

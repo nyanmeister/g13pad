@@ -45,6 +45,7 @@ mod panel;
 pub mod pressure;
 pub mod profile;
 pub mod ra;
+pub mod run;
 mod session;
 #[cfg(test)]
 mod test_support;

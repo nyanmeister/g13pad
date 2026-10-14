@@ -5,6 +5,7 @@ use crate::keys::{self, action_label, KEYS};
 use crate::modes;
 use crate::profile::MODIFIERS;
 use egui::{Color32, Key, RichText};
+use std::sync::mpsc;
 
 impl App {
     pub(super) fn editor(&mut self, ui: &mut egui::Ui) {
@@ -74,6 +75,11 @@ impl App {
                     "Play, pause, skip and rate music (MPD)",
                 ),
                 (
+                    Mode::Run,
+                    "Program",
+                    "Start a program or script (g13map-watch runs it)",
+                ),
+                (
                     Mode::Raw,
                     "Advanced",
                     "The driver's own action text: mouse buttons, release actions, commands",
@@ -118,8 +124,101 @@ impl App {
                     }
                 }
             }
+            Mode::Run => self.run_editor(ui, key),
             Mode::Raw => self.raw_editor(ui),
         }
+    }
+    /// The pane for a program on the key: the line as it will be saved, a file dialog, the
+    /// scripts found in the two folders, and where the program resolves to before Set.
+    fn run_editor(&mut self, ui: &mut egui::Ui, key: &'static str) {
+        let [mine, shipped] = crate::run::dirs();
+        ui.label(
+            RichText::new(format!(
+                "Starts a program or script when the key is pressed. A path (~ is home) or a \
+                 name on PATH, then its arguments, split on spaces; a bare name is looked for \
+                 in {} and {} first. It gets G13MAP_KEY and G13MAP_PROFILE in its environment \
+                 and runs as a unit of your session, so it outlives the watcher. A script needs \
+                 a #! line and the executable bit.",
+                crate::run::tilde(&mine),
+                shipped.display()
+            ))
+            .weak(),
+        );
+        ui.add_space(4.0);
+        let mut submit = false;
+        ui.horizontal(|ui| {
+            let r = ui.add(
+                egui::TextEdit::singleline(&mut self.run_text)
+                    .hint_text("firefox · alacritty -e htop · ~/bin/lights.sh on")
+                    .desired_width(240.0),
+            );
+            submit = r.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
+            if ui.button("Browse…").clicked() {
+                self.run_browse();
+            }
+        });
+        let found = crate::run::listed();
+        if !found.is_empty() {
+            ui.horizontal_wrapped(|ui| {
+                ui.label(RichText::new("Scripts:").weak());
+                for name in found {
+                    if ui.selectable_label(self.run_text == name, &name).clicked() {
+                        self.run_text = name;
+                    }
+                }
+            });
+        }
+        let check =
+            crate::run::Program::parse(&self.run_text).and_then(|p| p.resolve().map(|at| (p, at)));
+        match &check {
+            Ok((_, at)) => {
+                ui.label(RichText::new(at.display().to_string()).weak().small());
+            }
+            Err(e) if !self.run_text.trim().is_empty() => {
+                ui.colored_label(Color32::from_rgb(230, 170, 60), e);
+            }
+            Err(_) => {}
+        }
+        let set = ui
+            .add_enabled(check.is_ok(), egui::Button::new("Set"))
+            .clicked();
+        if let (true, Ok((program, _))) = (set || submit, check) {
+            let binding = crate::run::binding(key);
+            self.set_action(Some(binding.clone()));
+            if self.profile.binds.get(key) == Some(&binding) {
+                self.profile.runs.insert(key.to_string(), program.line());
+                self.run_text = program.line();
+            }
+        }
+    }
+    /// The file dialog for a program, in a thread like the picture's; the path comes back
+    /// through `run_picker` with the home directory as `~`.
+    fn run_browse(&mut self) {
+        let (tx, rx) = mpsc::channel();
+        self.run_picker = Some(rx);
+        std::thread::spawn(move || {
+            let out = std::process::Command::new("zenity")
+                .env("GTK_USE_PORTAL", "1")
+                .args(["--file-selection", "--title=Program or script to run"])
+                .output();
+            let r = match out {
+                Ok(o) if o.status.success() => {
+                    let s = String::from_utf8_lossy(&o.stdout).trim().to_string();
+                    if s.is_empty() {
+                        Err("nothing chosen".to_string())
+                    } else {
+                        Ok(std::path::PathBuf::from(s))
+                    }
+                }
+                Ok(o) if o.status.code() == Some(1) => Err("cancelled".to_string()),
+                Ok(o) => Err(format!(
+                    "zenity: {}",
+                    String::from_utf8_lossy(&o.stderr).trim()
+                )),
+                Err(e) => Err(format!("zenity: {e}; type a path instead")),
+            };
+            let _ = tx.send(r);
+        });
     }
     /// Clears the selected control's binding; on the heading row, right-aligned.
     pub(super) fn clear_button(&mut self, ui: &mut egui::Ui) {

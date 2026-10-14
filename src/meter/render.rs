@@ -161,6 +161,31 @@ pub(crate) fn text(bm: &mut Bitmap, x: i32, y: i32, text: &str, scale: i32) -> i
     (text.chars().count() as i32 * 6 - 1) * scale
 }
 
+/// Like `text`, but XORs each glyph pixel against what is already there, so numbers drawn
+/// over a filled gauge stay legible on both the lit and unlit parts of the bar.
+fn text_xor(bm: &mut Bitmap, x: i32, y: i32, s: &str, scale: i32) {
+    for (i, c) in s.chars().enumerate() {
+        for (r, row) in glyph(c).iter().enumerate() {
+            for (k, cell) in row.bytes().enumerate() {
+                if cell == b'#' {
+                    for dy in 0..scale {
+                        for dx in 0..scale {
+                            let px = x + (i as i32 * 6 + k as i32) * scale + dx;
+                            let py = y + r as i32 * scale + dy;
+                            if px >= 0 && py >= 0 {
+                                let (ux, uy) = (px as usize, py as usize);
+                                if ux < W && uy < H {
+                                    bm.set(ux, uy, !bm.get(ux, uy));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The level timer as `m:ss`, or `h:mm:ss` past an hour (a hard boss can take three).
 pub(super) fn clock(secs: u32) -> String {
     let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
@@ -497,24 +522,38 @@ impl Meter {
         extra: Extra,
     ) {
         self.scroll(pct);
-        self.beat.trace(bm);
+        // The ECG trace shares the lower band with panel counters; drop it when a feeder
+        // sends counters or a death tally that need the room (asked 2026-10-13). The beat
+        // still ticks via `scroll` above, so the heart swell and alarm flash keep going.
+        if extra.deaths.is_none() && extra.counts.iter().all(Option::is_none) && extra.foe.is_none()
+        {
+            self.beat.trace(bm);
+        }
         let [hx, hy] = self.tuning.heart;
         let (sprite, w, h, dx, dy) = self.sprite(pct);
-        if self.tuning.sprite == Sprite::V1 {
-            bm.halo(hx, hy, w, h);
-        }
-        bm.sprite(hx + dx, hy + dy, sprite);
-        if shield > 0 {
-            // Rings around the heart, the shield's own mark: one per hundred, up to three
-            // (Doom's blue armour is 200 and mods go past it; asked 2026-10-08).
-            for out in 0..shield.div_ceil(100).min(3) {
-                ring(bm, hx, hy, w, h, out as i32);
+        // The lock-on override drops the heart sprite for the room; the player keeps the HP
+        // readout, the bottom bar, and the backlight.
+        if extra.foe.is_none() {
+            if self.tuning.sprite == Sprite::V1 {
+                bm.halo(hx, hy, w, h);
+            }
+            bm.sprite(hx + dx, hy + dy, sprite);
+            if shield > 0 {
+                // Rings around the heart, the shield's own mark: one per hundred, up to three
+                // (Doom's blue armour is 200 and mods go past it; asked 2026-10-08).
+                for out in 0..shield.div_ceil(100).min(3) {
+                    ring(bm, hx, hy, w, h, out as i32);
+                }
             }
         }
         self.extras_by_the_sprite(bm, hx, hy, h, extra);
         let [rx, ry] = self.tuning.readout;
         readout(bm, &pct.min(999).to_string(), rx, ry);
-        self.extras_on_the_panel(bm, rx, ry, extra);
+        if let Some(foe) = extra.foe {
+            self.foe_band(bm, foe);
+        } else {
+            self.extras_on_the_panel(bm, rx, ry, extra);
+        }
         bars(
             bm,
             (BAR_W * pct.min(100) as i32 + 50) / 100,
@@ -577,11 +616,16 @@ impl Meter {
     /// What a game adds on the panel after the readout: the level timer, mana, defence,
     /// air, the suit battery, attacks or research.
     fn extras_on_the_panel(&mut self, bm: &mut Bitmap, rx: i32, ry: i32, extra: Extra) {
-        if let Some(t) = extra.time {
-            let s = clock(t);
-            let w = s.len() as i32 * 6 - 1;
-            bm.halo(rx - w, ry + 16, w, 7);
-            text(bm, rx - w, ry + 16, &s, 1);
+        // A game's own level timer (ULTRAKILL) sits by the readout; a feeder that also
+        // sends a death tally gets its clock stacked under that tally below instead, so
+        // skip this placement when deaths are present.
+        if extra.deaths.is_none() {
+            if let Some(t) = extra.time {
+                let s = clock(t);
+                let w = s.len() as i32 * 6 - 1;
+                bm.halo(rx - w, ry + 16, w, 7);
+                text(bm, rx - w, ry + 16, &s, 1);
+            }
         }
         if let Some(mana) = extra.mana {
             let label = format!("MP {}/{}", mana.current, mana.maximum);
@@ -616,6 +660,72 @@ impl Meter {
             bm.halo(43, 19, 95, 7);
             self.research(bm, 43, 19, extra.technology, research);
         }
+        // The lower band: generic counters from the left, the death tally at the right with
+        // its clock (SoH's time of day) stacked beneath it. The ECG trace is suppressed in
+        // `alive` while these are present, so the row is clear. A counter with a max gets a
+        // thin gauge beneath it.
+        let mut cx = 2;
+        for c in extra.counts.iter().flatten() {
+            let name = c.label.as_str().replace('_', " ");
+            let label = if c.max > 0 {
+                format!("{name} {}/{}", c.value, c.max)
+            } else {
+                format!("{name} {}", c.value)
+            };
+            let w = label.len() as i32 * 6 - 1;
+            if cx + w > W as i32 {
+                break;
+            }
+            bm.halo(cx, 18, w, if c.max > 0 { 11 } else { 7 });
+            text(bm, cx, 18, &label, 1);
+            if c.max > 0 {
+                let pct = ((u64::from(c.value) * 100) / u64::from(c.max.max(1))).min(100) as u32;
+                gauge(bm, cx, 26, w, 3, pct);
+            }
+            cx += w + 6;
+        }
+        if let Some(d) = extra.deaths {
+            // Death tally at the right of the band; its clock stacks directly beneath it,
+            // shown as H:MM so the fast in-game seconds do not jitter the readout.
+            let label = format!("DEATHS {d}");
+            let w = label.len() as i32 * 6 - 1;
+            let dx = (W as i32 - 2 - w).max(cx);
+            bm.halo(dx, 18, w, 7);
+            text(bm, dx, 18, &label, 1);
+            if let Some(t) = extra.time {
+                let hm = format!("{:02}:{:02}", t / 3600, (t % 3600) / 60);
+                let tw = hm.len() as i32 * 6 - 1;
+                let tx = W as i32 - 2 - tw;
+                bm.halo(tx, 26, tw, 7);
+                text(bm, tx, 26, &hm, 1);
+            }
+        }
+    }
+
+    /// The lock-on override: the targeted enemy's name on top, then a wide HP bar with the
+    /// current/max numbers inverted inside it (legible over fill and empty alike). Reusable
+    /// by any game whose feeder sends `foe`; the player keeps the HP readout, the bottom bar
+    /// and the backlight, so their own danger still reads by colour and the lower gauge.
+    fn foe_band(&self, bm: &mut Bitmap, foe: Foe) {
+        let name = foe.label.as_str().replace('_', " ");
+        bm.halo(2, 1, name.len() as i32 * 6 - 1, 7);
+        text(bm, 2, 1, &name, 1);
+        // The wide enemy HP bar.
+        let (bx, by, bw, bh) = (2, 10, W as i32 - 4, 16);
+        let fp = if foe.max > 0 {
+            ((u64::from(foe.current) * 100) / u64::from(foe.max.max(1))).min(100) as u32
+        } else {
+            0
+        };
+        gauge(bm, bx, by, bw, bh, fp);
+        // The numbers, centred and inverted inside the bar.
+        let num = if foe.max > 0 {
+            format!("{}/{}", foe.current, foe.max)
+        } else {
+            foe.current.to_string()
+        };
+        let tw = num.chars().count() as i32 * 6 - 1;
+        text_xor(bm, bx + (bw - tw) / 2, by + (bh - 7) / 2, &num, 1);
     }
 
     pub(super) fn vehicle(&mut self, bm: &mut Bitmap, pct: u32, shield: u32, extra: Extra) {

@@ -94,7 +94,7 @@ The collector reads the game without changing it.
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.2.96.tar.gz`, put it beside
+On Arch, export a committed source tree as `g13pad-0.2.98.tar.gz`, put it beside
 `packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
 with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
 an optional separate dependency, not bundled.
@@ -170,6 +170,7 @@ g13map apply                        # apply the selected saved profile
 g13map watch                        # profile switching and LCD playback
 g13map marquee 'Message' NAME        # keep reusable LCD text, no hardware write
 g13map health 87 shield 50          # feed the health meter; wait, off, demo, cs2
+g13map profile run gaming G5 firefox # a program on a key; g13map-watch starts it
 g13map health source DIR            # Source engine game: install the LCD module + page
 g13map-goldsrc %command%             # GoldSource handler for native Half-Life/mods
 g13map-factorio %command%            # read-only native Factorio observer, no game mod
@@ -193,8 +194,8 @@ LCD errors and reapplies the profile after a driver reconnect.
 
 The board on the left is the pad; click a key, the stick or the screen and the pane on
 the right shows what it does and the ways to change it: a key or chord (press it, or
-pick it from the list), a controller button, a sound or music action, or the driver's
-raw action text under **Advanced**. The screen's pane has one list, **Shows**: the kept
+pick it from the list), a controller button, a sound or music action, a program or
+script to start under **Program**, or the driver's raw action text under **Advanced**. The screen's pane has one list, **Shows**: the kept
 picture, or one of the live displays (game health, achievements, what is playing, the
 microphone, the computer's load); the picture stays kept underneath. The bar's
 **Window rules** and **OBS** buttons swap the board for those views; **← Board** or
@@ -211,6 +212,33 @@ Dead keys are identified explicitly. Fontconfig selects an installed fallback fo
 international labels; install fonts covering the scripts you use (for example DejaVu Sans
 for Hebrew). IME composition and shifted/Caps Lock text are not modeled by these
 unshifted key labels.
+
+### A program on a key
+
+Since 0.2.98 a key can start any program or script: the browser, a terminal with a
+command inside it, a script of your own. In the editor pick the key, then **Program**, and
+type the line as you would at a shell prompt (a path, `~` for home, or a name on `PATH`,
+then its arguments, split on spaces), or **Browse…** to it; from the command line,
+`g13map profile run NAME KEY PROGRAM [ARGS...]`. A bare name is looked for in
+`~/.config/g13map/scripts/` and `/usr/share/g13pad/scripts/` before `PATH`, so a script
+dropped in the first folder is usable by name. The program must exist and be executable
+when it is set (a script needs its `#!` line and the executable bit); a path with spaces
+goes behind a wrapper script or a symlink.
+
+In the profile this is two lines, both plain text:
+
+```
+# run G5 alacritty -e htop
+bind G5 >RUN:G5;
+```
+
+The driver sees only the second: on press it writes the key's name to its output pipe,
+and `g13map-watch.service` (which the editor enables when a program is set) looks the key
+up in the active profile's `# run` line and starts the program through `systemd-run
+--user`, so it has a unit of its own, outlives a watcher restart and logs to your journal
+under its own name (`systemctl --user list-units 'run-*'` while it runs). It gets
+`G13MAP_KEY` and `G13MAP_PROFILE` in its environment, so one script can serve several
+keys. Press only: the driver's pipe action has no release half yet.
 
 ### Profiles that follow the game
 

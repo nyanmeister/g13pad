@@ -1,5 +1,53 @@
 # Validation record
 
+## 0.2.98 — a program on a key — 2026-10-13
+
+- Asked 2026-10-13: "Shell script on button press ... launch my web-browser from the pad,
+  or a terminal emulator with a command that'll run inside it." A key can now start any
+  program: `g13map profile run NAME KEY PROGRAM [ARGS...]`, or the key's **Program** tab in
+  the editor (a line as at a shell prompt, or **Browse…**; the scripts found in
+  `~/.config/g13map/scripts/` and `/usr/share/g13pad/scripts/` offered by name). Two lines
+  in the profile: `bind KEY >RUN:KEY;` for the daemon, `# run KEY PROGRAM [ARGS...]` for
+  the watcher, which reads the key's name off the driver's output pipe on press, looks it
+  up in the active profile and starts the program through `systemd-run --user` (its own
+  unit: it outlives a watcher restart and logs under its own name; a child with a reaper
+  thread when there is no manager), with `G13MAP_KEY` and `G13MAP_PROFILE` set. The token
+  carries the key, never the command (the pipe is group-writable). A bare name resolves
+  from the two folders, then `PATH`; the program must exist and be executable when set.
+  Press only. Design and the release half's shape: `docs/notes/run-bindings.md`.
+- Check: `cargo test` 187 passed, 16 ignored (the boundary tests; none covers this). New
+  tests: tokens and bindings; words; resolution order with the user's `sh` shadowing
+  PATH's, a non-executable file and a missing path refused with the reason; a started
+  script writing `$G13MAP_KEY $G13MAP_PROFILE $1` to `$2` (expected `G5 gaming hello`;
+  broken once by renaming the variable, the test failed on ` gaming hello`); the CLI's
+  two-line save and the drops on `bind` and `unbind`; the profile's round trip and the
+  hand-counted notes for a bind without its line (1), a line without its bind (1), no
+  program (1), a control character (2). `cargo clippy --all-targets`: the pre-existing
+  warning only; `cargo fmt` applied to the tree (Opus's 0.2.97 files included).
+  Editor: the **Program** pane opened on a run-bound key in an isolated editor on the
+  private display, screenshot looked at. The installed-package press on the pad is in the
+  private maintenance notes (run-bindings-20261013).
+## 0.2.97 — three words any feeder may send: deaths, count, foe — 2026-10-13
+
+- Written by Claude (Opus 4.8) in a parallel session for a Ship of Harkinian reader;
+  committed by Claude (Fable 5.1). The feed grammar gains `deaths N` (a tally at the right
+  of the lower band, with the feeder's `time` stacked beneath it as H:MM), `count LABEL
+  VALUE[/MAX]` (up to four labelled readouts from the left, a thin gauge under those with
+  a max; a label is at most ten characters of letters, digits, `-`, `_` and `.`, and
+  underscores show as spaces) and `foe LABEL CUR/MAX` (the lock-on override: the enemy's
+  name and a wide HP bar with the numbers inverted inside it take the panel; the heart and
+  the trace give way, the player's readout, bottom bar and backlight stay). The ECG trace
+  yields the lower band while any of the three is present. No game is named in
+  `src/meter`; the vocabulary was decided with the owner on 2026-10-13: a named word must
+  recur across games and want one presentation, everything else rides `count`.
+- Check: `cargo test` 181 passed, 16 ignored (the boundary tests: live RAM, the Dolphin
+  log, the audio server, the fuzzers; none touches this change, which is a grammar and a
+  renderer). The parser test uses hand-derived values (65% health, 3 deaths, SKULL 45/100,
+  POE 7, and the rejections `SKULL x` and `SKULL 45/0`); the lower band has a frame test.
+  `cargo clippy --all-targets`: the one pre-existing warning (the `Outcome` size
+  difference). The reader itself (`g13map-soh`) is not in this tree yet; a prototype was
+  validated against the live game and lives in the maintenance notes (soh-health-20261013).
+
 ## 0.2.96 — the four scenes leave the tree; the demo change ships — 2026-10-13
 
 - Asked 2026-10-13: "I don't quite feel these ready to be in the repo, but the demo change

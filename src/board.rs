@@ -514,6 +514,15 @@ impl Board {
             } else {
                 action
                     .map(|a| {
+                        if let Some(k) = crate::run::key_of_binding(a) {
+                            // The program's own name on the key, when the profile has it.
+                            return profile
+                                .runs
+                                .get(k)
+                                .and_then(|t| crate::run::Program::parse(t).ok())
+                                .map(|p| p.name().to_string())
+                                .unwrap_or_else(|| "Program".into());
+                        }
                         if let Some(action) = crate::audio::Action::from_binding(a) {
                             match action {
                                 crate::audio::Action::MicToggle => "Mic",

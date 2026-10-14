@@ -119,6 +119,42 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                     return None;
                 }
             }
+            "deaths" => match &mut state {
+                State::Health { extra, .. } => {
+                    extra.deaths = Some(value.parse::<u32>().ok()?.min(999_999))
+                }
+                _ => return None,
+            },
+            "count" => {
+                let State::Health { extra, .. } = &mut state else {
+                    return None;
+                };
+                // `value` is the label word; the amount is the next word.
+                let label = CountLabel::parse(value)?;
+                let amount = words.next()?;
+                let (value, max) = match amount.split_once('/') {
+                    Some((v, m)) => (v.parse::<u32>().ok()?, m.parse::<u32>().ok()?),
+                    None => (amount.parse::<u32>().ok()?, 0),
+                };
+                if amount.contains('/') && max == 0 {
+                    return None; // an explicit /0 is nonsense, not "no gauge"
+                }
+                if let Some(slot) = extra.counts.iter_mut().find(|s| s.is_none()) {
+                    *slot = Some(Count { label, value, max });
+                }
+            }
+            "foe" => {
+                let State::Health { extra, .. } = &mut state else {
+                    return None;
+                };
+                let label = CountLabel::parse(value)?;
+                let res = Resource::parse(words.next()?)?;
+                extra.foe = Some(Foe {
+                    label,
+                    current: res.current,
+                    max: res.maximum,
+                });
+            }
             _ => return None,
         }
     }
@@ -249,6 +285,29 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
             if let Some(a) = extra.attack {
                 s.push_str(&format!(" attack {a}"));
             }
+            if let Some(d) = extra.deaths {
+                s.push_str(&format!(" deaths {d}"));
+            }
+            for c in extra.counts.iter().flatten() {
+                if c.max > 0 {
+                    s.push_str(&format!(
+                        " count {} {}/{}",
+                        c.label.as_str(),
+                        c.value,
+                        c.max
+                    ));
+                } else {
+                    s.push_str(&format!(" count {} {}", c.label.as_str(), c.value));
+                }
+            }
+            if let Some(f) = extra.foe {
+                s.push_str(&format!(
+                    " foe {} {}/{}",
+                    f.label.as_str(),
+                    f.current,
+                    f.max
+                ));
+            }
             s
         }
     };
@@ -289,6 +348,42 @@ mod tests {
 
         // T2 explicitly ends the game; the no-TTL health left at T1 cannot revive it.
         assert_eq!(read(), None);
+    }
+
+    #[test]
+    fn counts_and_deaths_parse() {
+        // Hand-derived: 65% health, 3 deaths, skulltulas 45/100, and a maxless counter.
+        let now = SystemTime::UNIX_EPOCH + Duration::from_secs(1);
+        let state = parse(
+            "65 shield 0 deaths 3 count SKULL 45/100 count POE 7 ttl 9",
+            now,
+            now,
+        )
+        .unwrap();
+        let State::Health { pct, extra, .. } = state else {
+            panic!("expected a health state");
+        };
+        assert_eq!(pct, 65);
+        assert_eq!(extra.deaths, Some(3));
+        let skull = extra.counts[0].expect("first counter present");
+        assert_eq!(skull.label.as_str(), "SKULL");
+        assert_eq!((skull.value, skull.max), (45, 100));
+        let poe = extra.counts[1].expect("second counter present");
+        assert_eq!((poe.label.as_str(), poe.value, poe.max), ("POE", 7, 0));
+        assert!(extra.counts[2].is_none());
+        // Garbage in a count word rejects the whole line (a broken feeder is no feeder).
+        assert!(parse("65 shield 0 count SKULL x ttl 9", now, now).is_none());
+        assert!(parse("65 shield 0 count SKULL 45/0 ttl 9", now, now).is_none());
+        // The lock-on foe overrides with an enemy HP gauge.
+        let fight = parse("88 shield 0 foe STALFOS 4/8 ttl 9", now, now).unwrap();
+        let State::Health { extra, .. } = fight else {
+            panic!("expected a health state");
+        };
+        let foe = extra.foe.expect("foe present");
+        assert_eq!(
+            (foe.label.as_str(), foe.current, foe.max),
+            ("STALFOS", 4, 8)
+        );
     }
 
     #[test]

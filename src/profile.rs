@@ -203,6 +203,10 @@ pub struct Profile {
     /// None preserves the current mode. A comment so the service remains its only owner.
     pub stick: Option<StickMode>,
     pub gamepad: Option<crate::gamepad::Mapping>,
+    /// `# run KEY PROGRAM [ARGS...]`: the program `bind KEY >RUN:KEY;` starts (the text
+    /// after the key; `g13map watch` splits it on whitespace). A comment: the daemon never
+    /// runs anything, the watcher does, from the user's own file.
+    pub runs: BTreeMap<String, String>,
     /// Other command lines, kept verbatim (stickzone bounds, font, ...).
     pub extra: Vec<String>,
 }
@@ -215,6 +219,7 @@ impl Profile {
             || self.binds.values().any(|a| {
                 crate::audio::Action::from_binding(a).is_some()
                     || crate::music::Action::from_binding(a).is_some()
+                    || crate::run::key_of_binding(a).is_some()
             })
     }
     /// The health meter's reader when the profile shows the meter.
@@ -282,6 +287,18 @@ impl Profile {
                         }
                     };
                 }
+                if let Some(rest) = comment.trim().strip_prefix("run ") {
+                    let mut it = rest.trim().splitn(2, char::is_whitespace);
+                    let key = it.next().unwrap_or("");
+                    let program = it.next().unwrap_or("").trim();
+                    match crate::run::Program::parse(program) {
+                        Ok(program) if !key.is_empty() => {
+                            p.runs.insert(key.to_string(), program.line());
+                        }
+                        Ok(_) => notes.push(format!("ignored malformed line: {line}")),
+                        Err(why) => notes.push(format!("ignored run line `{line}`: {why}")),
+                    }
+                }
                 if let Some(name) = comment.trim().strip_prefix("lcd ") {
                     p.lcd = Some(name.trim().to_string()).filter(|n| !n.is_empty());
                 }
@@ -324,6 +341,24 @@ impl Profile {
                 _ => p.extra.push(line.to_string()),
             }
         }
+        // A program rides two lines, the bind and the `# run`; one without the other is a
+        // repair, not a guess.
+        for (key, action) in &p.binds {
+            if let Some(k) = crate::run::key_of_binding(action) {
+                if !p.runs.contains_key(k) {
+                    notes.push(format!(
+                        "bind {key} {action} has no `# run {k} PROGRAM` line naming the program"
+                    ));
+                }
+            }
+        }
+        for key in p.runs.keys() {
+            if p.binds.get(key) != Some(&crate::run::binding(key)) {
+                notes.push(format!(
+                    "`# run {key}` names a program but {key} is not bound `>RUN:{key};`"
+                ));
+            }
+        }
         // Before `# health`, the meter was a picture name (`# lcd health cs2`): read as
         // health mode with no picture of its own, written back the new way.
         if let Some(reader) = crate::meter::selects(p.lcd.as_deref()) {
@@ -359,6 +394,9 @@ impl Profile {
         }
         if let Some(mapping) = self.gamepad {
             out.push_str(&format!("# gamepad {}\n", mapping.compact()));
+        }
+        for (key, program) in &self.runs {
+            out.push_str(&format!("# run {key} {program}\n"));
         }
         out.push_str(&self.commands(None, false));
         out
@@ -587,6 +625,33 @@ mod tests {
             Profile::parse("# gamepad right r3 1 1 0\n# gamepad left injected 0 0 1\n");
         assert_eq!(bad.gamepad, p.gamepad);
         assert_eq!(notes.len(), 1);
+    }
+    /// A program rides two lines: the bind the daemon sees and the `# run` comment naming
+    /// the program. Both read back; either alone is a note (a repair, not a guess).
+    #[test]
+    fn programs_round_trip_and_half_a_binding_is_a_note() {
+        let text = "# run G5 ~/bin/lights.sh on\nbind G5 >RUN:G5;\nbind G6 KEY_A\n";
+        let (p, notes) = Profile::parse(text);
+        assert!(notes.is_empty(), "{notes:?}");
+        assert_eq!(p.runs["G5"], "~/bin/lights.sh on");
+        assert_eq!(p.binds["G5"], ">RUN:G5;");
+        assert!(p.needs_watcher());
+        let again = p.to_text();
+        assert_eq!(again.lines().filter(|l| l.starts_with("# run ")).count(), 1);
+        assert_eq!(Profile::parse(&again).0, p);
+        // The daemon gets the bind and never the comment.
+        let sent = p.commands(None, false);
+        assert!(sent.contains("bind G5 >RUN:G5;\n"), "{sent}");
+        assert!(!sent.contains("lights"), "{sent}");
+        // Hand-counted notes: one per half; the control character also orphans the bind.
+        for (half, notes_expected) in [
+            ("# run G5 foo\n", 1),
+            ("bind G5 >RUN:G5;\n", 1),
+            ("# run G5\n", 1),
+            ("# run G5 a\u{7}b\nbind G5 >RUN:G5;\n", 2),
+        ] {
+            assert_eq!(Profile::parse(half).1.len(), notes_expected, "{half:?}");
+        }
     }
     #[test]
     fn round_trip_and_stickmode_drop() {

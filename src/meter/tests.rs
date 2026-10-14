@@ -819,6 +819,54 @@ mod dump {
     }
     #[test]
     #[ignore]
+    fn shipwright_mocks() {
+        // Real meter frames for the SoH lower-band layout choices (feed-driven, so the
+        // arrangement is the shipped one). `G13MAP_METER_DUMP=DIR cargo test --release
+        // --lib meter::dump::shipwright_mocks -- --ignored`.
+        let Some(dir) = std::env::var_os("G13MAP_METER_DUMP") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        fs::create_dir_all(&dir).unwrap();
+        let variants = [
+            (
+                "0-final",
+                "100 mana 96/96 deaths 1 count SKULL 45 time 43200",
+            ),
+            ("0-foe", "88 shield 0 foe WOLFOS 6/8"),
+            ("0-foe-low", "40 shield 0 foe WOLFOS 1/8"),
+            (
+                "1-skull-gauge",
+                "100 mana 96/96 deaths 1 count SKULL 45/100",
+            ),
+            ("2-skull-plain", "100 mana 96/96 deaths 1 count SKULL 45"),
+            (
+                "3-skulls-word",
+                "100 mana 96/96 deaths 1 count SKULLS 45/100",
+            ),
+            ("4-gs-short", "100 mana 96/96 deaths 1 count GS 45/100"),
+            (
+                "5-with-time",
+                "100 mana 96/96 deaths 1 count SKULL 45/100 time 1307",
+            ),
+            ("6-low-hp", "34 mana 20/96 deaths 1 count SKULL 45/100"),
+        ];
+        let mut index = String::new();
+        for (tag, line) in variants {
+            let state = parse(line, SystemTime::now(), SystemTime::now()).unwrap();
+            let mut m = Meter::default();
+            let mut bm = m.frame(state);
+            for _ in 0..12 {
+                bm = m.frame(state); // settle past the opening swell
+            }
+            pbm(&dir, &format!("{tag}.pbm"), &bm);
+            let [r, g, b] = m.colour(state, Tuning::default().rgb_at(100));
+            index.push_str(&format!("{tag} {r} {g} {b}\n"));
+        }
+        fs::write(dir.join("mocks.index"), index).unwrap();
+    }
+    #[test]
+    #[ignore]
     fn frames() {
         let Some(dir) = std::env::var_os("G13MAP_METER_DUMP") else {
             return;

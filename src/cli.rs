@@ -17,6 +17,8 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile create NAME [FROM]    create empty or copy a saved profile
   g13map profile bind NAME KEY ACTION  save a KEY_* key/chord, PAD_* controller button or raw action
   g13map profile unbind NAME KEY       remove a saved binding
+  g13map profile run NAME KEY PROGRAM [ARGS...]  start a program or script on the key
+                                       (a path, ~ is home, or a name; g13map-watch runs it)
   g13map profile rgb NAME R G B        save backlight colour (0–255)
   g13map profile leds NAME BITS        save M-key LED mask (0–15)
   g13map profile stick NAME MODE       analog, keys or current
@@ -138,6 +140,9 @@ fn profile(args: &[&str]) -> Result<String, String> {
             {
                 return Err("unknown music binding; use >MPD:COMMAND;".into());
             }
+            if action.starts_with(">RUN:") {
+                return Err("use g13map profile run NAME KEY PROGRAM [ARGS...]".into());
+            }
             if action.starts_with("PAD_") {
                 if gamepad::button_label(&action).is_none() {
                     return Err("unknown controller button; see --help for PAD_* names".into());
@@ -151,6 +156,7 @@ fn profile(args: &[&str]) -> Result<String, String> {
             {
                 return Err("invalid key chord; use physical KEY_* names joined by +".into());
             }
+            p.runs.remove(*key);
             if action == profile::UNBOUND {
                 p.binds.remove(*key);
             } else {
@@ -160,6 +166,14 @@ fn profile(args: &[&str]) -> Result<String, String> {
         ("unbind", [key]) => {
             control(key)?;
             p.binds.remove(*key);
+            p.runs.remove(*key);
+        }
+        ("run", [key, program @ ..]) if !program.is_empty() => {
+            control(key)?;
+            let program = crate::run::Program::parse(&program.join(" "))?;
+            program.resolve()?;
+            p.runs.insert((*key).into(), program.line());
+            p.binds.insert((*key).into(), crate::run::binding(key));
         }
         ("rgb", [r, g, b]) => {
             p.rgb = Some([
@@ -532,6 +546,37 @@ mod tests {
         assert_eq!(focus::Rules::load().profile_for("kitty"), Some("copy"));
         assert!(call(&["edit", "--help"]).unwrap().contains("configuration"));
         assert!(call(&["apply", "extra"]).is_err());
+    }
+    /// `profile run` saves both lines; `unbind` and a different `bind` drop both; the raw
+    /// `>RUN:` action and a program that is not there are refused.
+    #[test]
+    fn a_program_on_a_key_saves_both_lines_and_leaves_with_either_edit() {
+        let _box = Sandbox::new("cli-run");
+        call(&["profile", "create", "run"]).unwrap();
+        call(&["profile", "run", "run", "G4", "sh", "-c", "true"]).unwrap();
+        let p = load("run").unwrap().0;
+        assert_eq!(p.runs.get("G4").map(String::as_str), Some("sh -c true"));
+        assert_eq!(p.binds.get("G4").map(String::as_str), Some(">RUN:G4;"));
+        let text = fs::read_to_string(profile_path("run")).unwrap();
+        assert!(text.contains("# run G4 sh -c true\n"), "{text}");
+        assert!(text.contains("bind G4 >RUN:G4;\n"), "{text}");
+        for args in [
+            vec!["profile", "run", "run", "G5", "g13map-no-such-program-xyz"],
+            vec!["profile", "run", "run", "G5"],
+            vec!["profile", "bind", "run", "G5", ">RUN:G5;"],
+            vec!["profile", "run", "run", "G23", "sh"],
+        ] {
+            assert!(call(&args).is_err(), "{args:?}");
+        }
+        assert_eq!(fs::read_to_string(profile_path("run")).unwrap(), text);
+        call(&["profile", "bind", "run", "G4", "KEY_A"]).unwrap();
+        let p = load("run").unwrap().0;
+        assert!(p.runs.is_empty());
+        assert_eq!(p.binds.get("G4").map(String::as_str), Some("KEY_A"));
+        call(&["profile", "run", "run", "G4", "sh"]).unwrap();
+        call(&["profile", "unbind", "run", "G4"]).unwrap();
+        let p = load("run").unwrap().0;
+        assert!(p.runs.is_empty() && p.binds.is_empty());
     }
     #[test]
     fn failed_apply_keeps_the_selected_profile() {

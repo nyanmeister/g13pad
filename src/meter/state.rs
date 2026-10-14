@@ -57,6 +57,14 @@ pub struct Extra {
     pub dash: Option<u8>,
     /// `rail R`: a weapon charge, percent.
     pub rail: Option<u8>,
+    /// `deaths N`: a death tally. Its own verb — common across games, drawn consistently.
+    pub deaths: Option<u32>,
+    /// `count LABEL VALUE[/MAX]`: generic labelled readouts the feeder names (skulltulas,
+    /// poes, keys…). Fixed-size so `Extra` stays `Copy`; the feeder owns each meaning.
+    pub counts: [Option<Count>; COUNTS],
+    /// `foe LABEL CUR/MAX`: the Z-targeted enemy/boss. When present it overrides the panel
+    /// with the enemy's HP — a reusable lock-on element for any game that sends it.
+    pub foe: Option<Foe>,
 }
 
 impl Extra {
@@ -76,6 +84,9 @@ impl Extra {
         time: None,
         dash: None,
         rail: None,
+        deaths: None,
+        counts: [None; COUNTS],
+        foe: None,
     };
 }
 
@@ -106,6 +117,54 @@ impl Label {
         std::str::from_utf8(&self.0[..self.0.iter().position(|c| *c == 0).unwrap_or(256)])
             .unwrap_or("")
     }
+}
+
+/// How many generic counters a feed line may carry; ~3 fit the glass at once.
+pub const COUNTS: usize = 4;
+
+/// A generic labelled counter: `count LABEL VALUE[/MAX]`. `max == 0` draws no gauge.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Count {
+    pub label: CountLabel,
+    pub value: u32,
+    pub max: u32,
+}
+
+/// A short counter label (the glass is narrow). Underscores render as spaces.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CountLabel([u8; 10]);
+impl Default for CountLabel {
+    fn default() -> Self {
+        Self::EMPTY
+    }
+}
+impl CountLabel {
+    pub const EMPTY: Self = Self([0; 10]);
+    pub(super) fn parse(s: &str) -> Option<Self> {
+        if s.is_empty()
+            || s.len() > 10
+            || !s
+                .bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b"-_.".contains(&c))
+        {
+            return None;
+        }
+        let mut l = Self::EMPTY;
+        l.0[..s.len()].copy_from_slice(s.as_bytes());
+        Some(l)
+    }
+    pub(super) fn as_str(&self) -> &str {
+        std::str::from_utf8(&self.0[..self.0.iter().position(|c| *c == 0).unwrap_or(10)])
+            .unwrap_or("")
+    }
+}
+
+/// The Z-targeted enemy/boss for the lock-on override: `foe LABEL CUR/MAX`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct Foe {
+    pub label: CountLabel,
+    pub current: u32,
+    pub max: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -134,3 +134,12 @@ per-game word inside `Meter`'s two `extras_*` hooks, not by a grammar. First ste
 in 0.2.91: the heartbeat, the hold and the pie out of `Meter` and F-Zero, every exported
 frame byte-identical before and after.
 
+
+## Revision, 2026-10-13 (later): three generic words
+
+Decided by the owner with Claude (Opus 4.8) for the Ship of Harkinian reader and shipped
+in 0.2.97: `deaths N`, `count LABEL VALUE[/MAX]` and `foe LABEL CUR/MAX`. The promotion
+test for a *named* word is that it recurs across games and wants one presentation (a
+death tally; the lock-on enemy bar). Anything else is a `count` the feeder labels. This
+is not option A returning: three bounded words, no game named, and the designed screens
+stay. Deferred until a second game asks: score, lives, ammo, kills, floor.

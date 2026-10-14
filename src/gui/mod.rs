@@ -34,6 +34,8 @@ enum Mode {
     Controller,
     Audio,
     Music,
+    /// A program or script started on press (`run.rs`).
+    Run,
     Raw,
 }
 
@@ -125,6 +127,10 @@ struct App {
     text_error: String,
     /// A file dialog in flight (zenity in a thread), delivering the path or why not.
     picker: Option<mpsc::Receiver<Result<PathBuf, String>>>,
+    /// The program line being edited for the selected key (`# run KEY ...`).
+    run_text: String,
+    /// A file dialog for a program, like `picker`.
+    run_picker: Option<mpsc::Receiver<Result<PathBuf, String>>>,
     /// M-keys as profile selectors (`~/.config/g13map/modes`, served by `g13map watch`).
     modes: Modes,
     /// Profiles by focused window (`~/.config/g13map/focus`, same watcher), and the windows
@@ -213,6 +219,8 @@ impl App {
             text_preview_dirty: false,
             text_error: String::new(),
             picker: None,
+            run_text: String::new(),
+            run_picker: None,
             modes: Modes::load(),
             rules: Rules::load(),
             wins: vec![],
@@ -260,6 +268,10 @@ impl App {
             .cloned()
             .unwrap_or_default();
         self.raw = action.clone();
+        self.run_text = key
+            .and_then(|k| self.profile.runs.get(k))
+            .cloned()
+            .unwrap_or_default();
         match chord(&action) {
             Some((mods, main)) => {
                 self.mode = Mode::Keys;
@@ -278,6 +290,7 @@ impl App {
             None if crate::music::Action::from_binding(&action).is_some() => {
                 self.mode = Mode::Music
             }
+            None if crate::run::key_of_binding(&action).is_some() => self.mode = Mode::Run,
             None => self.mode = Mode::Raw,
         }
     }
@@ -293,7 +306,14 @@ impl App {
         let music = action
             .as_deref()
             .is_some_and(|a| crate::music::Action::from_binding(a).is_some());
-        if audio || music {
+        let run = action
+            .as_deref()
+            .is_some_and(|a| crate::run::key_of_binding(a).is_some());
+        if !run {
+            // Any other action (or none) leaves no `# run` line behind.
+            self.profile.runs.remove(key);
+        }
+        if audio || music || run {
             if let Err(e) = Self::watch_unit(true) {
                 self.report(Err(e), "");
                 return;
@@ -635,6 +655,22 @@ impl eframe::App for App {
                     ctx.request_repaint_after(Duration::from_millis(200))
                 }
                 Err(mpsc::TryRecvError::Disconnected) => self.picker = None,
+            }
+        }
+        if let Some(rx) = &self.run_picker {
+            match rx.try_recv() {
+                Ok(Ok(p)) => {
+                    self.run_picker = None;
+                    self.run_text = crate::run::tilde(&p);
+                }
+                Ok(Err(e)) => {
+                    self.run_picker = None;
+                    self.report(Err(e), "");
+                }
+                Err(mpsc::TryRecvError::Empty) => {
+                    ctx.request_repaint_after(Duration::from_millis(200))
+                }
+                Err(mpsc::TryRecvError::Disconnected) => self.run_picker = None,
             }
         }
         if !self.dirty() {
