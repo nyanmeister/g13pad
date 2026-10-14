@@ -281,13 +281,13 @@ mod tests {
         let pipe = crate::test_support::PanelPipe::new();
         daemon::send_lcd(&vec![17; lcd::BYTES]).unwrap();
         assert_eq!(pipe.read(), vec![17; lcd::BYTES]);
-        notify_for("Adapter failed", Duration::from_millis(220)).unwrap();
+        notify_for("Adapter failed", Duration::from_millis(1000)).unwrap();
         let error = pipe.read();
         assert_eq!(error.len(), lcd::BYTES);
         assert_ne!(error, vec![17; lcd::BYTES]);
         daemon::send_lcd(&vec![34; lcd::BYTES]).unwrap();
         pipe.expect_quiet();
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(900));
         tick().unwrap();
         assert_eq!(pipe.read(), vec![34; lcd::BYTES]);
         notify("Another failure").unwrap();

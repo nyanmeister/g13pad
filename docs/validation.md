@@ -27,6 +27,17 @@
   Editor: the **Program** pane opened on a run-bound key in an isolated editor on the
   private display, screenshot looked at. The installed-package press on the pad is in the
   private maintenance notes (run-bindings-20261013).
+- Follow-up, same day: the public CI run for this release failed in
+  `overlay_excludes_animation_and_restores_latest_request` ("unexpected LCD write" at the
+  first quiet check), a test untouched since 0.2.85 that had passed five runs that day.
+  Not reproduced here: eleven runs pinned to one busy core, three of them the whole suite
+  with two test threads, all passed; the unchanged commit passed CI again on rerun.
+  Breaking the overlay's hold on purpose gives exactly the CI signature in 0.05 s, which
+  is what a 220 ms overlay window running out before the frame is sent would look like on
+  a slow runner; the margin before expiry was 70 ms. Disposition: the window in the test
+  is now 1000 ms (the quiet check and the sleep add up past it as before), the hold is
+  still caught when broken. Hypothesis, not a proven cause; recorded so the next failure
+  of this test is read against it.
 ## 0.2.97 — three words any feeder may send: deaths, count, foe — 2026-10-13
 
 - Written by Claude (Opus 4.8) in a parallel session for a Ship of Harkinian reader;
