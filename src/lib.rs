@@ -8,6 +8,7 @@
 //!   g13map import [FILE] [NAME]   copy a bind file into the profiles (default: the daemon's)
 #[cfg(feature = "editor")]
 mod adjust;
+pub mod agent;
 mod application;
 #[cfg(feature = "art")]
 pub mod art;

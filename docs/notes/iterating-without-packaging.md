@@ -33,3 +33,32 @@ nudges stayed there, the runbook lives here. Dates in the text are the original 
   anything reaches the glass.
 - Log the feed while playing (a loop that records the file on change with a timestamp):
   it tells whether an oddity is the game, the feeder or the panel.
+- **Build in `build/rust`, not in another project's target.** Borrowing another
+  project's dependency cache mixed the artifacts and defeated its cache budget.
+  The CMake tree already sets
+  `G13PAD_CARGO_TARGET_DIR` to `build/rust`; a plain `cargo build` in the checkout
+  warms `target/`. Either is fine; a third project's directory is not.
+
+## Updating the agent watcher live
+
+The agent display can be prototyped on the pad before building a package. From the
+working clone, after checking free space and saving the previous working binary:
+
+```sh
+cd ~/.local/src/g13pad
+flock /tmp/g13pad-cargo.lock sh tools/dev-watch.sh
+target/release/g13map --version
+systemctl --user show g13map-watch.service -p ExecStart -p MainPID
+```
+
+The script builds the CLI/watcher with its warm release cache, writes a user-service
+drop-in, and restarts only `g13map-watch.service`. The LCD briefly changes while the
+watcher restarts; no login session or driver restart is needed. Explain that live
+interaction first. Hook commands using an absolute path must point to the same
+verified development binary. `bash tools/check-agent-hooks.sh` checks the command
+boundary in a private runtime before the live check; see [agent display](../agent-display.md).
+
+`sh tools/dev-watch.sh off` removes the override and restarts the installed watcher.
+Check the installed binary first: a matching version alone does not establish that
+it contains the current source fixes. Keep the override when the installed package
+is older than the working prototype; package what survives the hardware check.

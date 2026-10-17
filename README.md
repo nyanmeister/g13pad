@@ -77,13 +77,19 @@ own picture stays kept and returns when the choice goes back to **Picture**.
 `g13map health demo` runs the states on your own panel. See
 [the health meter](docs/health-meter.md) and, for adding a game, [AGENTS.md](AGENTS.md).
 
-The same list, under **This computer**, has two machine-wide displays.
+The same list, under **This computer**, has three machine-wide displays.
 **Computer load** shows CPU, memory and I/O stalls with a 90-second history.
 **Microphone and volume** shows default mic/output state and a scrolling mic-level
 history, with red backlight for a muted mic and green for an open mic. A key's **Sound**
 tab provides mic mute/gain and output mute/volume controls. A profile shows one thing at
 a time; the saved picture is kept underneath. See [System pressure](docs/system-pressure.md)
 and [System audio](docs/system-audio.md).
+**Coding agent turn** shows Claude Code or Codex activity, a turn stopwatch,
+background agents and a green ready screen. Questions blink slowly in the current
+turn colour; automatic review stays steady yellow, while human permission requests
+blink yellow. Explicitly reported denials blink red three times, then hold.
+Long activity labels scroll with a one-second hold at each end. See
+[agent setup and event limits](docs/agent-display.md) for the harness hooks.
 
 [MPD listening history and music controls](docs/mpd-music.md) add an independent
 SQLite companion service, G13 Music bindings, and queued album/smart shuffle.
@@ -110,10 +116,15 @@ The collector reads the game without changing it.
 The supported route is an OS package: it installs the services, udev rules and group
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
-On Arch, export a committed source tree as `g13pad-0.3.0.tar.gz`, put it beside
-`packaging/PKGBUILD`, and run `makepkg` in that directory. The recipe uses a local archive
-with a placeholder checksum; a public release must supply a verified checksum. xboxdrv is
-an optional separate dependency, not bundled.
+On Arch, download `PKGBUILD` and `g13pad.install` from the
+[0.3.5 release](https://github.com/nyanmeister/g13pad/releases/tag/v0.3.5) into an
+empty directory and run `makepkg`. That recipe downloads the source archive and
+verifies its SHA-256 checksum. xboxdrv is an optional separate dependency, not bundled.
+
+For a local checkout, export a committed tree as `g13pad-0.3.5.tar.gz` with
+`git archive --format=tar.gz --prefix=g13pad-0.3.5/ HEAD > g13pad-0.3.5.tar.gz`, put it beside both files
+from `packaging/`, and run `makepkg`. The in-tree recipe uses `SKIP` only for this
+locally generated archive; published release recipes carry a fixed checksum.
 
 After installing, read [installation and activation](docs/installation.md) for the
 services to enable and the group to join, and [migration](docs/migration.md) if an
@@ -487,5 +498,8 @@ scripts stay with the owner's maintenance notes; this README describes the conso
   observers, Factorio vehicle gauges and gear animation, research marquee, DFHack
   fortress overview and seasonal backlight, Adventure condition and travel displays,
   validation records.
+- **Claude (Opus 4.8, Anthropic)**: the initial coding-agent display and Claude Code hooks.
+- **Codex (gpt-6.1-sol, OpenAI)**: native Codex hooks, agent alerts, scrolling labels,
+  question lifecycle and release validation.
 
 Commits carry the assistant and model that wrote them.

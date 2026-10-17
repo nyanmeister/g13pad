@@ -86,11 +86,13 @@ pub enum Display {
     Audio,
     /// MPD: what plays, its history, output levels.
     Mpd,
+    /// The coding agent (Claude Code, Codex, ...): the turn, fed by the harness's hooks.
+    Agent,
 }
 
 impl Display {
     /// Every choice, in the order the editor lists them.
-    pub const ALL: [Self; 10] = {
+    pub const ALL: [Self; 11] = {
         use crate::meter::Reader;
         [
             Self::Picture,
@@ -103,6 +105,7 @@ impl Display {
             Self::Mpd,
             Self::Audio,
             Self::Pressure,
+            Self::Agent,
         ]
     };
     /// Short name, as the editor's list and the status line show it.
@@ -119,6 +122,7 @@ impl Display {
             Self::Mpd => "Music (MPD): what is playing",
             Self::Audio => "Microphone and volume",
             Self::Pressure => "Computer load",
+            Self::Agent => "Coding agent turn",
         }
     }
     /// One sentence for a layman, under the label.
@@ -137,6 +141,9 @@ impl Display {
             Self::Mpd => "Artist and title, play history and output levels from the music daemon.",
             Self::Audio => "Whether the microphone is live or muted, its level, and the output volume.",
             Self::Pressure => "How busy the CPU, memory and disks are.",
+            Self::Agent => {
+                "What the coding assistant (Claude Code, Codex) is doing this turn, fed by the harness's hooks: the activity, a stopwatch, and backlight alerts for permission, failures and idle."
+            }
         }
     }
     /// The comment line that selects this on disk, without the `# `; none for the picture.
@@ -148,6 +155,7 @@ impl Display {
             Self::Pressure => "pressure on".into(),
             Self::Audio => "audio on".into(),
             Self::Mpd => "mpd on".into(),
+            Self::Agent => "agent on".into(),
         })
     }
     /// Reads a `# WORD VALUE` comment: `Some(Ok(display))` to select, `Some(Ok(Picture))`
@@ -169,6 +177,7 @@ impl Display {
             "pressure" => on_off(Self::Pressure, "System pressure mode"),
             "audio" => on_off(Self::Audio, "System audio mode"),
             "mpd" => on_off(Self::Mpd, "MPD playback mode"),
+            "agent" => on_off(Self::Agent, "agent display"),
             _ => return None,
         })
     }
@@ -181,6 +190,7 @@ impl Display {
             Self::Pressure => "pressure",
             Self::Audio => "audio",
             Self::Mpd => "mpd",
+            Self::Agent => "agent",
         }
     }
 }
@@ -545,12 +555,13 @@ mod tests {
     /// either side of the `Display` change read the same.
     #[test]
     fn every_display_round_trips_and_keeps_the_rest() {
-        const WORDS: [&str; 5] = [
+        const WORDS: [&str; 6] = [
             "# health ",
             "# mpv on",
             "# pressure on",
             "# audio on",
             "# mpd on",
+            "# agent on",
         ];
         let mut p = Profile::parse("# lcd kept\nbind G1 KEY_A\n# audio-mic \"usb.mic\"\n").0;
         assert_eq!(p.display, Display::Picture);
@@ -572,7 +583,7 @@ mod tests {
             assert_eq!(p.needs_watcher(), display != Display::Picture);
             assert_eq!(p.health().is_some(), matches!(display, Display::Health(_)));
         }
-        assert_eq!(Display::ALL.len(), 10);
+        assert_eq!(Display::ALL.len(), 11);
         assert_eq!(
             Profile::parse("# health cs2").0.display.line().as_deref(),
             Some("health cs2")

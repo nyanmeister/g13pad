@@ -18,10 +18,32 @@ use std::{
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     process::Command,
-    sync::mpsc,
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        mpsc,
+    },
     thread,
     time::Duration,
 };
+
+/// The X11 id of the focused window, or 0 when unknown: before the first focus, or on a
+/// Wayland session where a window has no global id. The focus-follow thread keeps it current
+/// alongside the class it sends; the agent screen reads it to show the focused terminal's
+/// feed. Best-effort — a briefly stale value only picks the wrong agent for a frame.
+pub static FOCUSED_WINDOW: AtomicU64 = AtomicU64::new(0);
+
+/// The focused window's X11 id, if known.
+pub fn focused_window() -> Option<u64> {
+    match FOCUSED_WINDOW.load(Ordering::Relaxed) {
+        0 => None,
+        w => Some(w),
+    }
+}
+
+/// The follow threads record the focused window here as they report its class.
+pub(crate) fn set_focused_window(w: Option<u64>) {
+    FOCUSED_WINDOW.store(w.unwrap_or(0), Ordering::Relaxed);
+}
 
 /// The editor's own window: focusing it keeps whatever profile is shown.
 pub const EDITOR_CLASS: &str = "g13map";
@@ -112,6 +134,8 @@ pub struct Win {
     pub title: String,
     pub workspace: String,
     pub focused: bool,
+    /// The X11 window id, if any (a native Wayland window has none).
+    pub window: Option<u64>,
 }
 
 /// The windows the manager lists now: i3's tree in order, else the X11 client list.
@@ -155,8 +179,11 @@ pub fn follow(tx: mpsc::Sender<String>) {
         let connected = match socket() {
             Ok(s) => {
                 eprintln!("g13map watch: window focus: i3");
-                if let Some(c) = i3_windows(s).ok().and_then(focused) {
-                    let _ = tx.send(c);
+                if let Ok(wins) = i3_windows(s) {
+                    if let Some(w) = wins.iter().find(|w| w.focused) {
+                        set_focused_window(w.window);
+                        let _ = tx.send(w.class.clone());
+                    }
                 }
                 socket().and_then(|s| subscribe(s, &tx))
             }
@@ -177,10 +204,6 @@ pub fn follow(tx: mpsc::Sender<String>) {
     }
 }
 
-fn focused(wins: Vec<Win>) -> Option<String> {
-    wins.into_iter().find(|w| w.focused).map(|w| w.class)
-}
-
 fn subscribe(mut s: UnixStream, tx: &mpsc::Sender<String>) -> Result<(), String> {
     write_msg(&mut s, SUBSCRIBE, br#"["window"]"#).map_err(|e| e.to_string())?;
     loop {
@@ -190,6 +213,7 @@ fn subscribe(mut s: UnixStream, tx: &mpsc::Sender<String>) -> Result<(), String>
         }
         let ev: Value = serde_json::from_slice(&payload).map_err(|e| e.to_string())?;
         if ev["change"].as_str() == Some("focus") {
+            set_focused_window(ev["container"]["window"].as_u64());
             if let Some(c) = class_of(&ev["container"]) {
                 if tx.send(c).is_err() {
                     return Ok(());
@@ -329,6 +353,7 @@ fn walk(node: &Value, workspace: &str, out: &mut Vec<Win>) {
                 title: node["name"].as_str().unwrap_or("").to_string(),
                 workspace: ws.to_string(),
                 focused: node["focused"].as_bool().unwrap_or(false),
+                window: node["window"].as_u64(),
             });
         }
     }

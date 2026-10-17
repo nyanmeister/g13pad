@@ -48,6 +48,7 @@ pub fn windows() -> Result<Vec<Win>, String> {
                 title: x.title(w),
                 workspace: desktop_name(&names, desktop.first().copied()),
                 focused: Some(w) == active,
+                window: Some(w as u64),
             });
         }
     }
@@ -70,9 +71,12 @@ pub fn follow(tx: &mpsc::Sender<String>) -> Result<(), String> {
         "g13map watch: window focus: {} on display {}",
         x.manager, x.display
     );
-    if let Some(c) = x.active_window().and_then(|w| x.class(w)) {
-        if tx.send(c).is_err() {
-            return Ok(());
+    if let Some(w) = x.active_window() {
+        crate::focus::set_focused_window(Some(w as u64));
+        if let Some(c) = x.class(w) {
+            if tx.send(c).is_err() {
+                return Ok(());
+            }
         }
     }
     loop {
@@ -82,9 +86,12 @@ pub fn follow(tx: &mpsc::Sender<String>) -> Result<(), String> {
             .map_err(|e| format!("display lost: {e}"))?;
         if let Event::PropertyNotify(p) = ev {
             if p.window == x.root && p.atom == x.active {
-                if let Some(c) = x.active_window().and_then(|w| x.class(w)) {
-                    if tx.send(c).is_err() {
-                        return Ok(());
+                if let Some(w) = x.active_window() {
+                    crate::focus::set_focused_window(Some(w as u64));
+                    if let Some(c) = x.class(w) {
+                        if tx.send(c).is_err() {
+                            return Ok(());
+                        }
                     }
                 }
             }

@@ -931,3 +931,322 @@ impl Tuning {
         (racing + (calm - racing) * pct.min(100) as i32 / 100).max(ECG_COLUMNS)
     }
 }
+
+/// Mockup-only: compose the three candidate ring-page directions from the real glyph and
+/// bar primitives, so a feh sheet shows the true font and pixel grid rather than a drawing.
+/// Guarded by an env var like the other frame dumps; a no-op in the normal suite.
+#[cfg(test)]
+#[test]
+fn dump_ring_mockups() {
+    let Some(dir) = std::env::var_os("G13MAP_RING_DUMP") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    fn plot(bm: &mut Bitmap, x: i32, y: i32) {
+        if (0..160).contains(&x) && (0..43).contains(&y) {
+            bm.set(x as usize, y as usize, true);
+        }
+    }
+    // A filled annulus for the ring glyph: thick when you hold rings, a thin outline at zero.
+    fn ring(bm: &mut Bitmap, cx: i32, cy: i32, r_out: i32, r_in: i32) {
+        for y in (cy - r_out)..=(cy + r_out) {
+            for x in (cx - r_out)..=(cx + r_out) {
+                let d2 = (x - cx) * (x - cx) + (y - cy) * (y - cy);
+                if d2 <= r_out * r_out && d2 >= r_in * r_in {
+                    plot(bm, x, y);
+                }
+            }
+        }
+    }
+    fn tw(s: &str, scale: i32) -> i32 {
+        (s.chars().count() as i32 * 6 - 1) * scale
+    }
+    fn ctext(bm: &mut Bitmap, s: &str, scale: i32, y: i32) {
+        text(bm, 80 - tw(s, scale) / 2, y, s, scale);
+    }
+    fn cread(bm: &mut Bitmap, s: &str, y: i32) {
+        let w = s.len() as i32 * 12 - 2;
+        readout(bm, s, 80 + w / 2, y);
+    }
+    fn dump(dir: &std::path::Path, name: &str, bm: &Bitmap) {
+        let mut pbm = String::from("P1\n160 43\n");
+        for y in 0..43 {
+            for x in 0..160 {
+                pbm.push_str(if bm.get(x, y) { "1 " } else { "0 " });
+            }
+            pbm.push('\n');
+        }
+        std::fs::write(dir.join(format!("{name}.pbm")), pbm).unwrap();
+    }
+
+    for (tag, rings) in [("has", "24"), ("zero", "0")] {
+        let has = tag == "has";
+
+        // A: number only; has/zero lives entirely in the backlight colour.
+        let mut a = Bitmap::blank();
+        ctext(&mut a, "RINGS", 1, 6);
+        cread(&mut a, rings, 20);
+        dump(&dir, &format!("a-{tag}"), &a);
+
+        // B: a ring glyph that also carries the state on the glass (solid = has, thin = zero).
+        let mut b = Bitmap::blank();
+        ring(&mut b, 45, 21, 11, if has { 5 } else { 9 });
+        readout(&mut b, rings, 118, 14);
+        dump(&dir, &format!("b-{tag}"), &b);
+
+        // C: a solid strip where the health bar used to be, lit = alive, dark at zero.
+        let mut c = Bitmap::blank();
+        ctext(&mut c, "RINGS", 1, 3);
+        cread(&mut c, rings, 11);
+        if has {
+            for yy in 34..40 {
+                for xx in BAR_X..BAR_X + BAR_W {
+                    plot(&mut c, xx, yy);
+                }
+            }
+        }
+        dump(&dir, &format!("c-{tag}"), &c);
+    }
+}
+
+/// Mockup-only: the spinning-ring direction (Sonic's edge-on ring rotation) beside the
+/// count, as a sequence of real frames for an animated GIF. Same env guard as the sheet.
+#[cfg(test)]
+#[test]
+fn dump_ring_spin() {
+    let Some(dir) = std::env::var_os("G13MAP_RINGSPIN_DUMP") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    fn plot(bm: &mut Bitmap, x: i32, y: i32) {
+        if (0..160).contains(&x) && (0..43).contains(&y) {
+            bm.set(x as usize, y as usize, true);
+        }
+    }
+    // A ring turning about its vertical axis: the horizontal radius shrinks with the angle
+    // while the height holds, so a full circle squishes to a thin vertical sliver and back.
+    fn spin_ring(bm: &mut Bitmap, cx: i32, cy: i32, r: f32, th: f32, angle: f32) {
+        // Floor the horizontal radius at 1.5 so the edge-on ring is 3 px across, not a
+        // hairline: it reads with the band's depth rather than flat (asked 2026-10-14).
+        let rx_out = (r * angle.cos().abs()).max(1.5);
+        let ry_out = r;
+        let rx_in = rx_out * (r - th) / r;
+        let ry_in = ry_out - th;
+        let bound = r.ceil() as i32 + 1;
+        for y in -bound..=bound {
+            for x in -bound..=bound {
+                let (xf, yf) = (x as f32, y as f32);
+                // Strict `<` drops the lone pixels sitting exactly on the radius at the four
+                // cardinal points, so the ring's top/bottom (and left/right at full width)
+                // read as flat edges instead of single-pixel tips (asked 2026-10-14).
+                let in_out = (xf * xf) / (rx_out * rx_out) + (yf * yf) / (ry_out * ry_out) < 1.0;
+                // Near edge-on the ring is a solid sliver (no visible hole), like the sprite.
+                let out_in = rx_out < 2.0
+                    || rx_in < 0.5
+                    || (xf * xf) / (rx_in * rx_in) + (yf * yf) / (ry_in * ry_in) >= 1.0;
+                if in_out && out_in {
+                    plot(bm, cx + x, cy + y);
+                }
+            }
+        }
+    }
+    fn dump(dir: &std::path::Path, name: &str, bm: &Bitmap) {
+        let mut pbm = String::from("P1\n160 43\n");
+        for y in 0..43 {
+            for x in 0..160 {
+                pbm.push_str(if bm.get(x, y) { "1 " } else { "0 " });
+            }
+            pbm.push('\n');
+        }
+        std::fs::write(dir.join(format!("{name}.pbm")), pbm).unwrap();
+    }
+
+    const FRAMES: i32 = 8;
+    for i in 0..FRAMES {
+        let angle = std::f32::consts::PI * i as f32 / FRAMES as f32; // half turn looks identical
+        let mut bm = Bitmap::blank();
+        spin_ring(&mut bm, 46, 21, 9.0, 4.0, angle);
+        readout(&mut bm, "24", 120, 14);
+        dump(&dir, &format!("spin-{i:02}"), &bm);
+    }
+    // Zero state: no ring to spin, just the count.
+    let mut z = Bitmap::blank();
+    readout(&mut z, "0", 120, 14);
+    dump(&dir, "spin-zero", &z);
+}
+
+/// Mockup-only: the three candidate layouts for the kitty/Claude terminal page, each in the
+/// normal "generating" state, composed from the real glyphs so the feh sheet shows the true
+/// font and grid. The fork the sheet settles: which fact gets the big numerals. Attention
+/// states (inversion + backlight colour) and the pulse are motion — they go in a GIF, not
+/// here. Guarded by G13MAP_TERMINAL_DUMP like the other dumps; a no-op in the normal suite.
+#[cfg(test)]
+#[test]
+fn dump_terminal_mockups() {
+    let Some(dir) = std::env::var_os("G13MAP_TERMINAL_DUMP") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    fn dump(dir: &std::path::Path, name: &str, bm: &Bitmap) {
+        let mut pbm = String::from("P1\n160 43\n");
+        for y in 0..43 {
+            for x in 0..160 {
+                pbm.push_str(if bm.get(x, y) { "1 " } else { "0 " });
+            }
+            pbm.push('\n');
+        }
+        std::fs::write(dir.join(format!("{name}.pbm")), pbm).unwrap();
+    }
+
+    // Sample turn state the three share: mid-turn, a prior turn to show, two agents out.
+    let now = "00:01:23:45"; // HH:MM:SS:CC, the 50 fps hundredths
+    let last = "00:02:58:10";
+
+    // A: the running clock is the hero. Activity on the top row, prior turn and agent count
+    // tucked along the bottom. The bet: "how long has this turn run" is the glance.
+    let mut a = Bitmap::blank();
+    a.sprite(3, 0, HEART);
+    text(&mut a, 13, 0, "EDITING", 1);
+    readout(&mut a, now, 145, 15); // 11 chars * 12 - 2 = 130 wide, centred on 80
+    text(&mut a, 3, 36, "LAST 00:02:58", 1);
+    text(&mut a, 110, 36, "2 AGENTS", 1); // 8 chars * 6 - 1 = 47 wide, right edge 157
+    dump(&dir, "a", &a);
+
+    // B: what I'm doing is the hero. Big heart + activity word; clock, prior turn and agents
+    // small below. The bet: the *kind* of work matters more at a glance than the count.
+    let mut b = Bitmap::blank();
+    b.sprite(4, 3, HEART_BIG);
+    text(&mut b, 17, 3, "EDITING", 2); // 7 chars * 12 - 2 = 82 wide
+    text(&mut b, 4, 24, now, 1); // 11 chars * 6 - 1 = 65 wide
+    text(&mut b, 110, 24, "2 AGENTS", 1);
+    text(&mut b, 4, 34, "LAST 00:02:58", 1);
+    dump(&dir, "b", &b);
+
+    // C: two columns, nothing hero-sized. Activity (and agents) left, a NOW/LAST clock stack
+    // right. The bet: you want all four facts up at once and read the one you need.
+    let mut c = Bitmap::blank();
+    c.line(80, 0, 80, 42);
+    c.sprite(2, 3, HEART);
+    text(&mut c, 13, 3, "EDITING", 1);
+    text(&mut c, 2, 32, "2 AGENTS", 1);
+    text(&mut c, 86, 1, "NOW", 1);
+    text(&mut c, 86, 10, now, 1);
+    text(&mut c, 86, 23, "LAST", 1);
+    text(&mut c, 86, 32, last, 1);
+    dump(&dir, "c", &c);
+}
+
+/// Mockup-only: option B (the picked layout) in motion, as a numbered PBM sequence plus a
+/// `frames.txt` manifest (`name colour delay_ms bright`). Shows what a still cannot: the
+/// heart pulse, the ticking hundredths, and the four attention states. "blink" is baked in
+/// as a whole-panel inversion of the pixels; colour (backlight) and the breathing brightness
+/// are applied by the assembler. Guarded by G13MAP_TERMINAL_ANIM; a no-op in the suite.
+#[cfg(test)]
+#[test]
+fn dump_terminal_anim() {
+    let Some(dir) = std::env::var_os("G13MAP_TERMINAL_ANIM") else {
+        return;
+    };
+    let dir = std::path::PathBuf::from(dir);
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // The B layout: big heart (contracted on the beat) + activity word, then the stopwatch,
+    // agent count and prior-turn length small below.
+    fn page(activity: &str, now: &str, beat: bool) -> Bitmap {
+        let mut bm = Bitmap::blank();
+        if beat {
+            bm.sprite(5, 4, HEART); // the contraction: smaller heart, same centre
+        } else {
+            bm.sprite(4, 3, HEART_BIG);
+        }
+        text(&mut bm, 17, 3, activity, 2);
+        text(&mut bm, 4, 24, now, 1);
+        text(&mut bm, 110, 24, "2 AGENTS", 1);
+        text(&mut bm, 4, 34, "LAST 00:02:58", 1);
+        bm
+    }
+    fn inverted(bm: &Bitmap) -> Bitmap {
+        let mut o = bm.clone();
+        for y in 0..H {
+            for x in 0..W {
+                o.set(x, y, !bm.get(x, y));
+            }
+        }
+        o
+    }
+    // Centiseconds as HH:MM:SS:CC, the stopwatch's own format.
+    fn cc(total: u32) -> String {
+        let (h, m, s, c) = (
+            total / 360_000,
+            total / 6_000 % 60,
+            total / 100 % 60,
+            total % 100,
+        );
+        format!("{h:02}:{m:02}:{s:02}:{c:02}")
+    }
+
+    let mut manifest = String::new();
+    let mut n = 0u32;
+    let mut emit = |bm: &Bitmap, colour: &str, delay: u32, bright: u32, manifest: &mut String| {
+        let name = format!("f{n:03}");
+        let mut pbm = String::from("P1\n160 43\n");
+        for y in 0..43 {
+            for x in 0..160 {
+                pbm.push_str(if bm.get(x, y) { "1 " } else { "0 " });
+            }
+            pbm.push('\n');
+        }
+        std::fs::write(dir.join(format!("{name}.pbm")), pbm).unwrap();
+        manifest.push_str(&format!("{name} {colour} {delay} {bright}\n"));
+        n += 1;
+    };
+
+    let mut t = 8_345u32; // 00:01:23:45, where the still sat
+    let step = 6; // centiseconds per frame, so the hundredths visibly roll
+
+    // GENERATING: heart beats, clock ticks, the activity face changes. Cyan, upright.
+    for i in 0..16u32 {
+        let activity = if i < 8 { "EDITING" } else { "WEB SEARCH" };
+        let beat = i % 8 < 2; // a short contraction at the top of each beat
+        emit(
+            &page(activity, &cc(t), beat),
+            "cyan",
+            60,
+            100,
+            &mut manifest,
+        );
+        t += step;
+    }
+    // PERMISSION (blocked): repeating yellow blink until he answers. Clock still runs.
+    for i in 0..8u32 {
+        let p = page("PERMISSION", &cc(t), false);
+        let frame = if i % 2 == 1 { inverted(&p) } else { p };
+        emit(&frame, "yellow", 150, 100, &mut manifest);
+        t += step;
+    }
+    // READY (turn ended, Stop fired): green, blinks twice, then holds. Clock frozen.
+    let done = cc(t);
+    for i in 0..6u32 {
+        let r = page("READY", &done, false);
+        let frame = if i == 1 || i == 3 { inverted(&r) } else { r };
+        emit(&frame, "green", 150, 100, &mut manifest);
+    }
+    // IDLE (60 s later, still away): green backlight breathes. Upright, clock frozen.
+    for &bright in &[60u32, 72, 84, 96, 96, 84, 72, 60] {
+        emit(
+            &page("READY", &done, false),
+            "green",
+            110,
+            bright,
+            &mut manifest,
+        );
+    }
+
+    std::fs::write(dir.join("frames.txt"), manifest).unwrap();
+}

@@ -8,12 +8,13 @@ use std::{
     path::Path,
     sync::atomic::{AtomicBool, Ordering},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 const HELP: &str = "usage: g13map demo FILE [SECONDS]
        g13map demo scene NAME [SECONDS]   show a built-in animation (list: g13map demo scenes)
        g13map demo scenes                 list the built-in animations
+       g13map demo agent [SECONDS]        play the coding-agent screen's lifecycle
 Show an image or animation on the LCD for SECONDS (default: 10).
 Positive fractional seconds are accepted; Ctrl+C restores the current display.
 GIF/APNG/WebP animations repeat with their frame timings. Native sprite sheets
@@ -37,6 +38,7 @@ pub(crate) fn command(args: &[&str]) -> Result<String, String> {
     match args {
         ["scenes"] => return scenes(),
         ["scene", rest @ ..] => return scene(rest),
+        ["agent", rest @ ..] => return agent_demo(rest),
         _ => {}
     }
     let (path, duration) = request(args)?;
@@ -158,6 +160,141 @@ fn delegate_scene(args: &[&str]) -> Result<String, String> {
     Err(format!(
         "built-in scenes need the g13map-editor component: {error}"
     ))
+}
+
+/// The canned lifecycle for `g13map demo agent`, as a function of time into a 20 s loop:
+/// a turn editing then searching (with a tool-failure and an edit-denial flash), a
+/// permission block, a finished turn, then idle. `wall` is only used to time the flashes.
+fn demo_state(
+    tt: f64,
+    started: SystemTime,
+    wall: SystemTime,
+    prev: Duration,
+    last: Duration,
+) -> (crate::agent::State, Duration) {
+    use crate::agent::{Activity, State, Trailer};
+    let base = Trailer {
+        agents: 2,
+        last: Some(prev),
+        ..Default::default()
+    };
+    if tt < 8.0 {
+        let activity = if tt < 4.0 { "EDITING" } else { "WEB_SEARCH" };
+        let mut trailer = base;
+        if (2.5..2.9).contains(&tt) {
+            trailer.fail_at = Some(wall); // orange flash
+        }
+        if (6.0..6.4).contains(&tt) {
+            trailer.deny_at = Some(wall); // red flash
+        }
+        (
+            State::Turn {
+                activity: Activity::parse(activity),
+                started,
+                trailer,
+            },
+            Duration::from_secs_f64(tt),
+        )
+    } else if tt < 12.0 {
+        (
+            State::Ask {
+                attention: crate::agent::Attention::Permission,
+                started: None,
+                trailer: base,
+            },
+            Duration::from_secs_f64(tt - 8.0),
+        )
+    } else if tt < 15.0 {
+        (
+            State::Ready {
+                trailer: Trailer {
+                    agents: 2,
+                    last: Some(last),
+                    ..Default::default()
+                },
+            },
+            Duration::from_secs_f64(tt - 12.0),
+        )
+    } else {
+        (
+            State::Idle {
+                trailer: Trailer {
+                    agents: 2,
+                    last: Some(last),
+                    ..Default::default()
+                },
+            },
+            Duration::from_secs_f64(tt - 15.0),
+        )
+    }
+}
+
+/// Plays the agent screen's lifecycle on the glass with its backlight, for SECONDS, then
+/// restores the active profile's picture and colour. A showcase before the real feeder
+/// exists; it takes the same demo lock as a file demo, so the watcher stays clear.
+fn agent_demo(args: &[&str]) -> Result<String, String> {
+    use crate::agent::render;
+    let seconds = match args {
+        [] => "24",
+        [s] => *s,
+        _ => return Err("usage: g13map demo agent [SECONDS]".into()),
+    };
+    let duration = parse_seconds(seconds)?;
+    let _signals = Signals::take()?;
+    if STOP.load(Ordering::Relaxed) {
+        return Ok("demo cancelled before display".into());
+    }
+    let mut owner = Owner::take()?;
+    // Put the active profile's backlight back at the end (its own, else the daemon default).
+    let restore_rgb = crate::load(&crate::active_name())
+        .ok()
+        .and_then(|(p, _)| p.rgb)
+        .unwrap_or([31, 0, 127]);
+    // The working backlight the mockup used; the alert phases override it.
+    const WORKING: [u8; 3] = [0, 200, 255];
+    let started = SystemTime::now() - Duration::from_secs(83);
+    let (prev, last) = (
+        Duration::from_millis(178_900),
+        Duration::from_millis(174_890),
+    );
+    eprintln!(
+        "demo: agent lifecycle, for {} seconds",
+        duration.as_secs_f64()
+    );
+    let start = Instant::now();
+    let mut last_rgb: Option<[u8; 3]> = None;
+    let mut result = Ok(());
+    while !STOP.load(Ordering::Relaxed) {
+        let elapsed = start.elapsed();
+        if elapsed >= duration {
+            break;
+        }
+        if lcd::editor_open() || overlay::active()? {
+            thread::sleep(POLL);
+            continue;
+        }
+        let wall = SystemTime::now();
+        let (state, age) = demo_state(elapsed.as_secs_f64() % 20.0, started, wall, prev, last);
+        let frame = render::frame(&state, age, wall);
+        let rgb = render::colour(&state, age, wall, WORKING);
+        if last_rgb != Some(rgb) {
+            if let Err(e) = daemon::send(&format!("rgb {} {} {}\n", rgb[0], rgb[1], rgb[2])) {
+                result = Err(e);
+                break;
+            }
+            last_rgb = Some(rgb);
+        }
+        if let Err(e) = send(&frame) {
+            result = Err(e);
+            break;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    let [r, g, b] = restore_rgb;
+    let _ = daemon::send(&format!("rgb {r} {g} {b}\n"));
+    let restored = owner.restore();
+    result.and(restored)?;
+    Ok("demo finished; normal display can resume".into())
 }
 
 fn native(path: &Path) -> bool {

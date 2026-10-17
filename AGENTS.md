@@ -13,6 +13,7 @@ Read the note for an area before touching it:
 | Demos, telemetry and display clocks | [telemetry-timing-and-demos](docs/notes/telemetry-timing-and-demos.md) |
 | OBS overlay and the driver's state files | [obs-overlay](docs/notes/obs-overlay.md) |
 | A program on a key (run bindings) | [run-bindings](docs/notes/run-bindings.md) |
+| A new live screen (LCD mode / integration) | [adding-a-live-screen](docs/notes/adding-a-live-screen.md) |
 | Iterating without the package cycle | [iterating-without-packaging](docs/notes/iterating-without-packaging.md) |
 
 ## The shape
@@ -37,8 +38,11 @@ Read the note for an area before touching it:
 
 - Every real bug so far sat at a boundary no unit test reached: a container's private
   `/run/user`, an engine's string table, a tar under a `.pk3` name, a timestamped log
-  name, sway's `app_id`. Reach for the empirical check at the boundary first: a private
-  display, a grep of the live log, a frame dump looked at.
+  name, sway's `app_id`, a frame thread paced by `clock.wait()` instead of `frame_wait()`
+  (it spun, hammered the LCD lock and stuck the display — 212 tests green, found in seconds
+  on the pad; see [adding-a-live-screen](docs/notes/adding-a-live-screen.md)). Reach for the
+  empirical check at the boundary first: a private display, a grep of the live log, a frame
+  dump looked at, the `Live` thread actually run.
 - Report passed *and* ignored. The ignored tests are the boundary ones (live RAM, the
   Dolphin log, the audio server, the mutation fuzzers); run the one whose boundary the
   change touches and say so.
@@ -75,6 +79,11 @@ Read the note for an area before touching it:
 - The CS2 listener's loopback bind can fail in a sandbox with `Operation not permitted`;
   rerun with localhost access rather than changing the listener.
 - Every binary we ship answers `--version` without hardware or a GUI.
+- The version lives in TWO sources that must move together: `Cargo.toml`
+  (`workspace.package.version`, the Rust binaries) and `CMakeLists.txt` `project(... VERSION)`
+  (`PROJECT_VERSION`: the C/C++ binaries' `G13PAD_VERSION` and the `*-version` ctest checks).
+  Bump only Cargo and `check()` fails with `Regex=[<old>]`; the C and Rust binaries then
+  disagree about their own version. (0.3.1, 2026-10-15.)
 - The G13 takes a frame every 10 ms; a 100 ms poll does not limit animation. Collectors,
   presentation clocks and USB timeouts stay independent; skip missed frames.
 - A `cmd &` load generator in a test command outlives the call. Kill its PIDs in the same

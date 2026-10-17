@@ -184,6 +184,11 @@ struct Panel {
     mpv: Option<crate::mpv::Live>,
     mpd: Option<crate::mpd::Live>,
     audio: Option<crate::audio::Live>,
+    /// The coding-agent screen while a profile shows it; owns the panel and backlight.
+    agent: Option<crate::agent::Live>,
+    /// The last-focused terminal that had a live agent feed (the "latest agent"): the one
+    /// the agent screen shows, held across a focus onto a non-agent window.
+    latest_agent: Option<u64>,
     music: Option<crate::music::Worker>,
     /// Feed reads in a row that gave nothing while the meter was on: a feeder rewriting
     /// its file in place is empty for an instant, which must not drop the meter.
@@ -267,6 +272,14 @@ impl Panel {
         if want != Display::Pressure && self.pressure.take().is_some() {
             eprintln!("system pressure: off");
         }
+        if want != Display::Agent {
+            if let Some(mut live) = self.agent.take() {
+                // Hand the resting colour back as this profile's, like the meter does.
+                live.rest(rest);
+                drop(live);
+                eprintln!("agent screen: off");
+            }
+        }
         match want {
             Display::Picture => {
                 self.player = Some(lcd::show(self.seen.picture.as_deref(), true)?);
@@ -305,6 +318,21 @@ impl Panel {
                 }
                 self.mpd.as_ref().unwrap().display(true);
             }
+            Display::Agent => {
+                if self.agent.is_none() {
+                    self.latest_agent = None; // rediscover the focused agent fresh
+                    let state = crate::agent::select(
+                        crate::focus::focused_window(),
+                        &mut self.latest_agent,
+                    )
+                    .unwrap_or(crate::agent::State::Waiting {
+                        trailer: Default::default(),
+                    });
+                    self.agent = Some(crate::agent::Live::start(state, rest));
+                    self.misses = 0;
+                    eprintln!("agent screen: on ('{profile}')");
+                }
+            }
         }
         Ok(())
     }
@@ -314,6 +342,7 @@ impl Panel {
             && self.meter.is_none()
             && self.pressure.is_none()
             && self.mpv.is_none()
+            && self.agent.is_none()
             && !matches!(self.seen.display, Display::Mpd | Display::Audio);
         if nothing_up || Self::state(profile) != self.seen {
             if let Err(e) = self.show(profile) {
@@ -340,6 +369,34 @@ fn feed_meter(panel: &mut Panel, state: Option<meter::State>) {
             panel.misses = panel.misses.saturating_add(1);
             if panel.misses >= FEED_GRACE {
                 live.set(meter::State::Wait);
+            }
+        }
+    }
+}
+
+/// The focused terminal's agent feed into the screen, while a profile shows one. Picks by
+/// focus (the "latest agent" that holds across a non-agent focus), with the meter's
+/// empty-read grace: a feeder rewriting its file in place is empty for an instant.
+fn feed_agent(panel: &mut Panel) {
+    if panel.agent.is_none() {
+        return;
+    }
+    let state = crate::agent::select(crate::focus::focused_window(), &mut panel.latest_agent);
+    match state {
+        Some(s) => {
+            panel.misses = 0;
+            panel.agent.as_mut().unwrap().set(s);
+        }
+        None => {
+            panel.misses = panel.misses.saturating_add(1);
+            if panel.misses >= FEED_GRACE {
+                panel
+                    .agent
+                    .as_mut()
+                    .unwrap()
+                    .set(crate::agent::State::Waiting {
+                        trailer: Default::default(),
+                    });
             }
         }
     }
@@ -463,6 +520,15 @@ pub fn watch() -> Result<String, String> {
             }
         } else {
             let from = load(name).ok().map(|(p, _)| p);
+            // Stop the agent's 50 fps frame thread BEFORE switch_to: switch_to writes the
+            // daemon through the same LCD turn-lock the frame thread holds, and it runs
+            // before panel.show() (which would otherwise tear the thread down). Left running,
+            // the thread starves switch_to's lock for up to LOCK_WAIT and the switch fails,
+            // so the stale agent frame sticks (it took 2-8 focus changes to land). The agent
+            // has no cross-switch handoff, so dropping it here is free; show() restarts it if
+            // the new profile wants it. (Found live 2026-10-15; the meter shares the pattern
+            // but is never rapid-switched during a game.)
+            panel.agent = None;
             switch_to(from.as_ref(), &t, leds).and_then(|_| {
                 *name = t.clone();
                 panel.show(&t)
@@ -619,6 +685,7 @@ pub fn watch() -> Result<String, String> {
             meter_checked = Instant::now();
             if !editor_was {
                 feed_meter(&mut panel, meter::read());
+                feed_agent(&mut panel);
             }
         }
         if editor_checked.elapsed() >= Duration::from_millis(500) {

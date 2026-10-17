@@ -71,6 +71,7 @@ pub fn windows() -> Result<Vec<Win>, String> {
             title: t.title.clone(),
             workspace: String::new(),
             focused: t.activated,
+            window: None,
         })
         .collect())
 }
@@ -90,6 +91,9 @@ pub fn follow(tx: &mpsc::Sender<String>) -> Result<(), String> {
     loop {
         if let Some(active) = w.state.active() {
             if last.as_deref() != Some(active.as_str()) {
+                // Wayland toplevels have no X11 id; the agent screen falls back to the
+                // newest-live feed there rather than keying on a window.
+                crate::focus::set_focused_window(None);
                 if tx.send(active.clone()).is_err() {
                     return Ok(());
                 }

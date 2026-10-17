@@ -1,5 +1,38 @@
 # Validation record
 
+## 0.3.1–0.3.5 — coding-agent display and native Codex hooks — 2026-10-17
+
+- The watcher reads a small per-terminal feed, selected by the focused X11 window
+  or the latest live agent terminal. Claude Code and native Codex adapters retain
+  only activity/state, timestamps and agent counts, not prompts or tool arguments.
+  The screen uses the shared drawing kit and an independent 20 ms frame clock.
+- Physical G13 checks confirmed activity scrolling with one-second end holds,
+  steady yellow REMOTE CHECK, faster yellow PERMISSIONS, green READY, red DENIED
+  with three blinks, and the HH:MM:SS.CC stopwatch. QUESTION was confirmed on the
+  pad with a two-second blink cycle: working profile colour during the turn,
+  green when the turn ends with an asynchronous question still pending.
+  COMPACTING was also observed during a real compaction.
+- Boundary checks caught and corrected a frame loop using the event-wait clock
+  instead of the frame clock, and a profile transition holding the LCD lock while
+  stopping its frame thread. Native events now preserve the turn start through
+  permissions and compaction; concurrent hook updates serialize counts and writes.
+- The isolated CLI check exercises silent hook output, concurrent starts,
+  permission timing, terminal denial, synchronous/asynchronous question lifetimes,
+  unknown events and session cleanup. Question-routing and timing tests were
+  checked against deliberately broken or previous implementations and failed.
+- The 0.3.5 Arch package passed all 53 CTests. Its distinct workspace library
+  results were 232 passed, 17 ignored; the analog suite passed 7 with 1 ignored.
+  Ignored tests cover live game RAM/logs, audio-server access, frame exports and
+  mutation fuzzers; no agent test was ignored. Installed executable versions and
+  the native hook CLI boundary were checked, then the working watcher was returned
+  from the development override to the installed package.
+- Limits: native Codex event coverage was checked with CLI 0.163.0. The adapter
+  cannot detect a classifier rejection that the harness never reports; DENIED
+  requires an explicit event. Native agent counts use lifecycle starts/stops;
+  Claude counts use its tool events. An upgrade exposed an adapter/device-start
+  race requiring a service start after the source appeared; that broader reconnect
+  race is recorded as unresolved, rather than claimed fixed by this display work.
+
 ## 0.3.0 — release actions and hold on a program key; the adapter follows the cable; g13map doctor — 2026-10-14
 
 - Asked 2026-10-14 (the morning's stray processes): the milestone is "better handling and

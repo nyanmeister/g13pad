@@ -4,7 +4,7 @@ default-members = [".", "crates/g13pad-core", "crates/g13pad-analog", "crates/g1
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.5"
 edition = "2021"
 license = "GPL-3.0-or-later"
 

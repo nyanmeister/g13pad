@@ -609,6 +609,6 @@ fn group_of(display: Display) -> &'static str {
         Display::Picture => "",
         Display::Health(_) => "Games",
         Display::Mpv | Display::Mpd => "Media",
-        Display::Audio | Display::Pressure => "This computer",
+        Display::Audio | Display::Pressure | Display::Agent => "This computer",
     }
 }

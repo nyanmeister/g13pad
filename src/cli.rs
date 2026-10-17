@@ -217,12 +217,13 @@ fn profile(args: &[&str]) -> Result<String, String> {
         }
         // `X on` selects that live display (there is only ever one); `X off` goes back
         // to the picture if X is the one selected, and otherwise changes nothing.
-        ("pressure" | "mpv" | "mpd" | "audio", [mode]) => {
+        ("pressure" | "mpv" | "mpd" | "audio" | "agent", [mode]) => {
             let what = *op;
             let display = match what {
                 "pressure" => Display::Pressure,
                 "mpv" => Display::Mpv,
                 "mpd" => Display::Mpd,
+                "agent" => Display::Agent,
                 _ => Display::Audio,
             };
             match *mode {
@@ -394,6 +395,7 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
             render_text(text, Some(name))
         }
         ["health", rest @ ..] => health(rest),
+        ["agent", rest @ ..] => crate::agent::feeder::command(rest),
         ["demo", rest @ ..] => crate::demo::command(rest),
         ["mpv", "preview", path] => crate::mpv::preview(std::path::Path::new(path)),
         ["music", action] => g13pad_music::request(action),
