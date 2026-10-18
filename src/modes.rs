@@ -186,6 +186,8 @@ struct Panel {
     audio: Option<crate::audio::Live>,
     /// The coding-agent screen while a profile shows it; owns the panel and backlight.
     agent: Option<crate::agent::Live>,
+    combat: Option<crate::panel_feed::Live>,
+    ship: Option<crate::panel_feed::Live>,
     /// The last-focused terminal that had a live agent feed (the "latest agent"): the one
     /// the agent screen shows, held across a focus onto a non-agent window.
     latest_agent: Option<u64>,
@@ -280,6 +282,18 @@ impl Panel {
                 eprintln!("agent screen: off");
             }
         }
+        if want != Display::Combat {
+            if let Some(mut live) = self.combat.take() {
+                live.rest(rest);
+                drop(live);
+            }
+        }
+        if want != Display::Ship {
+            if let Some(mut live) = self.ship.take() {
+                live.rest(rest);
+                drop(live);
+            }
+        }
         match want {
             Display::Picture => {
                 self.player = Some(lcd::show(self.seen.picture.as_deref(), true)?);
@@ -333,6 +347,20 @@ impl Panel {
                     eprintln!("agent screen: on ('{profile}')");
                 }
             }
+            Display::Combat => {
+                self.combat
+                    .get_or_insert_with(|| {
+                        crate::panel_feed::Live::start(rest, profile, crate::combat::paint)
+                    })
+                    .rest(rest);
+            }
+            Display::Ship => {
+                self.ship
+                    .get_or_insert_with(|| {
+                        crate::panel_feed::Live::start(rest, profile, crate::ship::paint)
+                    })
+                    .rest(rest);
+            }
         }
         Ok(())
     }
@@ -343,6 +371,8 @@ impl Panel {
             && self.pressure.is_none()
             && self.mpv.is_none()
             && self.agent.is_none()
+            && self.combat.is_none()
+            && self.ship.is_none()
             && !matches!(self.seen.display, Display::Mpd | Display::Audio);
         if nothing_up || Self::state(profile) != self.seen {
             if let Err(e) = self.show(profile) {
@@ -529,6 +559,8 @@ pub fn watch() -> Result<String, String> {
             // the new profile wants it. (Found live 2026-10-15; the meter shares the pattern
             // but is never rapid-switched during a game.)
             panel.agent = None;
+            panel.combat = None;
+            panel.ship = None;
             switch_to(from.as_ref(), &t, leds).and_then(|_| {
                 *name = t.clone();
                 panel.show(&t)

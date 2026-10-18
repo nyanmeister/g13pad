@@ -12,6 +12,14 @@ the honest failure is an empty/unavailable display and the user turns the LCD to
 mode. Readers already validate what they read (pointer bounds, finite numbers, bounded
 collections, ten-bad-snapshots-then-disable), which is what makes attempting safe.
 
+## Installation (asked 2026-10-18)
+
+Every future program integration must ship a basic installation script. Make relevant
+paths and settings configurable through documented options or configuration, rather than
+hard-coding this machine's setup. Test the actual installer with its defaults and with
+at least one non-default configuration in an isolated destination/session. Record the
+commands and results in that integration's note before calling its setup complete.
+
 ## Inventory: where each game's knowledge lives today (0.2.89)
 
 | Game | Reader process | Record on the feed | Watcher-side knowledge |

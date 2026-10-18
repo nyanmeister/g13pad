@@ -88,11 +88,15 @@ pub enum Display {
     Mpd,
     /// The coding agent (Claude Code, Codex, ...): the turn, fed by the harness's hooks.
     Agent,
+    /// Combat accuracy, style pace and deaths, supplied by a game observer.
+    Combat,
+    /// A vessel's hull, shields and energy, without an organic heartbeat.
+    Ship,
 }
 
 impl Display {
     /// Every choice, in the order the editor lists them.
-    pub const ALL: [Self; 11] = {
+    pub const ALL: [Self; 13] = {
         use crate::meter::Reader;
         [
             Self::Picture,
@@ -106,6 +110,8 @@ impl Display {
             Self::Audio,
             Self::Pressure,
             Self::Agent,
+            Self::Combat,
+            Self::Ship,
         ]
     };
     /// Short name, as the editor's list and the status line show it.
@@ -123,6 +129,8 @@ impl Display {
             Self::Audio => "Microphone and volume",
             Self::Pressure => "Computer load",
             Self::Agent => "Coding agent turn",
+            Self::Combat => "Combat accuracy and style pace",
+            Self::Ship => "Ship hull, shields and energy",
         }
     }
     /// One sentence for a layman, under the label.
@@ -144,6 +152,8 @@ impl Display {
             Self::Agent => {
                 "What the coding assistant (Claude Code, Codex) is doing this turn, fed by the harness's hooks: the activity, a stopwatch, and backlight alerts for permission, failures and idle."
             }
+            Self::Combat => "Accuracy, style per minute and deaths from a game observer, with health, rank and level time.",
+            Self::Ship => "Hull and shield gauges with an energy circle, supplied by a game observer; no heartbeat.",
         }
     }
     /// The comment line that selects this on disk, without the `# `; none for the picture.
@@ -156,6 +166,8 @@ impl Display {
             Self::Audio => "audio on".into(),
             Self::Mpd => "mpd on".into(),
             Self::Agent => "agent on".into(),
+            Self::Combat => "combat on".into(),
+            Self::Ship => "ship on".into(),
         })
     }
     /// Reads a `# WORD VALUE` comment: `Some(Ok(display))` to select, `Some(Ok(Picture))`
@@ -178,6 +190,8 @@ impl Display {
             "audio" => on_off(Self::Audio, "System audio mode"),
             "mpd" => on_off(Self::Mpd, "MPD playback mode"),
             "agent" => on_off(Self::Agent, "agent display"),
+            "combat" => on_off(Self::Combat, "combat display"),
+            "ship" => on_off(Self::Ship, "ship display"),
             _ => return None,
         })
     }
@@ -191,6 +205,8 @@ impl Display {
             Self::Audio => "audio",
             Self::Mpd => "mpd",
             Self::Agent => "agent",
+            Self::Combat => "combat",
+            Self::Ship => "ship",
         }
     }
 }
@@ -555,13 +571,15 @@ mod tests {
     /// either side of the `Display` change read the same.
     #[test]
     fn every_display_round_trips_and_keeps_the_rest() {
-        const WORDS: [&str; 6] = [
+        const WORDS: [&str; 8] = [
             "# health ",
             "# mpv on",
             "# pressure on",
             "# audio on",
             "# mpd on",
             "# agent on",
+            "# combat on",
+            "# ship on",
         ];
         let mut p = Profile::parse("# lcd kept\nbind G1 KEY_A\n# audio-mic \"usb.mic\"\n").0;
         assert_eq!(p.display, Display::Picture);
@@ -583,7 +601,7 @@ mod tests {
             assert_eq!(p.needs_watcher(), display != Display::Picture);
             assert_eq!(p.health().is_some(), matches!(display, Display::Health(_)));
         }
-        assert_eq!(Display::ALL.len(), 11);
+        assert_eq!(Display::ALL.len(), 13);
         assert_eq!(
             Profile::parse("# health cs2").0.display.line().as_deref(),
             Some("health cs2")

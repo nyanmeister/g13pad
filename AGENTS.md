@@ -14,10 +14,13 @@ Read the note for an area before touching it:
 | OBS overlay and the driver's state files | [obs-overlay](docs/notes/obs-overlay.md) |
 | A program on a key (run bindings) | [run-bindings](docs/notes/run-bindings.md) |
 | A new live screen (LCD mode / integration) | [adding-a-live-screen](docs/notes/adding-a-live-screen.md) |
+| EVERSPACE native observer and ship display | [everspace](docs/notes/everspace.md) |
 | Iterating without the package cycle | [iterating-without-packaging](docs/notes/iterating-without-packaging.md) |
 
 ## The shape
 
+- **Every new program integration ships a basic, tested, configurable installation
+  script** (asked 2026-10-18). Follow the [installation requirements](docs/notes/integration-design.md#installation-asked-2026-10-18).
 - **The watcher knows a feed grammar, not games.** A game's knowledge belongs in its
   feeder (`contrib/`, or its own binary like `g13map-factorio`). If a change adds a game's
   name to `src/meter` or `src/ra`, stop: that is the open design question in

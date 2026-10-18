@@ -89,7 +89,9 @@ pub(super) const V1_OUTLINE: &[&str] = &[
 
 /// Letters the feed may put on the panel, including arbitrary research names.
 #[rustfmt::skip]
-pub(super) const LETTERS: [(char, [&str; 7]); 37] = [
+pub(super) const LETTERS: [(char, [&str; 7]); 39] = [
+    ('s', [".....", ".....", ".####", "#....", ".###.", "....#", "####."]),
+    ('m', [".....", ".....", "##.#.", "#.#.#", "#.#.#", "#...#", "#...#"]),
     ('A', [".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#"]),
     ('B', ["####.", "#...#", "#...#", "####.", "#...#", "#...#", "####."]),
     ('C', [".###.", "#...#", "#....", "#....", "#....", "#...#", ".###."]),
@@ -221,7 +223,7 @@ pub(super) fn readout(bm: &mut Bitmap, text: &str, right: i32, y: i32) {
 }
 
 /// A small gauge: a box `w` by `h` with `fill` (0–100) of its inside lit.
-pub(super) fn gauge(bm: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, fill: u32) {
+pub(crate) fn gauge(bm: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, fill: u32) {
     bm.halo(x, y, w, h);
     bm.line(x, y, x + w - 1, y);
     bm.line(x, y + h - 1, x + w - 1, y + h - 1);

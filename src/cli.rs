@@ -29,6 +29,8 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile health NAME MODE      game integration: off, feed (a mod or script),
                                        cs2, log (health console log), retroarch or dolphin (RA)
   g13map profile pressure NAME on|off  show the computer's load (one live display at a time)
+  g13map profile combat NAME on|off    accuracy, style per minute and deaths from a game mod
+  g13map profile ship NAME on|off      hull, shields and energy from a game observer
   g13map profile mpv NAME on|off       select mpv playback diagnostics and progress
   g13map profile mpd NAME on|off       select MPD playback and listening history
   g13map profile audio NAME on|off     select System audio (mic state and level history)
@@ -217,13 +219,15 @@ fn profile(args: &[&str]) -> Result<String, String> {
         }
         // `X on` selects that live display (there is only ever one); `X off` goes back
         // to the picture if X is the one selected, and otherwise changes nothing.
-        ("pressure" | "mpv" | "mpd" | "audio" | "agent", [mode]) => {
+        ("pressure" | "mpv" | "mpd" | "audio" | "agent" | "combat" | "ship", [mode]) => {
             let what = *op;
             let display = match what {
                 "pressure" => Display::Pressure,
                 "mpv" => Display::Mpv,
                 "mpd" => Display::Mpd,
                 "agent" => Display::Agent,
+                "combat" => Display::Combat,
+                "ship" => Display::Ship,
                 _ => Display::Audio,
             };
             match *mode {

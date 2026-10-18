@@ -607,7 +607,7 @@ impl App {
 fn group_of(display: Display) -> &'static str {
     match display {
         Display::Picture => "",
-        Display::Health(_) => "Games",
+        Display::Health(_) | Display::Combat | Display::Ship => "Games",
         Display::Mpv | Display::Mpd => "Media",
         Display::Audio | Display::Pressure | Display::Agent => "This computer",
     }

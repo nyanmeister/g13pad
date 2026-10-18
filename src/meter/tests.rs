@@ -1251,6 +1251,60 @@ mod dump {
 
     #[test]
     #[ignore]
+    fn ultrakill_stats_mocks() {
+        use crate::draw::Draw;
+        let Some(dir) = std::env::var_os("G13MAP_ULTRAKILL_MOCKS") else {
+            return;
+        };
+        let dir = PathBuf::from(dir);
+        fs::create_dir_all(&dir).unwrap();
+        let state = parse(
+            "74/100 cap 90 rank SS style 64 time 124 dash 2.3 rail 60 ttl 3",
+            SystemTime::now(),
+            SystemTime::now(),
+        )
+        .unwrap();
+        let mut meter = Meter::default();
+        meter.tuning.sprite = Sprite::V1;
+        meter.tuning.heart = [2, 1];
+        let mut current = meter.frame(state);
+        for _ in 0..12 {
+            current = meter.frame(state);
+        }
+        pbm(&dir, "a-current.pbm", &current);
+        for (tag, top, bottom) in [
+            ("b-aim", "PARRY 12", "KILLS 34"),
+            ("c-style", "STYLE/M", "DEATHS 2"),
+        ] {
+            let mut bm = Bitmap::blank();
+            text(&mut bm, 2, 1, "ACCURACY", 1);
+            text(&mut bm, 2, 12, "86%", 3);
+            text(&mut bm, 88, 2, top, 1);
+            if tag == "c-style" {
+                text(&mut bm, 88, 12, "4320", 1);
+                text(&mut bm, 88, 23, bottom, 1);
+            } else {
+                text(&mut bm, 88, 18, bottom, 1);
+            }
+            text(&mut bm, 2, 35, "HP 74", 1);
+            text(&mut bm, 75, 35, "SS  02:04", 1);
+            bm.line(77, 1, 77, 29);
+            if tag == "c-style" {
+                let actual = crate::combat::frame(crate::combat::parse(
+                    "combat 1 hp 74 shots 50 hits 43 style 8928 time 124 deaths 2 rank SS known 1 ttl 3",
+                    SystemTime::now(), SystemTime::now(),
+                ));
+                assert!(
+                    bm == actual,
+                    "live Combat renderer must reproduce the chosen C mock"
+                );
+                pbm(&dir, "c-actual.pbm", &actual);
+            }
+            pbm(&dir, &format!("{tag}.pbm"), &bm);
+        }
+    }
+    #[test]
+    #[ignore]
     fn noita_mocks() {
         // Mock round for the Noita screen (2026-10-13): four directions through the real
         // meter. A and D are the shipped grammar alone; B and C add the two custom

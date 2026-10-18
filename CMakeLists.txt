@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.3.5 LANGUAGES C CXX)
+project(g13pad VERSION 0.3.7 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 install(DIRECTORY contrib/df-health/
@@ -20,6 +20,11 @@ endif()
 install(DIRECTORY contrib/terraria-health/
   DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/terraria-health
   USE_SOURCE_PERMISSIONS)
+foreach(integration everspace-health ultrakill-health)
+  install(DIRECTORY contrib/${integration}/
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/${integration}
+    USE_SOURCE_PERMISSIONS)
+endforeach()
 install(PROGRAMS contrib/terraria-health/vanilla/launch.sh
   DESTINATION ${CMAKE_INSTALL_BINDIR} RENAME g13map-terraria)
 find_package(Threads REQUIRED)
@@ -287,7 +292,7 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
   endif()
   # Cargo owns freshness (including include_bytes! assets and manifest changes).
   # Separate package selections keep adapter/driver work out of the GUI dependency graph.
-  foreach(component cli editor anim obs factorio noita music adapter)
+  foreach(component cli editor anim obs factorio everspace noita music adapter)
     set(rust_features)
     set(rust_test_args)
     if(component STREQUAL "editor")
@@ -313,6 +318,13 @@ if(G13PAD_BUILD_EDITOR OR G13PAD_BUILD_CLI OR G13PAD_BUILD_ADAPTER)
       set(rust_binary g13map-factorio)
       set(rust_test factorio-tests)
       list(APPEND rust_test_args --bin g13map-factorio)
+      set(component_enabled ${G13PAD_BUILD_CLI})
+      list(APPEND rust_features --no-default-features)
+    elseif(component STREQUAL "everspace")
+      set(rust_package g13map)
+      set(rust_binary g13map-everspace)
+      set(rust_test everspace-tests)
+      list(APPEND rust_test_args --bin g13map-everspace)
       set(component_enabled ${G13PAD_BUILD_CLI})
       list(APPEND rust_features --no-default-features)
     elseif(component STREQUAL "noita")

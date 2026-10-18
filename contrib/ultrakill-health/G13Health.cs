@@ -24,7 +24,7 @@ using UnityEngine;
 
 namespace G13Health
 {
-    [BepInPlugin("g13pad.health", "G13 Health", "0.1.1")]
+    [BepInPlugin("g13pad.health", "G13 Health", "0.2.0")]
     public class Plugin : BaseUnityPlugin
     {
         static readonly string[] Ranks = { "D", "C", "B", "A", "S", "SS", "SSS", "U" };
@@ -91,6 +91,14 @@ namespace G13Health
             if (rankIndex == null || currentMeter == null)
                 Logger.LogWarning("StyleHUD has no _rankIndex/currentMeter: no style on the panel");
 
+            if (Config.Bind("Stats", "Enabled", true, "Write the combat statistics feed alongside health.").Value)
+            {
+                CombatTracking.Install(Logger);
+                var statsPath = Config.Bind("Stats", "Path", "", "Combat feed path; empty uses combat beside the health feed.");
+                string destination = string.IsNullOrEmpty(statsPath.Value) ? Path.Combine(Path.GetDirectoryName(path), "combat") : statsPath.Value;
+                StatsFeed.Init(destination, path, Logger);
+            }
+
             // Ride the player's own frame.
             MethodInfo target = null;
             foreach (var name in new[] { "Update", "LateUpdate", "FixedUpdate" })
@@ -124,6 +132,7 @@ namespace G13Health
         {
             if (path == null) return;
             if (keepalive != null) keepalive.Dispose();
+            StatsFeed.Close();
             lock (gate)
             {
                 try { File.Delete(path); } catch (Exception) { }
@@ -140,6 +149,10 @@ namespace G13Health
             try
             {
                 line = Compose(__instance);
+                var style = StyleHUD.Instance;
+                string rank = style != null && rankIndex != null
+                    ? Ranks[Mathf.Clamp((int)rankIndex.GetValue(style), 0, Ranks.Length - 1)] : "-";
+                StatsFeed.Publish(__instance, rank);
             }
             catch (Exception e)
             {
@@ -167,6 +180,7 @@ namespace G13Health
         // `wait` when no player has been seen for a while (the menu).
         static void Keepalive(object _)
         {
+            StatsFeed.Keepalive();
             string line;
             lock (gate)
             {

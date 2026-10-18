@@ -46,6 +46,10 @@ src/ra/
 
 contrib/*-health/             external game collectors and their own install instructions
 src/factorio_main.rs          standalone native Factorio memory observer
+src/everspace_main.rs         standalone native EVERSPACE observer/launch wrapper
+src/everspace/                validated native layout, ELF symbols and predictions
+src/ship.rs                   generic ship feed and static hull/shield/energy page
+src/panel_feed.rs             shared changed-frame worker for Ship and Combat
 src/lcd.rs                    stored/imported animation playback and common bitmaps
 src/daemon.rs                 serialized, atomic LCD/command writes
 ```

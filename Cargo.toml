@@ -4,7 +4,7 @@ default-members = [".", "crates/g13pad-core", "crates/g13pad-analog", "crates/g1
 resolver = "2"
 
 [workspace.package]
-version = "0.3.5"
+version = "0.3.7"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -30,6 +30,10 @@ noita = ["dep:noita-engine-reader", "dep:image", "dep:zerocopy"]
 [[bin]]
 name = "g13map-factorio"
 path = "src/factorio_main.rs"
+
+[[bin]]
+name = "g13map-everspace"
+path = "src/everspace_main.rs"
 
 [[bin]]
 name = "g13map-editor"

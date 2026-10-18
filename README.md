@@ -29,7 +29,7 @@ Here is the editor, opened with `g13map edit`:
   CLI reads too.
 - **`g13pad-analog`**, the adapter that makes the stick an Xbox-style controller.
 - **Game observers** that wrap a Steam launch and feed the meter without a mod:
-  `g13map-factorio`, `g13map-noita`, `g13map-goldsrc`, `g13map-terraria`; the mods and
+  `g13map-factorio`, `g13map-everspace`, `g13map-noita`, `g13map-goldsrc`, `g13map-terraria`; the mods and
   scripts for the other games are in `contrib/`.
 - **`g13music`** and its service, the MPD listening-history companion (SQLite), and
   **`g13pad-obs`**, the OBS source plugin, with `g13map-obs` for the same picture as a
@@ -74,6 +74,12 @@ next cast framed, its mana and recharge, and the death tally; see
 [the health meter](docs/health-meter.md) for every game. In the editor, click the screen and choose the game's
 entry under **Shows**, so the window rules put it on the game's windows; the profile's
 own picture stays kept and returns when the choice goes back to **Picture**.
+EVERSPACE's separate **Ship hull, shields and energy** display uses steady hull-band
+colour without a heartbeat, plus repair capacity, time until shield recharge and
+energy endurance/recovery. Its [configurable installer](contrib/everspace-health/README.md)
+sets up the native Linux observer and an optional profile/window rule.
+ULTRAKILL also has a separate Combat view for accuracy, average style points per
+minute and deaths; its [installer](contrib/ultrakill-health/README.md) preserves the Health view.
 `g13map health demo` runs the states on your own panel. See
 [the health meter](docs/health-meter.md) and, for adding a game, [AGENTS.md](AGENTS.md).
 
@@ -117,12 +123,12 @@ The supported route is an OS package: it installs the services, udev rules and g
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
 On Arch, download `PKGBUILD` and `g13pad.install` from the
-[0.3.5 release](https://github.com/nyanmeister/g13pad/releases/tag/v0.3.5) into an
+[0.3.7 release](https://github.com/nyanmeister/g13pad/releases/tag/v0.3.7) into an
 empty directory and run `makepkg`. That recipe downloads the source archive and
 verifies its SHA-256 checksum. xboxdrv is an optional separate dependency, not bundled.
 
-For a local checkout, export a committed tree as `g13pad-0.3.5.tar.gz` with
-`git archive --format=tar.gz --prefix=g13pad-0.3.5/ HEAD > g13pad-0.3.5.tar.gz`, put it beside both files
+For a local checkout, export a committed tree as `g13pad-0.3.7.tar.gz` with
+`git archive --format=tar.gz --prefix=g13pad-0.3.7/ HEAD > g13pad-0.3.7.tar.gz`, put it beside both files
 from `packaging/`, and run `makepkg`. The in-tree recipe uses `SKIP` only for this
 locally generated archive; published release recipes carry a fixed checksum.
 
@@ -220,6 +226,7 @@ g13map health source DIR sp         # Source engine game: install the LCD module
 g13map health dfhack DIR             # Dwarf Fortress + DFHack: fortress or adventure LCD
 g13map-goldsrc %command%             # GoldSource handler for native Half-Life/mods
 g13map-factorio %command%            # read-only native Factorio observer, no game mod
+g13map-everspace %command%           # native EVERSPACE observer; profile ship NAME on
 g13map-noita %command%              # read-only Noita observer (Proton), no mod, achievements stay
 g13map-terraria %command%            # Terraria, through its launcher
 g13map ra launch                    # RetroArch with achievements and the game readers

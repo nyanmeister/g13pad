@@ -18,6 +18,7 @@ mod board;
 #[cfg(feature = "editor")]
 mod calibrate;
 mod cli;
+pub mod combat;
 mod daemon;
 mod demo;
 mod display_clock;
@@ -44,11 +45,13 @@ pub mod music;
 pub mod obs;
 pub mod overlay;
 mod panel;
+mod panel_feed;
 pub mod pressure;
 pub mod profile;
 pub mod ra;
 pub mod run;
 mod session;
+pub mod ship;
 #[cfg(test)]
 mod test_support;
 #[cfg(feature = "editor")]

@@ -4,7 +4,7 @@
 # shellcheck disable=SC2034,SC2154
 # Local-checkout recipe. Release assets supply the source URL and fixed checksum.
 pkgname=g13pad
-pkgver=0.3.5
+pkgver=0.3.7
 pkgrel=1
 pkgdesc='Logitech G13 driver, profile editor, LCD and analog-stick integration'
 arch=('x86_64')

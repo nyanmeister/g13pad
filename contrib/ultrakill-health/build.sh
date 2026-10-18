@@ -3,14 +3,19 @@
 # Builds G13Health.dll with Mono's csc against the game's own assemblies and BepInEx's
 # core: build.sh GAME_DIR BEPINEX_CORE_DIR [OUT_DIR]
 set -eu
+case ${1:-} in
+  --version) echo 'ultrakill-g13-build 0.2.0'; exit 0 ;;
+  --help) echo 'Usage: build.sh GAME_DIR BEPINEX_CORE_DIR [OUT_DIR]'; exit 0 ;;
+esac
 game=${1:?game directory (the one with ULTRAKILL_Data)}
 core=${2:?BepInEx/core directory}
 out=${3:-.}
 m="$game/ULTRAKILL_Data/Managed"
 here=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+mkdir -p -- "$out"
 csc -nologo -target:library -nostdlib -noconfig -optimize+ -out:"$out/G13Health.dll" \
   -r:"$m/mscorlib.dll" -r:"$m/System.dll" -r:"$m/System.Core.dll" -r:"$m/netstandard.dll" \
   -r:"$m/UnityEngine.dll" -r:"$m/UnityEngine.CoreModule.dll" -r:"$m/Assembly-CSharp.dll" \
   -r:"$core/BepInEx.dll" -r:"$core/0Harmony.dll" \
-  "$here/G13Health.cs"
+  "$here/G13Health.cs" "$here/Accuracy.cs" "$here/CombatTracking.cs" "$here/StatsFeed.cs"
 echo "built $out/G13Health.dll"

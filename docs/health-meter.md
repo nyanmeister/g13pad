@@ -193,6 +193,31 @@ health with its hard-damage cap, the style rank and meter, the level timer, the 
 and the rail charge, each as its own word (below), and `sprite v1` in the profile's
 tuning lines puts V1 in the corner. Its README has the install (BepInEx in the game
 folder, a `WINEDLLOVERRIDES` launch option for Proton, the DLL in `BepInEx/plugins/`).
+The same plugin can also feed the separate **Combat accuracy and style pace**
+display: accuracy, average style points per minute and deaths, with small health,
+rank and time. Use `g13map profile combat NAME on`, or the configurable installer
+in [ultrakill-health](../contrib/ultrakill-health/README.md). The original Health
+view remains selectable. Coin throws are neutral; pellets and ricochet/splash
+damage credit each contributing fired attack at most once.
+
+## EVERSPACE
+
+Original EVERSPACE's native Linux client has a separate **Ship hull, shields and
+energy** display: hull and shield gauges, a circular energy gauge with an inverse
+lightning bolt, and steady hull-band backlight without a heartbeat or critical
+blink. `FIX +12%` means carried nanobots can currently repair another 12 percentage
+points of hull. An hourglass with `8s` means eight game seconds until shield
+recharge can begin, including the longer shutdown after depletion. `READY` means
+that delay has ended; it does not mean the shield is full. A ship without shields
+shows `NO SHIELD`.
+
+`78% -6s` combines energy with estimated endurance at the current net consumption;
+`78% +6s` means estimated time to full at the current recovery rate. Estimates
+follow the game's clock, include regeneration delay, and disappear when unavailable
+or fully charged. Longer timers use rounded-up minutes when necessary. See the
+[installer and setup](../contrib/everspace-health/README.md), then select
+`g13map profile ship NAME on`. EVERSPACE 2 and Windows/Proton are not supported by
+this native reader.
 
 ## Factorio
 

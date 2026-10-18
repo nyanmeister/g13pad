@@ -1,5 +1,100 @@
 # Validation record
 
+## 0.3.7 — EVERSPACE ship display and configurable installer — 2026-10-18
+
+- Separate Ship feed/display: hull/shields and a circular energy gauge with an
+  inverse bolt. Selected hourglass mockup reproduced pixel for pixel in the final
+  sample. `FIX +N%`, shield recharge-start countdown, and combined energy percent
+  with conditional drain/recovery time. Lowercase seconds; steady critical red,
+  no heartbeat/blink. Inspected no-shield, ready, depleted, wide and long values.
+- Original native EVERSPACE 1.3.5.36555, Steam build4246486. Initial live hull/energy
+  matched the HUD; no-shield ship correctly distinguished from a depleted shield.
+  Normal Steam parent wrapper produced current hull/energy/repair/time readings
+  with zero effective/permitted capabilities; watcher switched automatically to
+  the game profile. The installed observer used about6.7MiB RSS and0.2% cumulative
+  CPU in a short live sample; this is an observation, not a performance guarantee.
+  The owner confirmed the combined drain/recovery readout behaves correctly in
+  live play. Shielded play and spending repair supplies remain outside this evidence.
+- Workspace library checks: root240 +core3 +music1 passed, **19 ignored**; native
+  reader8 passed. Ship7 passed, its explicitly ignored frame exporter separately
+  run and inspected. The actual private-FIFO worker held critical red across a
+  full two-second blink cycle, then restored the resting colour. Unrelated ignored
+  live emulator/audio/fuzz tests were not run. Clippy clean with the pre-existing
+  `large_enum_variant` allowance; formatting and ShellCheck clean.
+- Fresh structured randomized feed/ratio/ELF cases supplement hand-counted native
+  values. Private copied-source mutations changing cooldown max to min, dropping
+  duplicate-field rejection and removing bolt inversion failed their matching
+  tests. Production source was never mutated. Full-suite sandbox loopback failures
+  were rerun with host loopback access and passed.
+- Actual installer executed under private default Steam HOME and custom paths
+  with spaces, profile/config/feed overrides, unrelated binding/rule preservation,
+  repeated-install backups and rejected prerequisites. Generated wrapper executed
+  literal metacharacter arguments and preserved child exit23, wrote its custom
+  feed, and answered `--version`/`--help`. That last check caught and fixed a wrapper
+  option-forwarding bug. Recipient setup requires no desktop manager, root or mod.
+- Reader, CLI and editor report0.3.7; reader installed per-user and development
+  watcher refreshed on the development host. At initial integration validation,
+  the system package remained0.3.5, before the separate0.3.7 release installation.
+- Analog input follow-up: user confirmed the **G13 Analog** Steam template works
+  in EVERSPACE. Previously the healthy adapter produced full-range X/Y but Steam
+  loaded Empty Bindings and logged `xinput: false`. After enabling Steam Input
+  and applying G13 Analog, Steam saved that device-specific layout and logged
+  `xinput: true`, reloading it on focus. No driver/service change. The user also
+  confirmed clearing duplicate Hover-Y leaves the intended thrust/strafe movement.
+- Mixed mouse/analog follow-up: native input tracing captured repeated gamepad
+  mode transitions during recentering. The optional one-byte native-game patch
+  disables automatic entry into that mode, separately from read-only telemetry.
+  With Touchpad OFF, the user confirmed analog movement, off-center mouse aiming,
+  menus, desktop pointer and return to flight all work. The patched trace stayed
+  in mouse mode. Touchpad ON had initially helped but then caused cursor loss;
+  centered-crosshair and gamepad aiming-axis unbindings alone did not help.
+  `mixed-input.sh` apply/restore round-tripped a private original copy byte for
+  byte, including repeated operations and custom paths with spaces. Unknown game
+  hashes and damaged backups were rejected without altering the game copy.
+  Default Steam/XDG paths also passed. A deliberately wrong-offset private script
+  failed staged-hash verification before replacement. The live in-use test caught
+  a `fuser -- FILE` incompatibility; corrected to an absolute-path invocation and
+  verified rejection of the running game, then exact round-trip of an inactive
+  copy. ShellCheck, Bash syntax and dependency-free `--version` passed.
+  No unrelated Rust suite was rerun for
+  this standalone script/docs change. Exact scope and rollback are in the
+  [integration setup](../contrib/everspace-health/README.md#mouse-aiming-with-the-analog-stick).
+
+## 0.3.6 — ULTRAKILL combat accuracy, style pace and deaths — 2026-10-18
+
+- Selected from real-renderer mockups: accuracy, average style points per minute
+  and deaths, with small health, rank and level time. The implemented frame is
+  checked against that composition. Combat is a separate display/feed; attribution
+  belongs to the game observer, which shares one fired-attack root across pellets,
+  ricochets and explosions. Coin throws are neutral; enemy damage credits a root
+  once. Level changes reset counters; checkpoint retries retain accuracy/deaths.
+- Live Steam build 22957324 under Proton loaded plugin 0.2.0 and 108 attack/carrier
+  hooks without accuracy errors. The owner confirmed misses lower accuracy,
+  successful coin ricochets work, and core-eject explosions and explosive
+  railcannon register hits. Rocket launcher and combined core+rail nuke attribution
+  are covered by fixtures, not confirmed in-game. Delayed gas propagation through
+  multiple world voxels and every unusual weapon technique remain unverified.
+- Ledger checks use hand-counted cases and fresh randomized causal merges. The
+  real-Harmony fixture exercises spawned/delayed carriers, pellet deduplication,
+  neutral utility actions, a two-root nuke, exception preservation and scene reset.
+  It uses substitute Unity objects; it caught a delayed-coin regression when an
+  apparently empty scheduling callback was omitted from hook selection.
+- The configurable installer was exercised under a private default Steam HOME and
+  custom paths with spaces, preserving unrelated config, literal Windows paths
+  and profile bindings. Repeated installs and missing prerequisites were checked.
+  The real loader exposed backup DLL discovery inside hidden plugin directories;
+  backups now live beside that directory. A recursive scan regression rejects the
+  old backup location. Duplicate-hit, spawn-attribution, parser-coherence and backup
+  mutations all fail their corresponding checks.
+- Default workspace library results: root 233 passed, 18 ignored; core 3 passed;
+  music 1 passed. The ignored renderer mock was separately run and passed; remaining
+  ignored live RAM/log/audio/export/fuzzer boundaries were not run. Five combat
+  checks include randomized valid records and an actual private FIFO frame worker.
+  Formatting, ShellCheck, CLI installer/profile and native agent-hook checks passed.
+  Clippy passed with the existing unrelated `large_enum_variant` allowance.
+- CLI and editor report 0.3.6. Live development watcher and plugin are installed;
+  the system package remains 0.3.5. No package, public release or VM update claimed.
+
 ## 0.3.1–0.3.5 — coding-agent display and native Codex hooks — 2026-10-17
 
 - The watcher reads a small per-terminal feed, selected by the focused X11 window
