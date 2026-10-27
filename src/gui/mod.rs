@@ -141,6 +141,8 @@ struct App {
     wins: Vec<focus::Win>,
     wins_at: Option<Instant>,
     wins_err: String,
+    /// Whether the panel applet shows the active profile's name (`~/.config/g13map/panel`).
+    panel_name: bool,
     /// When the active profile was last compared with the file (the watcher switches too).
     active_checked: Instant,
     /// When the adapter service was last asked whether it runs (a fork per ask).
@@ -229,6 +231,7 @@ impl App {
             wins: vec![],
             wins_at: None,
             wins_err: String::new(),
+            panel_name: crate::panel::Settings::load().show_name,
             active_checked: Instant::now(),
             analog_checked: Instant::now(),
             gamepad_edit: Mapping::default(),

@@ -194,6 +194,26 @@ impl App {
             );
         }
         self.modes_tick(ui);
+        let mut show = self.panel_name;
+        if ui
+            .checkbox(&mut show, "Show the profile name in the panel applet")
+            .on_hover_text(
+                "Beside the device mark in the LXQt or XFCE panel; off leaves the mark alone. \
+                 The applet picks the change up at its next refresh, within half a minute.",
+            )
+            .changed()
+        {
+            self.panel_name = show;
+            let r = crate::panel::Settings { show_name: show }.save();
+            self.report(
+                r,
+                if show {
+                    "the panel applet shows the profile name"
+                } else {
+                    "the panel applet shows the mark alone"
+                },
+            );
+        }
         ui.label(
             RichText::new(
                 "Each program (by its window class) can have a profile: when one of its windows \

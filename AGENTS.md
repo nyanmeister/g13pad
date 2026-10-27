@@ -46,6 +46,12 @@ Read the note for an area before touching it:
   on the pad; see [adding-a-live-screen](docs/notes/adding-a-live-screen.md)). Reach for the
   empirical check at the boundary first: a private display, a grep of the live log, a frame
   dump looked at, the `Live` thread actually run.
+- A hook that runs inside a daemon speaks for the daemon. Codex hooks run in the shared
+  app-server, so `WINDOWID` was the terminal it was first launched from, dead for days; every
+  Codex feed sat under that id and the pad never followed his focused Codex window, while the
+  doc carried it as a caveat (2026-10-20). When a feed is keyed by something inherited, read
+  `/proc/<pid>/environ` of the process the user actually looks at and check the key names a
+  window that exists (`xdotool search --class`); `g13map agent status` shows the keys in use.
 - Report passed *and* ignored. The ignored tests are the boundary ones (live RAM, the
   Dolphin log, the audio server, the mutation fuzzers); run the one whose boundary the
   change touches and say so.

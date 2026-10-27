@@ -1,5 +1,72 @@
 # Validation record
 
+## 0.3.10 — panel applet: the profile name alone, and a switch to hide it — 2026-10-27
+
+- Package built from the committed tree (`d33ad37`) under `/tmp/g13-package-0.3.10`
+  against the warm `build/rust` cache; ctest 55/55. Installed over 0.3.9 with `pacman -U`
+  through sudo-gui; `g13map-watch.service` restarted onto `/usr/bin/g13map` 0.3.10
+  (running executable checked through `/proc`); driver, analog and music services kept
+  running. `g13map` and `g13map-editor` both answer 0.3.10. The 0.3.9 package is kept
+  under `/tmp/g13-package-0.3.9` for rollback. `/usr/share/g13pad/drg-health/` now ships.
+- Applet text: beside the mark (LXQt, XFCE) the active profile's name alone, nothing for
+  `default`, a cross when the driver is away; `G13` kept where there is no mark (Waybar,
+  plain text). `g13map panel name on|off` and the editor's Window rules checkbox write
+  `~/.config/g13map/panel`. Checked by a hand-derived ten-row table test, a settings
+  round trip, the CLI contract script (`panel name off` empties the LXQt/XFCE text and
+  Waybar falls back to `G13`), the editor's test suite, and on this host after the
+  install: `g13map panel lxqt` decodes to the active profile's name. The LXQt panel's own
+  repaint happens on its 30 s poll; the owner was asked to look.
+- Not rerun: the 17 ignored boundary tests of the library suite; nothing in their areas
+  changed.
+
+## 0.3.9 — agent screen: context ring, SubagentStart count, focus key — 2026-10-27
+
+- Package built from the committed tree (`bef4efc`) under `/tmp/g13-package-0.3.9` against
+  the warm `build/rust` cache; ctest 55/55 (220 s). Installed over 0.3.8 with `pacman -U`
+  through sudo-gui; the install hook reloaded udev. `g13map-watch.service` returned from
+  the development drop-in to `/usr/bin/g13map` 0.3.9 (running executable checked through
+  `/proc`); the driver and analog system services stayed up (their code is unchanged).
+  No 0.3.8 package is in the pacman cache (it was installed from `/tmp`), so rollback is a
+  rebuild from `3ca4ef6`.
+- Context ring: the feed word `context N`, set by `g13map agent feed status` from the
+  status line's JSON (`context_window.used_percentage`), drawn as a ring clockwise round
+  the pulse with a lit disc rising inside it and the heart dark where covered (option C of
+  the 2026-10-27 sheet in `G13 Review/mockup-20261027`, chosen by the owner over ring-only
+  and a draining heart). Checked by a hand-derived geometry test that fails on a reversed
+  ring (mutant run), by the hook contract script (status sets the word once per change and
+  never creates a feed), on the dev watcher with a fed 31 % (owner asked to look), and
+  live after the install: the real status line hop replaced the fed figure with the
+  session's own 35 % within a minute, with no manual call.
+- Agent count: now from `SubagentStart`/`SubagentStop` for Claude Code too (an `Agent`
+  call no longer counts until it starts); `g13map agent hooks` prints the new hook and this
+  host's settings carry it. Moved to the lower right. The contract script covers the Claude
+  path; its own exit-1 from a second kill of the fake TUI is fixed.
+- Focus key: `g13map agent focus [next]` over i3 `[id=N] focus` or EWMH
+  `_NET_ACTIVE_WINDOW`; selection is unit-tested by hand-derived cases (longest-pending
+  human ask first; `next` cycles by window id). Confirmed by the owner on the pad at 02:02: the window opened at once.
+- Not in this package: `contrib/drg-health/install.sh` (added the same day for the Wine
+  HOME change) is not installed under `/usr/share/g13pad` yet; the CMake list gains it for
+  the next package. Not rerun: the 17 ignored boundary tests of the library suite; nothing
+  in their areas changed.
+
+## 0.3.8 — agent screen follows the focused Codex terminal; resting pulse — 2026-10-20
+
+- Package built from the committed tree under `/tmp/g13-package-0.3.8` against the warm
+  `build/rust` cache; ctest 55/55. Installed over 0.3.7 with `pacman -U`; the install hook
+  reloaded udev and retagged the pad. `g13map-watch.service` returned from the development
+  drop-in to `/usr/bin/g13map` 0.3.8 (running executable checked through `/proc`); the
+  driver, analog and music services were left running (their code is unchanged in 0.3.8)
+  and report 0.3.8 only from their files until their next start.
+- Cause of the focus complaint: Codex hooks run in the shared app-server, whose `WINDOWID`
+  was a terminal closed days earlier, so Codex feeds were keyed to a dead window. The feeder
+  now keys a session to the `codex` TUI whose cwd matches the hook's cwd. Checked by the
+  hook contract script with a real process named `codex`, by a private-runtime call that
+  resolved the real TUI's window, and on the pad by the owner: it switches agents on focus.
+- Pulse: 60 a minute as a lub-dub, each contraction seven 20 ms frames (the owner asked for
+  a longer hold after a five-frame first cut); `agent::render` tests cover the shape.
+- Not rerun for this release: the 17 ignored boundary tests of the library suite (live RAM,
+  Dolphin log, audio server, fuzzers); nothing in their areas changed.
+
 ## 0.3.7 — EVERSPACE ship display and configurable installer — 2026-10-18
 
 - Separate Ship feed/display: hull/shields and a circular energy gauge with an

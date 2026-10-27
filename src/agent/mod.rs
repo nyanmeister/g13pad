@@ -13,6 +13,7 @@
 mod codex;
 pub mod feed;
 pub mod feeder;
+pub mod focus;
 pub mod render;
 pub mod runtime;
 pub use feed::{parse, read, read_all, read_for, select, write};
@@ -76,6 +77,9 @@ pub struct Trailer {
     pub last: Option<Duration>,
     pub fail_at: Option<SystemTime>,
     pub deny_at: Option<SystemTime>,
+    /// The context window used, in percent, when the harness reports it (Claude Code's
+    /// status line does; Codex's hooks do not): the ring around the pulse. `None` draws none.
+    pub context: Option<u8>,
 }
 
 /// Who needs attention: a human permission, a pending question, or remote review.
@@ -118,6 +122,30 @@ pub enum State {
 }
 
 impl State {
+    /// The same phase with another trailer.
+    pub fn with_trailer(&self, trailer: Trailer) -> State {
+        match self {
+            State::Turn {
+                activity, started, ..
+            } => State::Turn {
+                activity: activity.clone(),
+                started: *started,
+                trailer,
+            },
+            State::Ask {
+                attention, started, ..
+            } => State::Ask {
+                attention: *attention,
+                started: *started,
+                trailer,
+            },
+            State::Ready { .. } => State::Ready { trailer },
+            State::Denied { .. } => State::Denied { trailer },
+            State::Idle { .. } => State::Idle { trailer },
+            State::Waiting { .. } => State::Waiting { trailer },
+        }
+    }
+
     pub fn trailer(&self) -> Trailer {
         match self {
             State::Turn { trailer, .. }
@@ -167,6 +195,9 @@ impl State {
         }
         if let Some(d) = t.deny_at {
             s.push_str(&format!(" deny {}", epoch_ms(d)));
+        }
+        if let Some(c) = t.context {
+            s.push_str(&format!(" context {c}"));
         }
         s
     }

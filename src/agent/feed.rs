@@ -74,6 +74,7 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
             "last" => trailer.last = Some(millis(value)?),
             "fail" => trailer.fail_at = Some(epoch(value)?),
             "deny" => trailer.deny_at = Some(epoch(value)?),
+            "context" => trailer.context = Some(value.parse::<u8>().ok()?.min(100)),
             "ttl" => {
                 let ttl = Duration::try_from_secs_f64(value.parse::<f64>().ok()?).ok()?;
                 if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {

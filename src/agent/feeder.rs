@@ -45,8 +45,22 @@ fn activity_for(tool: &str) -> &str {
 }
 
 /// The subagent-spawning tools, which bump the background-agent count.
-fn spawns_agent(tool: &str) -> bool {
-    matches!(tool, "Task" | "Agent")
+/// The ttl a phase is written with: a turn expires in minutes, a rest in hours.
+fn ttl_for(state: &State) -> Duration {
+    match state {
+        State::Turn { .. } => TURN_TTL,
+        _ => REST_TTL,
+    }
+}
+
+/// The context window used, as the status line JSON reports it (`context_window.
+/// used_percentage`, a float), rounded to whole percent and clamped to 0..=100.
+fn context_pct(json: &Value) -> Option<u8> {
+    let pct = json["context_window"]["used_percentage"].as_f64()?;
+    if !pct.is_finite() {
+        return None;
+    }
+    Some(pct.round().clamp(0.0, 100.0) as u8)
 }
 
 /// Best-effort failure test on a PostToolUse `tool_response`. Tools differ; this catches the
@@ -97,13 +111,14 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
                 TURN_TTL,
             )
         }
-        // A tool is about to run: set its face, keep the turn's start, bump agents for a spawn.
+        // A tool is about to run: set its face, keep the turn's start. A spawn is counted by
+        // SubagentStart (`substart`), not here: a refused Agent call never starts one.
         "pretool" => {
             let tool = json["tool_name"].as_str().unwrap_or("");
             if tool == "AskUserQuestion" {
                 return next("question", json, current, now);
             }
-            let (started, mut trailer) = match current {
+            let (started, trailer) = match current {
                 Some(State::Turn {
                     started, trailer, ..
                 }) => (started, trailer),
@@ -114,9 +129,6 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
                 }) => (started, trailer),
                 other => (now, carried(&other)),
             };
-            if spawns_agent(tool) {
-                trailer.agents = (trailer.agents + 1).min(super::MAX_AGENTS);
-            }
             Action::Set(
                 State::Turn {
                     activity: Activity::parse(activity_for(tool)),
@@ -126,6 +138,26 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
                 TURN_TTL,
             )
         }
+        // A subagent started: one more background agent, the phase otherwise as it is (a
+        // spawn can land while a permission is pending). No feed, no agent to count.
+        "substart" => match current {
+            Some(state) => {
+                let mut trailer = state.trailer();
+                trailer.agents = (trailer.agents + 1).min(super::MAX_AGENTS);
+                Action::Set(state.with_trailer(trailer), ttl_for(&state))
+            }
+            None => Action::Nothing,
+        },
+        // The harness's status line, with its JSON on stdin: only the context ring changes,
+        // and only on a live feed (a status line outliving its session must not revive one).
+        "status" => match (current, context_pct(json)) {
+            (Some(state), Some(pct)) if state.trailer().context != Some(pct) => {
+                let mut trailer = state.trailer();
+                trailer.context = Some(pct);
+                Action::Set(state.with_trailer(trailer), ttl_for(&state))
+            }
+            _ => Action::Nothing,
+        },
         // A tool finished: heartbeat the turn, flash orange on failure, face back to THINKING
         // until the next tool (so a long gap does not keep claiming a finished tool).
         "posttool" => {
@@ -263,6 +295,136 @@ fn window() -> Option<u64> {
     std::env::var("WINDOWID").ok().and_then(|s| s.parse().ok())
 }
 
+/// A running Codex TUI: the window it draws in, the directory it was started in, and
+/// when it started (for picking the newest of several in one directory).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Tui {
+    pub window: u64,
+    pub cwd: std::path::PathBuf,
+    pub started: u64,
+}
+
+/// Codex hooks run inside the app-server, whose `WINDOWID` is the terminal it was first
+/// started from — for every later session, even after that terminal closes (found
+/// 2026-10-20: every Codex feed landed under a dead window id and the pad never followed
+/// the focused Codex terminal). The TUI in front of the user is a `codex` process whose
+/// cwd is the session's `cwd` and whose own `WINDOWID` is the right key. Pick the newest
+/// such TUI not already paired with another session; none means the env's window.
+pub(crate) fn choose_tui(tuis: &[Tui], cwd: &std::path::Path, claimed: &[u64]) -> Option<u64> {
+    let same_dir = || tuis.iter().filter(|t| t.cwd == cwd);
+    let free = same_dir()
+        .filter(|t| !claimed.contains(&t.window))
+        .max_by_key(|t| t.started);
+    free.or_else(|| same_dir().max_by_key(|t| t.started))
+        .map(|t| t.window)
+}
+
+/// Every Codex TUI on this machine, from /proc: comm `codex`, not the app-server, with a
+/// `WINDOWID`. Zombies and processes of other users read as nothing and are skipped.
+fn tuis() -> Vec<Tui> {
+    let Ok(procs) = std::fs::read_dir("/proc") else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for entry in procs.flatten() {
+        let pid = entry.file_name();
+        let Some(pid) = pid
+            .to_str()
+            .filter(|s| s.bytes().all(|b| b.is_ascii_digit()))
+        else {
+            continue;
+        };
+        let dir = std::path::Path::new("/proc").join(pid);
+        let comm = std::fs::read_to_string(dir.join("comm")).unwrap_or_default();
+        if comm.trim_end() != "codex" {
+            continue;
+        }
+        let cmdline = std::fs::read(dir.join("cmdline")).unwrap_or_default();
+        if cmdline.split(|b| *b == 0).any(|arg| arg == b"app-server") {
+            continue;
+        }
+        let Ok(environ) = std::fs::read(dir.join("environ")) else {
+            continue;
+        };
+        let Some(window) = environ
+            .split(|b| *b == 0)
+            .find_map(|kv| kv.strip_prefix(b"WINDOWID="))
+            .and_then(|v| std::str::from_utf8(v).ok()?.parse().ok())
+        else {
+            continue;
+        };
+        let Ok(cwd) = std::fs::read_link(dir.join("cwd")) else {
+            continue;
+        };
+        // Field 22 of /proc/PID/stat is the start time in clock ticks since boot.
+        let started = std::fs::read_to_string(dir.join("stat"))
+            .ok()
+            .and_then(|st| st.rsplit(')').next().map(|tail| tail.to_string()))
+            .and_then(|tail| tail.split_whitespace().nth(19).and_then(|v| v.parse().ok()))
+            .unwrap_or(0);
+        out.push(Tui {
+            window,
+            cwd,
+            started,
+        });
+    }
+    out
+}
+
+/// Where a session's pairing with its window is remembered (in the feeds dir, a name
+/// `read_all` ignores). A session id is a UUID; anything else is not trusted as a path.
+fn memo(session: &str) -> Option<std::path::PathBuf> {
+    let clean = session.len() <= 64
+        && !session.is_empty()
+        && session
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_');
+    clean
+        .then(|| super::feed::dir().ok())
+        .flatten()
+        .map(|d| d.join(format!("session-{session}")))
+}
+
+/// The window for a Codex event: the remembered one for its session, else the TUI whose
+/// cwd matches (remembered from then on), else the hook's own `WINDOWID`.
+fn codex_window(json: &Value, env_window: Option<u64>) -> Option<u64> {
+    let session = json["session_id"].as_str().unwrap_or("");
+    let path = memo(session);
+    if let Some(win) = path
+        .as_ref()
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| s.trim().parse::<u64>().ok())
+    {
+        return Some(win);
+    }
+    let cwd = json["cwd"].as_str().map(std::path::PathBuf::from);
+    let found = cwd.and_then(|cwd| {
+        let cwd = std::fs::canonicalize(&cwd).unwrap_or(cwd);
+        let claimed: Vec<u64> = super::feed::dir()
+            .ok()
+            .and_then(|d| std::fs::read_dir(d).ok())
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with("session-"))
+            .filter_map(|e| std::fs::read_to_string(e.path()).ok()?.trim().parse().ok())
+            .collect();
+        choose_tui(&tuis(), &cwd, &claimed)
+    });
+    if let (Some(win), Some(p)) = (found, &path) {
+        let tmp = p.with_extension("new");
+        let _ = std::fs::write(&tmp, format!("{win}\n")).and_then(|_| std::fs::rename(&tmp, p));
+    }
+    found.or(env_window)
+}
+
+/// A session is over: forget its window pairing.
+fn forget_codex(json: &Value) {
+    if let Some(p) = memo(json["session_id"].as_str().unwrap_or("")) {
+        let _ = std::fs::remove_file(p);
+    }
+}
+
 /// `g13map agent ...`. Never fails the harness: a feed call always exits 0.
 pub(crate) fn command(args: &[&str]) -> Result<String, String> {
     match args {
@@ -274,6 +436,8 @@ pub(crate) fn command(args: &[&str]) -> Result<String, String> {
             feed(event, true);
             Ok(String::new()) // silent: a hook's stdout can reach the session
         }
+        ["focus"] => super::focus::command(false),
+        ["focus", "next"] => super::focus::command(true),
         ["hooks"] => Ok(HOOKS.into()),
         ["hooks", "codex"] => Ok(super::codex::hooks(false)),
         ["hooks", "codex", "human"] => Ok(super::codex::hooks(true)),
@@ -284,15 +448,21 @@ pub(crate) fn command(args: &[&str]) -> Result<String, String> {
 
 /// Apply one event to this terminal's feed. Best-effort; a failure is logged, never fatal.
 fn feed(event: &str, codex: bool) {
-    let Some(win) = window() else {
-        // Not in a keyable terminal (no $WINDOWID): nothing to do, but do not fail the hook.
-        return;
-    };
     let json: Value = {
         use std::io::Read;
         let mut buf = String::new();
         let _ = std::io::stdin().read_to_string(&mut buf);
         serde_json::from_str(&buf).unwrap_or(Value::Null)
+    };
+    let win = if codex {
+        codex_window(&json, window())
+    } else {
+        window()
+    };
+    let Some(win) = win else {
+        // Not in a keyable terminal (no $WINDOWID, no TUI found): nothing to do, but do
+        // not fail the hook.
+        return;
     };
     // Tools and subagents can finish concurrently. Serialize the entire update,
     // including the read, so counts and atomic-write temporary files cannot race.
@@ -325,6 +495,9 @@ fn feed(event: &str, codex: bool) {
             if let Err(e) = super::write(win, None, None) {
                 eprintln!("g13map agent feed: {e}");
             }
+            if codex {
+                forget_codex(&json);
+            }
         }
         Action::Nothing => {}
     }
@@ -344,8 +517,10 @@ fn status() -> Result<String, String> {
 }
 
 const USAGE: &str =
-    "usage: g13map agent feed EVENT   (EVENT: prompt pretool posttool deny notify stop substop end)
+    "usage: g13map agent feed EVENT   (EVENT: prompt pretool posttool deny notify stop
+                                  substart substop status end)
        g13map agent codex EVENT   consume a native Codex hook event
+       g13map agent focus [next]  raise the agent terminal needing you (next: cycle them)
        g13map agent hooks codex   print Codex hooks.json (review with /hooks)
        g13map agent hooks codex human   hooks for human-reviewed approvals
        g13map agent hooks        print the Claude Code hooks settings to wire it up
@@ -360,6 +535,7 @@ const HOOKS: &str = r#"Add to ~/.claude/settings.json (merge with any existing "
     "PostToolUse": [{"matcher":"*","hooks":[{"type":"command","command":"g13map agent feed posttool"}]}],
     "Notification": [{"hooks":[{"type":"command","command":"g13map agent feed notify"}]}],
     "Stop":          [{"hooks":[{"type":"command","command":"g13map agent feed stop"}]}],
+    "SubagentStart": [{"hooks":[{"type":"command","command":"g13map agent feed substart"}]}],
     "SubagentStop":  [{"hooks":[{"type":"command","command":"g13map agent feed substop"}]}],
     "SessionEnd":    [{"hooks":[{"type":"command","command":"g13map agent feed end"}]}]
   }
@@ -367,7 +543,11 @@ const HOOKS: &str = r#"Add to ~/.claude/settings.json (merge with any existing "
 
 The terminal must export $WINDOWID (kitty, xterm and most X11 terminals do). Set the
 profile for your terminal's window to the agent display: g13map profile agent NAME on,
-and g13map focus set <class> NAME so it shows when that terminal is focused."#;
+and g13map focus set <class> NAME so it shows when that terminal is focused.
+
+For the context ring, pipe the status line's JSON on: in your statusLine command,
+after printing, run `g13map agent feed status` with the same stdin JSON (it reads
+context_window.used_percentage and nothing else). Without it the ring is not drawn."#;
 
 #[cfg(test)]
 mod tests {
@@ -427,16 +607,94 @@ mod tests {
         assert_eq!(activity.as_str(), "RUNNING BASH");
         assert_eq!(started, t(1_000)); // start preserved, not reset to 2_000
 
-        // A Task spawns an agent: the count goes up.
+        // An Agent call is not yet an agent (it can be refused): the count waits for
+        // SubagentStart, which keeps the phase it lands on, face included.
         let Action::Set(State::Turn { trailer, .. }, _) = next(
             "pretool",
-            &json!({"tool_name": "Task"}),
+            &json!({"tool_name": "Agent"}),
             Some(turn.clone()),
             t(2_000),
         ) else {
             panic!();
         };
-        assert_eq!(trailer.agents, 1);
+        assert_eq!(trailer.agents, 0);
+        let Action::Set(
+            State::Turn {
+                trailer,
+                activity,
+                started,
+            },
+            ttl,
+        ) = next(
+            "substart",
+            &json!({"agent_id": "a1"}),
+            Some(turn.clone()),
+            t(2_100),
+        )
+        else {
+            panic!("substart should keep the turn");
+        };
+        assert_eq!(
+            (trailer.agents, activity.as_str(), started),
+            (1, "THINKING", t(1_000))
+        );
+        assert_eq!(ttl, TURN_TTL);
+        let pending = State::Ask {
+            attention: Attention::Permission,
+            started: Some(t(1_000)),
+            trailer: Trailer {
+                agents: 3,
+                ..Default::default()
+            },
+        };
+        let Action::Set(State::Ask { trailer, .. }, ttl) =
+            next("substart", &Value::Null, Some(pending), t(2_200))
+        else {
+            panic!("substart should keep a pending ask");
+        };
+        assert_eq!((trailer.agents, ttl), (4, REST_TTL));
+        assert!(matches!(
+            next("substart", &Value::Null, None, t(0)),
+            Action::Nothing
+        ));
+
+        // The status line sets the context ring on whatever phase is live, once per
+        // change, and never conjures a feed where there is none.
+        let status = json!({"context_window": {"used_percentage": 41.6}});
+        let Action::Set(State::Turn { trailer, .. }, ttl) =
+            next("status", &status, Some(turn.clone()), t(2_300))
+        else {
+            panic!("status should keep the turn");
+        };
+        assert_eq!((trailer.context, ttl), (Some(42), TURN_TTL));
+        let same = turn.with_trailer(Trailer {
+            context: Some(42),
+            ..Default::default()
+        });
+        assert!(matches!(
+            next("status", &status, Some(same), t(2_400)),
+            Action::Nothing
+        ));
+        assert!(matches!(
+            next("status", &status, None, t(0)),
+            Action::Nothing
+        ));
+        assert!(matches!(
+            next(
+                "status",
+                &json!({"context_window": {}}),
+                Some(turn.clone()),
+                t(0)
+            ),
+            Action::Nothing
+        ));
+        let over = json!({"context_window": {"used_percentage": 140.0}});
+        let Action::Set(State::Turn { trailer, .. }, _) =
+            next("status", &over, Some(turn.clone()), t(0))
+        else {
+            panic!();
+        };
+        assert_eq!(trailer.context, Some(100));
 
         // posttool with a failure flashes; substop drops an agent.
         let busy = State::Turn {
@@ -554,10 +812,36 @@ mod tests {
     }
 
     #[test]
+    fn a_codex_session_is_keyed_to_the_tui_in_its_directory() {
+        use std::path::PathBuf;
+        let tui = |window, cwd: &str, started| Tui {
+            window,
+            cwd: PathBuf::from(cwd),
+            started,
+        };
+        let tuis = [
+            tui(100, "/home/u/a", 10), // older session in a
+            tui(200, "/home/u/a", 20), // newer session in a
+            tui(300, "/home/u/b", 30),
+        ];
+        let a = PathBuf::from("/home/u/a");
+        // Hand-derived: nothing claimed -> the newest TUI in that directory (200).
+        assert_eq!(choose_tui(&tuis, &a, &[]), Some(200));
+        // 200 already belongs to another session -> the free one (100).
+        assert_eq!(choose_tui(&tuis, &a, &[200]), Some(100));
+        // Both claimed (a stale memo, say) -> still the newest rather than nothing.
+        assert_eq!(choose_tui(&tuis, &a, &[100, 200]), Some(200));
+        // A directory with no TUI -> None, so the caller falls back to the env window.
+        assert_eq!(choose_tui(&tuis, &PathBuf::from("/nowhere"), &[]), None);
+        // Session ids that are not UUID-shaped never become a path.
+        assert!(memo("../../etc/passwd").is_none());
+        assert!(memo("").is_none());
+    }
+
+    #[test]
     fn unmapped_tools_show_their_own_name() {
         assert_eq!(activity_for("Edit"), "EDITING");
         assert_eq!(activity_for("SomeNewTool"), "SomeNewTool");
         assert_eq!(activity_for(""), "WORKING");
-        assert!(spawns_agent("Task") && !spawns_agent("Bash"));
     }
 }

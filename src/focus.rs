@@ -48,6 +48,7 @@ pub(crate) fn set_focused_window(w: Option<u64>) {
 /// The editor's own window: focusing it keeps whatever profile is shown.
 pub const EDITOR_CLASS: &str = "g13map";
 const MAGIC: &[u8; 6] = b"i3-ipc";
+const RUN_COMMAND: u32 = 0;
 const SUBSCRIBE: u32 = 2;
 const GET_TREE: u32 = 4;
 const EVENT_WINDOW: u32 = 0x8000_0003;
@@ -157,6 +158,29 @@ fn i3_windows(mut s: UnixStream) -> Result<Vec<Win>, String> {
     let mut out = vec![];
     walk(&tree, "", &mut out);
     Ok(out)
+}
+
+/// Raise and focus a window by its X11 id: i3's `[id=N] focus`, else EWMH's
+/// `_NET_ACTIVE_WINDOW` request. A Wayland-only session has no global ids to raise by.
+pub fn activate(window: u64) -> Result<(), String> {
+    match socket() {
+        Ok(mut s) => {
+            let timeout = Some(Duration::from_secs(2));
+            s.set_read_timeout(timeout).map_err(|e| e.to_string())?;
+            s.set_write_timeout(timeout).map_err(|e| e.to_string())?;
+            let cmd = format!("[id={window}] focus");
+            write_msg(&mut s, RUN_COMMAND, cmd.as_bytes()).map_err(|e| format!("i3 ipc: {e}"))?;
+            let (_, payload) = read_msg(&mut s).map_err(|e| format!("i3 ipc: {e}"))?;
+            let reply: Value =
+                serde_json::from_slice(&payload).map_err(|e| format!("i3 reply: {e}"))?;
+            if reply.get(0).and_then(|r| r["success"].as_bool()) == Some(true) {
+                Ok(())
+            } else {
+                Err(format!("i3 did not focus window {window}: {reply}"))
+            }
+        }
+        Err(i3) => crate::xfocus::activate(window).map_err(|x| format!("no i3 ({i3}); {x}")),
+    }
 }
 
 /// The class of the focused window, if any.

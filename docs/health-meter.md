@@ -151,7 +151,9 @@ five times a second and writes `~/.local/state/g13map/health` through Proton's `
 (the container shares the home directory, not `/run/user`): health over the
 dwarf's normal maximum (`MaxHealth` with any beer divided out, so perks count as 100%
 and a Red Rock Blaster's extra shows as blue), the shield as DRG's "armor", 0 when down, `wait`
-without a local dwarf; 15 s `ttl`, rewritten every 5 s. Its README has the install.
+without a local dwarf; 15 s `ttl`, rewritten every 5 s. Its README has the install:
+`contrib/drg-health/install.sh` copies the mod and writes the game-side feed path beside
+it, since Wine no longer shows the game its host home directory (GE-Proton 11-9 and later).
 
 ## Doom (Zandronum, GZDoom)
 

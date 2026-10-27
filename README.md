@@ -65,7 +65,8 @@ green above 75, yellow, orange, red with a flash on every beat, blue over 100 fo
 overshield, and three dark seconds on a drop to zero before the search for a pulse.
 
 A game feeds it one line at a time through a small mod or script. Feeders for Deep Rock
-Galactic, the Doom engines, GoldSource and Source engine games, Terraria, ULTRAKILL and
+Galactic (with an [installer](contrib/drg-health/README.md) for its UE4SS mod), the Doom
+engines, GoldSource and Source engine games, Terraria, ULTRAKILL and
 Dwarf Fortress are in `contrib/`; Counter-Strike 2 posts straight to the watcher; Factorio
 and Noita are read from outside the game by an observer that wraps the Steam launch
 (`g13map-factorio %command%`, `g13map-noita %command%`: no mod, so achievements keep
@@ -427,9 +428,10 @@ on a visible workspace to be captured; the plugin needs nothing of the kind.
 ### Panel applets
 
 For XFCE, add a Generic Monitor item, set its command to `g13map panel xfce`, hide its
-extra label, and use a 30-second update interval. It shows the device icon, active profile
-and driver availability; clicking the icon or text opens the editor. LXQt's existing
-custom-command output remains the default with no arguments. See
+extra label, and use a 30-second update interval. It shows the device icon, the active
+profile's name beside it and driver availability; clicking the icon or text opens the
+editor. `g13map panel name off` (or the editor's Window rules view) leaves the icon by
+itself. LXQt's existing custom-command output remains the default with no arguments. See
 [panel setup](docs/installation.md#panel-applets) for settings and optional dependencies.
 
 ### The analog stick

@@ -55,6 +55,8 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map focus set CLASS NAME          assign a saved profile to a window class
   g13map focus clear CLASS             remove a window rule
   g13map panel lxqt|xfce|waybar|text    panel status (no arguments means LXQt)
+  g13map panel name [on|off]            show the active profile's name in the applet
+                                       (off: the device mark alone); no value prints it
   g13map import [FILE] [NAME]          import a driver bind file
   g13map marquee TEXT [NAME]           keep LCD text
   g13map demo FILE [SECONDS]           temporarily display an image/animation (default 10 seconds)
@@ -363,6 +365,7 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
         ["panel", "xfce"] => panel::xfce(),
         ["panel", "waybar"] => Ok(panel::waybar()),
         ["panel", "text"] => Ok(panel::text()),
+        ["panel", "name", rest @ ..] => panel::name_command(rest),
         ["status"] => Ok(format!(
             "{}\nprofiles: {}\ncommand pipe: {}",
             panel::text(),

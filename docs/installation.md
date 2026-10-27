@@ -138,8 +138,12 @@ Package installation does not rewrite either desktop's panel configuration or re
 either panel to use the editor.
 
 Both adapters use the same device mark, cyan/grey connection state, active profile and
-tooltip. The mark depicts the LCD, key matrix, offset thumbstick and palm rest. Desktop
-fonts and icon sizing follow each panel's theme. No custom LXQt plugin is necessary:
+tooltip. The mark depicts the LCD, key matrix, offset thumbstick and palm rest, so the
+text beside it is the active profile's name alone (nothing for `default`; a cross when
+the driver is away). `g13map panel name off`, or the editor's **Window rules** view, leaves
+the mark by itself; the setting lives in `~/.config/g13map/panel` and the applet picks it
+up at its next refresh. Formats without the mark (Waybar, plain text) keep a `G13` word.
+Desktop fonts and icon sizing follow each panel's theme. No custom LXQt plugin is necessary:
 use its standard **Custom Command** plugin with structured output. Panel widths should
 accommodate your profile names rather than clipping them to a fixed label length.
 

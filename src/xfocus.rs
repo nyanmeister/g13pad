@@ -12,7 +12,7 @@ use crate::focus::Win;
 use std::{fs, os::unix::net::UnixStream, path::PathBuf, sync::mpsc};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    Atom, AtomEnum, ChangeWindowAttributesAux, ConnectionExt, EventMask, Window,
+    Atom, AtomEnum, ChangeWindowAttributesAux, ClientMessageEvent, ConnectionExt, EventMask, Window,
 };
 use x11rb::protocol::Event;
 use x11rb::rust_connection::{DefaultStream, RustConnection};
@@ -53,6 +53,30 @@ pub fn windows() -> Result<Vec<Win>, String> {
         }
     }
     Ok(out)
+}
+
+/// Asks the manager to activate a window (`_NET_ACTIVE_WINDOW` to the root, source 2 = a
+/// pager, so managers that honour focus-stealing rules still raise it). Delivery is to
+/// the manager; a window it no longer lists is simply not raised.
+pub fn activate(window: u64) -> Result<(), String> {
+    let x = X::connect()?;
+    let w = Window::try_from(window).map_err(|_| format!("window id {window} out of range"))?;
+    let ev = ClientMessageEvent::new(32, w, x.active, [2, 0, 0, 0, 0]);
+    x.conn
+        .send_event(
+            false,
+            x.root,
+            EventMask::SUBSTRUCTURE_REDIRECT | EventMask::SUBSTRUCTURE_NOTIFY,
+            ev,
+        )
+        .map_err(|e| e.to_string())
+        .and_then(|c| c.check().map_err(|e| e.to_string()))
+        .map_err(|e| {
+            format!(
+                "cannot activate window {window} on display {}: {e}",
+                x.display
+            )
+        })
 }
 
 /// Reports the class of every window that takes focus, until the display goes away

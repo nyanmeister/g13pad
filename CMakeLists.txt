@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.3.7 LANGUAGES C CXX)
+project(g13pad VERSION 0.3.10 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 install(DIRECTORY contrib/df-health/
@@ -20,7 +20,7 @@ endif()
 install(DIRECTORY contrib/terraria-health/
   DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/terraria-health
   USE_SOURCE_PERMISSIONS)
-foreach(integration everspace-health ultrakill-health)
+foreach(integration drg-health everspace-health ultrakill-health)
   install(DIRECTORY contrib/${integration}/
     DESTINATION ${CMAKE_INSTALL_DATADIR}/g13pad/${integration}
     USE_SOURCE_PERMISSIONS)

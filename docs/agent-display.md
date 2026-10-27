@@ -1,11 +1,25 @@
 # Coding assistant display
 
-The **Agent** display shows the current activity, a turn stopwatch, background-agent
-count and the previous turn's duration. Permissions blink yellow. Questions blink
-slowly in the working colour, then green when the turn finishes with a question
-pending. Reported tool errors flash orange.
-The pulse is a display animation, not a signal from the model.
+The **Agent** display shows the current activity, a turn stopwatch, the previous turn's
+duration and, in the lower right, the background-agent count. Permissions blink yellow.
+Questions blink slowly in the working colour, then green when the turn finishes with a
+question pending. Reported tool errors flash orange.
+The pulse (a resting lub-dub) is a display animation, not a signal from the model.
 The stopwatch and completed-turn duration use **HH:MM:SS.CC**.
+
+**Context ring.** When the harness reports how full the model's context window is, a
+ring draws clockwise around the pulse by that fraction, and a lit disc rises inside it by
+the same fraction with the heart dark where the disc covers it: at a third the heart's
+feet are under water, near full it is a dark heart in a bright disc. Claude Code reports
+it through the status line (below); Codex's hooks do not, so a Codex session shows no ring.
+
+**A key that raises the agent's terminal.** `g13map agent focus` activates the terminal
+window of the agent waiting on you (a permission or question, the longest-pending first),
+else the one the pad shows; `g13map agent focus next` cycles through the live agent
+terminals in window-id order from the focused one. Both are meant for a run binding
+(`g13map profile run NAME G22 g13map agent focus`, and another key for `next`), work on
+i3 and any EWMH window manager, and say what they raised. Wayland sessions have no
+global window ids to raise by, like the window rules.
 Long activity labels scroll at 20 pixels per second, holding for one second at
 each end. A new activity starts at the left; repeated feed updates keep scrolling.
 
@@ -20,13 +34,29 @@ Use an existing profile name and your terminal's window class. Hooks require the
 terminal's exported `WINDOWID` and the same `XDG_RUNTIME_DIR` as `g13map-watch`.
 The display follows the last focused agent terminal when you focus something else.
 Several sessions in one terminal window share its feed; use separate windows when
-their states need to remain separate. A shared Codex app-server inherits its launch
-environment, so check its `WINDOWID` when several terminals share that server.
+their states need to remain separate. Codex hooks run inside a shared app-server whose
+`WINDOWID` is the terminal it was first started from, so the feeder keys a Codex session
+to the `codex` process whose working directory matches the hook's `cwd` and uses that
+process's `WINDOWID`; the pairing is remembered per session (a `session-ID` file beside
+the feeds) until SessionEnd. Two Codex sessions started in the same directory get the
+newest unpaired terminal; if no TUI matches, the hook's own `WINDOWID` is used.
+The pulse beats sixty times a minute as a lub-dub; it is a display animation.
 
 ## Claude Code
 
 `g13map agent hooks` prints the entries to merge into `~/.claude/settings.json`.
-Keep any existing hooks. The hook command is `g13map agent feed EVENT`.
+Keep any existing hooks. The hook command is `g13map agent feed EVENT`. The agent count
+follows `SubagentStart`/`SubagentStop` (since 0.3.9; before, an `Agent` tool call counted
+at once, so a refused spawn stayed counted until the turn ended).
+
+For the context ring, the status line command hands its stdin JSON on to
+`g13map agent feed status` after printing (it reads `context_window.used_percentage` and
+nothing else, updates a live feed only, and never creates one). A Python status line:
+
+```python
+subprocess.run(["g13map", "agent", "feed", "status"], input=json.dumps(data),
+               text=True, timeout=1, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+```
 
 ## Codex
 

@@ -42,6 +42,36 @@ fi
 before=$(cat "$feed")
 hook FutureEvent
 test "$(cat "$feed")" = "$before"
+# The Claude Code path: a spawn counts at SubagentStart, not at the Agent call; the
+# status line's JSON sets the context word once per change and never creates a feed.
+cfeed() {
+  local out="$scratch/cstdout"
+  printf '%s\n' "${2:-null}" | "$bin" agent feed "$1" > "$out"
+  test ! -s "$out"
+}
+cfeed_file="$XDG_RUNTIME_DIR/g13map-pipe.agents/424243"
+WINDOWID=424243 cfeed prompt
+WINDOWID=424243 cfeed pretool '{"tool_name":"Agent"}'
+if rg -q 'agents' "$cfeed_file"; then echo 'FAIL: an Agent call counted before it started' >&2; exit 1; fi
+WINDOWID=424243 cfeed substart '{"agent_id":"a1","agent_type":"Explore"}'
+WINDOWID=424243 cfeed substart '{"agent_id":"a2","agent_type":"Explore"}'
+rg -q ' agents 2 ' "$cfeed_file"
+WINDOWID=424243 cfeed status '{"context_window":{"used_percentage":41.6}}'
+rg -q ' agents 2 context 42 ' "$cfeed_file" || { echo "FAIL: context missing: $(cat "$cfeed_file")" >&2; exit 1; }
+WINDOWID=424243 cfeed substop
+WINDOWID=424243 cfeed substop
+rg -q ' context 42 ' "$cfeed_file"
+if rg -q 'agents' "$cfeed_file"; then echo 'FAIL: stopped subagents still counted' >&2; exit 1; fi
+WINDOWID=424244 cfeed status '{"context_window":{"used_percentage":50}}'
+test ! -e "$XDG_RUNTIME_DIR/g13map-pipe.agents/424244"
+WINDOWID=424243 cfeed end
+test ! -e "$cfeed_file"
+# With no live feed (an empty private runtime), `agent focus` says so and touches no display.
+mkdir -p "$scratch/empty-runtime"
+if XDG_RUNTIME_DIR="$scratch/empty-runtime" env -u DISPLAY -u I3SOCK -u SWAYSOCK -u WAYLAND_DISPLAY "$bin" agent focus > "$scratch/focus-out" 2>&1; then
+  echo 'FAIL: agent focus succeeded with nothing to focus' >&2; exit 1
+fi
+rg -q 'no live agent feed' "$scratch/focus-out"
 printf 'null\n' | env -u WINDOWID "$bin" agent codex UserPromptSubmit > "$scratch/no-window"
 test ! -s "$scratch/no-window"
 test "$(cat "$feed")" = "$before"
@@ -80,5 +110,31 @@ test "$(awk '{print $1}' "$feed")" = turn
 hook UserPromptSubmit
 test "$(awk '{print $1}' "$feed")" = turn
 hook SessionEnd
+# A Codex session is keyed to the TUI in front of the user, not to the app-server's
+# inherited WINDOWID: a process named codex with its own WINDOWID and the session's cwd.
+mkdir -p "$scratch/bin" "$scratch/work"
+cp "$(command -v sleep)" "$scratch/bin/codex"
+(cd "$scratch/work" && WINDOWID=777 exec "$scratch/bin/codex" 300) &
+tui_pid=$!
+trap 'kill "$tui_pid" 2>/dev/null || true; rm -rf -- "$scratch"' EXIT
+sleep 0.2
+session=$(printf '{"cwd":"%s","session_id":"0199-test-session-1"}' "$scratch/work")
+printf '%s\n' "$session" | "$bin" agent codex UserPromptSubmit > "$scratch/tui-out"
+test ! -s "$scratch/tui-out"
+tui_feed="$XDG_RUNTIME_DIR/g13map-pipe.agents/777"
+test "$(awk '{print $1}' "$tui_feed")" = turn
+test ! -e "$feed"
+test "$(cat "$XDG_RUNTIME_DIR/g13map-pipe.agents/session-0199-test-session-1")" = 777
+# The pairing holds even when the cwd no longer matches (the memo wins).
+printf '{"cwd":"/","session_id":"0199-test-session-1"}\n' | "$bin" agent codex Stop > /dev/null
+test "$(awk '{print $1}' "$tui_feed")" = ready
+# A session whose directory has no TUI falls back to the hook's own WINDOWID.
+printf '{"cwd":"/","session_id":"0199-test-session-2"}\n' | "$bin" agent codex UserPromptSubmit > /dev/null
+test "$(awk '{print $1}' "$feed")" = turn
+printf '{"cwd":"/","session_id":"0199-test-session-2"}\n' | "$bin" agent codex SessionEnd > /dev/null
+printf '%s\n' "$session" | "$bin" agent codex SessionEnd > /dev/null
+test ! -e "$tui_feed"
+test ! -e "$XDG_RUNTIME_DIR/g13map-pipe.agents/session-0199-test-session-1"
+kill "$tui_pid"
 "$bin" agent hooks codex | jq -e '.hooks | length == 11' > /dev/null
-echo 'PASS: native hook lifecycle, silent output, permission clock, concurrent counts, cleanup'
+echo 'PASS: native hook lifecycle, silent output, permission clock, concurrent counts, TUI window keying, cleanup'

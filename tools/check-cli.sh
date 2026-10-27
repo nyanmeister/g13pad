@@ -54,6 +54,20 @@ test "$(wc -c < "$G13MAP_CONFIG/lcd/cli.lpbm")" -eq 960
 "$binary" panel xfce | rg -q "<txtclick>'.*g13map' edit</txtclick>"
 "$binary" panel lxqt | rg -q '^text:.* icon:.* tooltip:'
 "$binary" panel text | rg -q '^G13 · CLI profile · connected$'
+# Beside the mark the text is the name alone; `panel name off` leaves the mark by itself.
+"$binary" panel lxqt | rg -q "^text:$(printf '%s' 'CLI profile' | base64) icon:"
+"$binary" panel xfce | rg -q '<txt>CLI profile</txt>'
+"$binary" panel name | rg -q '^on$'
+"$binary" panel name off | rg -q 'mark alone'
+"$binary" panel name | rg -q '^off$'
+"$binary" panel lxqt | rg -q '^text: icon:'
+"$binary" panel xfce | rg -q '<txt></txt>'
+"$binary" panel text | rg -q '^G13 · connected$'
+"$binary" panel waybar | jq -e '.text == "G13"' > /dev/null
+test "$(cat "$G13MAP_CONFIG/panel" | rg '^name')" = 'name off'
+"$binary" panel name on | rg -q 'profile name'
+"$binary" panel waybar | jq -e '.text == "G13·CLI profile"' > /dev/null
+if "$binary" panel name sideways > /dev/null 2>&1; then exit 1; fi
 "$binary" modes set 3 'CLI profile'
 "$binary" focus set kitty 'CLI profile'
 "$binary" modes show | rg -q '^3 CLI profile$'

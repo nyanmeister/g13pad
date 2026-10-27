@@ -17,8 +17,13 @@
 -- steady state. Everything that touches UObjects runs on the game thread.
 
 local config = {
-	-- The feed file. nil: $XDG_STATE_HOME/g13map/health (~/.local/state/g13map/health) on
-	-- the host, reached through Proton's Z: drive.
+	-- The feed file as the game sees it, e.g. "Z:\\home\\me\\.local\\state\\g13map\\health".
+	-- nil: the first of G13MAP_FEED in the environment (a Steam launch option can set it),
+	-- feed.txt beside this mod (install.sh writes it), then $XDG_STATE_HOME/g13map/health
+	-- or ~/.local/state/g13map/health through Z:. The last only works where Wine still
+	-- imports HOME: GE-Proton 11-7 did, 11-9 and later drop HOME and every XDG_* variable
+	-- from the Windows environment (ntdll's is_special_env_var; found 2026-10-26, the meter
+	-- had gone silent with "no HOME or XDG_STATE_HOME" in UE4SS.log).
 	feed = nil,
 	poll_ms = 200, -- how often health is read
 	heartbeat_s = 5, -- rewrite the line even without a change, to keep the ttl alive
@@ -28,31 +33,84 @@ local config = {
 }
 
 -- ------------------------------------------------------------------ the feed file
+-- The directory this script was loaded from, ending in its separator; nil when unknown.
+local function scriptDir()
+	local info = debug and debug.getinfo and debug.getinfo(1, "S")
+	local src = info and info.source
+	if type(src) ~= "string" then
+		return nil
+	end
+	return src:match("^@(.*[\\/])")
+end
+
+-- The one non-blank line of feed.txt in the mod's folder (G13Health/feed.txt), or nil.
+local function sidecarFeed()
+	local dir = scriptDir()
+	if not dir then
+		return nil
+	end
+	local f = io.open(dir .. ".." .. dir:sub(-1) .. "feed.txt", "r")
+	if not f then
+		return nil
+	end
+	local text = f:read("a") or ""
+	f:close()
+	local path = text:match("^%s*(.-)%s*$")
+	return path ~= "" and path or nil
+end
+
+-- The path and where it came from; nil, reason without one.
 local function feedPath()
 	if config.feed then
-		return config.feed
+		return config.feed, "config"
+	end
+	local env = os.getenv("G13MAP_FEED")
+	if env and env ~= "" then
+		return env, "G13MAP_FEED"
+	end
+	local sidecar = sidecarFeed()
+	if sidecar then
+		return sidecar, "feed.txt"
 	end
 	-- Steam's container gives the game a private /run/user; the home directory is
-	-- shared, so the feed goes to the meter's state-directory file.
-	local dir = os.getenv("XDG_STATE_HOME")
+	-- shared, so the feed goes to the meter's state-directory file. Wine builds that
+	-- hide HOME still name the host home: WINE_HOST_HOME as a Unix path, WINEHOMEDIR as
+	-- an NT path (\??\Z:\home\me, or \??\unix\home\me on older builds).
+	local dir, source = os.getenv("XDG_STATE_HOME"), "XDG_STATE_HOME"
 	if not (dir and dir:sub(1, 1) == "/") then
+		dir, source = nil, nil
 		local home = os.getenv("HOME")
 		if home and home:sub(1, 1) == "/" then
-			dir = home .. "/.local/state"
+			dir, source = home .. "/.local/state", "HOME"
+		end
+	end
+	if not dir then
+		local home = os.getenv("WINE_HOST_HOME")
+		if home and home:sub(1, 1) == "/" then
+			dir, source = home .. "/.local/state", "WINE_HOST_HOME"
 		end
 	end
 	if dir then
-		return "Z:" .. dir:gsub("/", "\\") .. "\\g13map\\health"
+		return "Z:" .. dir:gsub("/", "\\") .. "\\g13map\\health", source
 	end
-	return nil -- no HOME in the environment: nowhere to write, said once in writeFeed
+	local nt = os.getenv("WINEHOMEDIR") or ""
+	local home = nt:match("^\\%?%?\\unix(\\.+)$")
+	if home then
+		return "Z:" .. home .. "\\.local\\state\\g13map\\health", "WINEHOMEDIR"
+	end
+	home = nt:match("^\\%?%?\\(%a:\\.*)$")
+	if home then
+		return home .. "\\.local\\state\\g13map\\health", "WINEHOMEDIR"
+	end
+	return nil, "no feed.txt beside the mod and no host home in the environment: run contrib/drg-health/install.sh, or set config.feed"
 end
 
-local feed = feedPath()
+local feed, feedSource = feedPath()
 local warned = false
 local function writeFeed(line)
 	if not feed then
 		if not warned then
-			print("[G13Health] no HOME or XDG_STATE_HOME in the environment; set config.feed\n")
+			print(string.format("[G13Health] nowhere to write: %s\n", feedSource))
 			warned = true
 		end
 		return false
@@ -298,5 +356,5 @@ LoopAsync(config.poll_ms, function()
 	return false -- keep looping
 end)
 
-print(string.format("[G13Health] loaded; feed %s, poll %d ms, ttl %d s (pawn events: %s)\n",
-	tostring(feed), config.poll_ms, config.ttl_s, eventsOk and "ok" or "unavailable, scan fallback"))
+print(string.format("[G13Health] loaded; feed %s (%s), poll %d ms, ttl %d s (pawn events: %s)\n",
+	tostring(feed), feedSource, config.poll_ms, config.ttl_s, eventsOk and "ok" or "unavailable, scan fallback"))

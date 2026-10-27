@@ -40,9 +40,13 @@ const GREEN: [u8; 3] = [0, 255, 0];
 const ORANGE: [u8; 3] = [255, 85, 0];
 const RED: [u8; 3] = [255, 0, 0];
 
-/// One beat of the pulse: a short contraction, then relaxed.
-const BEAT: u128 = 520;
-const CONTRACT: u128 = 120;
+/// One beat of the pulse: a resting 60 a minute, each beat two short contractions (the
+/// lub and the dub) and a long relaxed hold. The first cut beat once every 520 ms (115 a
+/// minute) and read as hurried (asked 2026-10-20).
+const BEAT: u128 = 1000;
+// Seven 20 ms frames contracted each (asked 2026-10-20: five read as too brief).
+const LUB: std::ops::Range<u128> = 0..140;
+const DUB: std::ops::Range<u128> = 220..360;
 /// Half a blink: the inversion is on for this long, off for this long (permission).
 const BLINK_HALF: u128 = 200;
 /// Questions use two seconds per blink, while retaining the current turn colour.
@@ -52,6 +56,57 @@ const FLASH: Duration = Duration::from_millis(350);
 /// The idle breath's period.
 const BREATH: u128 = 2200;
 
+/// The ring's geometry: centred on the big heart (drawn at 5,6, nine by eight), radius 9,
+/// so it spans columns 0..19 and rows 0..19, inside the activity text's gutter (x < GUTTER).
+const RING_CX: f32 = 9.5;
+const RING_CY: f32 = 9.5;
+const RING_R: f32 = 9.0;
+/// Where the activity word starts: the ring's corner is everything left of it.
+const GUTTER: i32 = 21;
+
+/// The context ring: `pct` of the way round, clockwise from the top, one sample a degree.
+fn ring(bm: &mut Bitmap, pct: u8) {
+    for a in 0..(360 * pct.min(100) as u32 / 100) {
+        let rad = (a as f32).to_radians();
+        let x = (RING_CX + RING_R * rad.sin()).floor();
+        let y = (RING_CY - RING_R * rad.cos()).floor();
+        if x >= 0.0 && y >= 0.0 {
+            bm.set(x as usize, y as usize, true);
+        }
+    }
+}
+
+/// Whether a pixel lies inside the ring (the disc the heart sits in).
+fn in_disc(x: usize, y: usize) -> bool {
+    let (dx, dy) = (x as f32 + 0.5 - RING_CX, y as f32 + 0.5 - RING_CY);
+    dx * dx + dy * dy < (RING_R - 1.0) * (RING_R - 1.0)
+}
+
+/// The pulse, and when the feed carries a context figure the ring around it: `pct` of the
+/// way round, and inside it a lit disc rising from the bottom by the same fraction, with
+/// the heart dark where the disc covers it (option C of the 2026-10-27 sheet, asked as
+/// "inverse colouring for the heart as the gauge fills"; a lit field was the only inverse
+/// a one-bit panel has).
+fn pulse(bm: &mut Bitmap, now: SystemTime, context: Option<u8>) {
+    if beating(now) {
+        bm.sprite(6, 7, HEART);
+    } else {
+        bm.sprite(5, 6, HEART_BIG);
+    }
+    let Some(pct) = context else {
+        return;
+    };
+    ring(bm, pct);
+    let top = 19.0 - 19.0 * pct.min(100) as f32 / 100.0;
+    for py in 0..19usize {
+        for px in 0..19usize {
+            if in_disc(px, py) && py as f32 >= top {
+                bm.set(px, py, !bm.get(px, py));
+            }
+        }
+    }
+}
+
 /// The whole page for a phase. `age`/`now` as in the module docs.
 pub fn frame(state: &State, age: Duration, now: SystemTime) -> Bitmap {
     let mut bm = Bitmap::blank();
@@ -60,24 +115,25 @@ pub fn frame(state: &State, age: Duration, now: SystemTime) -> Bitmap {
 
     let width = (activity.chars().count() as i32 * 6 - 1) * 2;
     let offset = activity_offset(width, age);
-    text(&mut bm, 17 - offset, 3, &activity, 2);
+    text(&mut bm, GUTTER - offset, 3, &activity, 2);
     // The activity's viewport starts after the pulse. Text's ordinary clipping
     // handles the right edge; erase only this row's left gutter before the pulse.
     if offset > 0 {
-        for x in 0..17 {
+        for x in 0..GUTTER as usize {
             for y in 3..17 {
                 bm.set(x, y, false);
             }
         }
     }
-    if beating(now) {
-        bm.sprite(5, 4, HEART);
-    } else {
-        bm.sprite(4, 3, HEART_BIG);
-    }
+    pulse(&mut bm, now, t.context);
     if let Some(main) = main {
         text(&mut bm, 4, 24, &main, 1);
     }
+    if let Some(sub) = sub {
+        text(&mut bm, 4, 34, &sub, 1);
+    }
+    // The subagent count sits in the lower right (asked 2026-10-27; it shared the
+    // stopwatch row before), clear of the sub-line's longest form, `LAST HH:MM:SS`.
     if t.agents > 0 {
         let label = if t.agents == 1 {
             "1 AGENT".to_string()
@@ -85,10 +141,7 @@ pub fn frame(state: &State, age: Duration, now: SystemTime) -> Bitmap {
             format!("{} AGENTS", t.agents)
         };
         let width = label.chars().count() as i32 * 6 - 1;
-        text(&mut bm, W as i32 - width - 2, 24, &label, 1);
-    }
-    if let Some(sub) = sub {
-        text(&mut bm, 4, 34, &sub, 1);
+        text(&mut bm, W as i32 - width - 2, 34, &label, 1);
     }
 
     if inverted(state, age) {
@@ -99,7 +152,7 @@ pub fn frame(state: &State, age: Duration, now: SystemTime) -> Bitmap {
 
 /// The same 20 px/s travel and one-second end holds as the RA title marquee.
 fn activity_offset(width: i32, age: Duration) -> i32 {
-    let span = (width - (W as i32 - 17)).max(0) as u128;
+    let span = (width - (W as i32 - GUTTER)).max(0) as u128;
     if span == 0 {
         return 0;
     }
@@ -195,7 +248,7 @@ fn beating(now: SystemTime) -> bool {
         .unwrap_or_default()
         .as_millis()
         % BEAT;
-    ms < CONTRACT
+    LUB.contains(&ms) || DUB.contains(&ms)
 }
 
 /// Whether the whole panel is inverted this frame: the permission blink repeats until he
@@ -330,7 +383,7 @@ fn dump_agent_frames() {
         ),
         (
             "turn",
-            turn,
+            turn.clone(),
             Duration::ZERO,
             t0 + Duration::from_millis(83_450),
         ),
@@ -381,6 +434,22 @@ fn dump_agent_frames() {
             t0,
         ),
     ];
+    // The context ring at a third and nearly full, on the turn frame.
+    let mut cases: Vec<(String, State, Duration, SystemTime)> = cases
+        .into_iter()
+        .map(|(n, s, a, t)| (n.to_string(), s, a, t))
+        .collect();
+    for pct in [35u8, 85] {
+        cases.push((
+            format!("ring-{pct}"),
+            turn.with_trailer(Trailer {
+                context: Some(pct),
+                ..turn_trailer
+            }),
+            Duration::ZERO,
+            t0 + Duration::from_millis(83_450),
+        ));
+    }
     let mut manifest = String::new();
     for (name, state, age, now) in cases {
         // Freeze the pulse to the relaxed heart for a still (now at a non-beat instant).
@@ -408,6 +477,25 @@ mod tests {
 
     fn at(ms: u64) -> SystemTime {
         SystemTime::UNIX_EPOCH + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn the_pulse_is_a_resting_lub_dub() {
+        // Hand-derived from the constants: lub 0-139, relaxed, dub 220-359, relaxed to 999.
+        for (ms, contracted) in [
+            (0, true),
+            (139, true),
+            (140, false),
+            (219, false),
+            (220, true),
+            (359, true),
+            (360, false),
+            (600, false),
+            (999, false),
+            (1000, true),
+        ] {
+            assert_eq!(beating(at(ms)), contracted, "at {ms} ms");
+        }
     }
 
     #[test]
@@ -587,15 +675,59 @@ mod tests {
         assert_eq!(start, draw(999));
         assert_eq!(start, draw(1000));
         assert_ne!(start, draw(1050)); // First pixel step after the one-second hold.
-                                       // 20 glyphs: (20*6-1)*2=238px; viewport 160-17=143px.
-                                       // 95px at 50ms/px => 4750ms travel, plus two 1000ms holds.
-        let end = draw(5750);
+                                       // 20 glyphs: (20*6-1)*2=238px; viewport 160-21=139px.
+                                       // 99px at 50ms/px => 4950ms travel, plus two 1000ms holds.
+        let end = draw(5950);
         assert_ne!(start, end);
-        assert_eq!(end, draw(6749));
-        assert_eq!(start, draw(6750));
-        for x in 0..17 {
+        assert_eq!(end, draw(6949));
+        assert_eq!(start, draw(6950));
+        for x in 0..GUTTER as usize {
             for y in 0..20 {
                 assert_eq!(start.get(x, y), end.get(x, y), "pulse area {x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_context_ring_fills_clockwise_and_the_disc_rises_under_the_heart() {
+        // Hand-derived from the geometry (centre 9.5,9.5, radius 9; the big heart at 5,6
+        // with its centre pixel at 9,8): twelve o'clock is pixel (9,0), three o'clock
+        // (18,9), nine o'clock (0,9); (9,15) lies in the disc below the heart.
+        let draw = |context| {
+            let state = State::Turn {
+                activity: Activity::parse("EDITING"),
+                started: at(0),
+                trailer: Trailer {
+                    context,
+                    ..Default::default()
+                },
+            };
+            frame(&state, Duration::ZERO, at(10_300)) // relaxed heart (300 ms into a beat)
+        };
+        let none = draw(None);
+        let zero = draw(Some(0));
+        assert_eq!(none, zero, "0% draws no ring and leaves the heart alone");
+        assert!(none.get(9, 8), "heart centre lit without context");
+        assert!(!none.get(9, 0) && !none.get(18, 9) && !none.get(0, 9) && !none.get(9, 15));
+        let half = draw(Some(50));
+        assert!(half.get(9, 0) && half.get(18, 9), "right half of the ring");
+        assert!(!half.get(0, 9), "left half not yet");
+        assert!(half.get(9, 15), "the disc has risen past row 15 at 50%");
+        assert!(half.get(9, 8), "and not yet reached the heart's centre");
+        let full = draw(Some(100));
+        assert!(full.get(0, 9), "nine o'clock lit at 100%");
+        assert!(!full.get(9, 8), "the heart is dark inside the lit disc");
+        assert!(
+            full.get(2, 9) && full.get(9, 15),
+            "disc pixels beside and below it lit"
+        );
+        for x in GUTTER as usize..W {
+            for y in 0..20 {
+                assert_eq!(
+                    full.get(x, y),
+                    none.get(x, y),
+                    "spill past the gutter at {x},{y}"
+                );
             }
         }
     }
