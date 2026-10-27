@@ -26,3 +26,15 @@ into ordinary saves. A stale executable copy must be rejected after game updates
 Pass the host feed path explicitly through `G13MAP_HEALTH_FILE`: .NET Framework's
 environment can hide HOME/WINEHOMEDIR even when the host process has them. Windows
 GUI console handles can discard errors; log asynchronously beside the copy.
+
+## The host home under current Wine (2026-10-26/27)
+
+GE-Proton 11-9 and later drop `HOME` and every `XDG_*` variable from the Windows
+environment (found on the DRG feeder, see deep-rock-galactic-ue4ss.md), and the
+feeders' `WINEHOMEDIR` fallback matched only the older `\??\unix\` form, so under this
+Wine both would have fallen through to the `G13MAP_HEALTH_FILE` error. `ResolveHome()`
+in both feeders now takes `HOME`, then `WINE_HOST_HOME` (a Unix path), then `WINEHOMEDIR`
+in either form; `check-home.sh` compiles that method from both real sources with Mono's
+csc and runs hand-derived cases (a mutant without the drive-letter form fails two). Not
+yet seen in a live Terraria session; the fixture check (`tools/check-terraria-health.sh`)
+is the live boundary when the game is next on the glass.

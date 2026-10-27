@@ -48,8 +48,11 @@ updates.
 
 The file is `$XDG_STATE_HOME/g13map/health`, or
 `~/.local/state/g13map/health`. Under Proton, Unix paths are mapped through `Z:`;
-Wine's `WINEHOMEDIR` supplies the host home when `HOME` is absent. The mod refuses
-to silently write into a Windows profile when it cannot identify the host home.
+Wine builds since GE-Proton 11-9 no longer import `HOME` or `XDG_*`, so the host home
+comes from Wine's own `WINE_HOST_HOME` or `WINEHOMEDIR` (`\??\Z:\home\me`, or the older
+`\??\unix\home\me`). The mod refuses to silently write into a Windows profile when it
+cannot identify the host home. `check-home.sh` compiles that resolution from both
+feeders with Mono's csc and runs hand-derived cases.
 `G13MAP_HEALTH_FILE` overrides the path and must be absolute. The private
 `/run/user` inside Steam's container is not used.
 

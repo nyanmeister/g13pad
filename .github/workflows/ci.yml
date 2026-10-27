@@ -24,7 +24,7 @@ jobs:
       - name: Lint
         run: cargo clippy --locked --workspace --all-targets
       - name: Shell lint
-        run: shellcheck -S warning build.sh check.sh tools/*.sh packaging/PKGBUILD contrib/everspace-health/*.sh contrib/ultrakill-health/*.sh
+        run: shellcheck -S warning build.sh check.sh tools/*.sh packaging/PKGBUILD contrib/everspace-health/*.sh contrib/ultrakill-health/*.sh contrib/drg-health/*.sh contrib/terraria-health/*.sh
       - name: Rust tests (editor, CLI, animations)
         run: cargo test --locked -p g13map
         env:

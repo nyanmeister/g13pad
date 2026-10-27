@@ -97,14 +97,28 @@ namespace G13TerrariaVanilla
             if (!string.IsNullOrEmpty(value)) return Absolute(value);
             value = Environment.GetEnvironmentVariable("XDG_STATE_HOME");
             if (!string.IsNullOrEmpty(value)) return Path.Combine(Absolute(value), "g13map", "health");
-            value = Environment.GetEnvironmentVariable("HOME");
-            if (string.IsNullOrEmpty(value)) {
-                string wine = Environment.GetEnvironmentVariable("WINEHOMEDIR");
-                if (!string.IsNullOrEmpty(wine) && wine.StartsWith(@"\??\unix\", StringComparison.Ordinal)) value = "Z:" + wine.Substring(8);
-            }
+            value = ResolveHome();
             if (string.IsNullOrEmpty(value)) throw new InvalidOperationException("Set G13MAP_HEALTH_FILE; host home was not found.");
             return Path.Combine(Absolute(value), ".local", "state", "g13map", "health");
         }
+
+        // host-home-begin: the host home as a Unix path or a Wine drive path, else null. HOME
+        // (older Wine), WINE_HOST_HOME (a Unix path), then WINEHOMEDIR as \??\Z:\home\me or the
+        // older \??\unix\home\me. Wine stopped importing HOME and XDG_* in GE-Proton 11-9
+        // (2026-10); the same text is in G13TerrariaHealth/HealthFeed.cs and check-home.sh compiles both.
+        private static string ResolveHome()
+        {
+            string home = Environment.GetEnvironmentVariable("HOME");
+            if (!string.IsNullOrEmpty(home)) return home;
+            home = Environment.GetEnvironmentVariable("WINE_HOST_HOME");
+            if (!string.IsNullOrEmpty(home) && home.StartsWith("/", StringComparison.Ordinal)) return home;
+            string wine = Environment.GetEnvironmentVariable("WINEHOMEDIR") ?? "";
+            if (wine.StartsWith(@"\??\unix\", StringComparison.Ordinal)) return "Z:" + wine.Substring(8);
+            if (wine.Length > 6 && wine.StartsWith(@"\??\", StringComparison.Ordinal)
+                && char.IsLetter(wine[4]) && wine[5] == ':' && wine[6] == '\\') return wine.Substring(4);
+            return null;
+        }
+        // host-home-end
 
         private static string Absolute(string value)
         {
