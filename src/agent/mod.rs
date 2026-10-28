@@ -9,13 +9,15 @@
 //! Its reason to exist is the looked-away read the terminal cannot give: the backlight
 //! alerts (permission, failure, denial, idle) you would miss while glancing elsewhere, the
 //! background-agent count the scrollback buries, and the frozen-pulse "it is hung" tell.
-//! Context % and model/effort stay off it — they are already on the kitty status line.
+//! Context fullness rides with the phase; model/effort remain on the terminal status line.
 mod codex;
+mod context;
 pub mod feed;
 pub mod feeder;
 pub mod focus;
 pub mod render;
 pub mod runtime;
+mod shells;
 pub use feed::{parse, read, read_all, read_for, select, write};
 pub use runtime::Live;
 
@@ -25,6 +27,13 @@ use std::time::{Duration, SystemTime};
 pub const MAX_ACTIVITY: usize = 64;
 /// Most background agents the count shows (it is a glance, not a census).
 pub const MAX_AGENTS: u32 = 99;
+
+/// Two ways of drawing context fullness; the wire format chooses a look, not a harness.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Context {
+    Rising(u8),
+    Segmented(u8),
+}
 
 /// Unix-epoch milliseconds of `t`, the feed's wire form for an instant.
 pub(crate) fn epoch_ms(t: SystemTime) -> u64 {
@@ -74,12 +83,12 @@ impl Activity {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct Trailer {
     pub agents: u32,
+    pub shells: u32,
     pub last: Option<Duration>,
     pub fail_at: Option<SystemTime>,
     pub deny_at: Option<SystemTime>,
-    /// The context window used, in percent, when the harness reports it (Claude Code's
-    /// status line does; Codex's hooks do not): the ring around the pulse. `None` draws none.
-    pub context: Option<u8>,
+    /// The latest harness context reading and its display style. None means unknown.
+    pub context: Option<Context>,
 }
 
 /// Who needs attention: a human permission, a pending question, or remote review.
@@ -187,6 +196,9 @@ impl State {
         if t.agents > 0 {
             s.push_str(&format!(" agents {}", t.agents));
         }
+        if t.shells > 0 {
+            s.push_str(&format!(" shells {}", t.shells));
+        }
         if let Some(d) = t.last {
             s.push_str(&format!(" last {}", d.as_millis().min(u64::MAX as u128)));
         }
@@ -197,7 +209,10 @@ impl State {
             s.push_str(&format!(" deny {}", epoch_ms(d)));
         }
         if let Some(c) = t.context {
-            s.push_str(&format!(" context {c}"));
+            match c {
+                Context::Rising(pct) => s.push_str(&format!(" context {pct}")),
+                Context::Segmented(pct) => s.push_str(&format!(" context_gx {pct}")),
+            }
         }
         s
     }

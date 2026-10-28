@@ -136,5 +136,34 @@ printf '%s\n' "$session" | "$bin" agent codex SessionEnd > /dev/null
 test ! -e "$tui_feed"
 test ! -e "$XDG_RUNTIME_DIR/g13map-pipe.agents/session-0199-test-session-1"
 kill "$tui_pid"
+wait "$tui_pid" 2>/dev/null || true
+
+# Real-form usage metadata, with cumulative totals deliberately disagreeing.
+jq -nc '{type:"event_msg",payload:{type:"token_count",info:{last_token_usage:{total_tokens:125},total_token_usage:{total_tokens:999999},model_context_window:1000}}}' > "$scratch/usage.jsonl"
+usage_payload=$(jq -nc --arg path "$scratch/usage.jsonl" '{transcript_path:$path,tool_name:"Bash"}')
+hook UserPromptSubmit "$usage_payload"
+rg -q ' context_gx 13 ' "$feed"
+hook PreCompact "$usage_payload"
+if rg -q context "$feed"; then echo 'FAIL: compaction kept stale context' >&2; exit 1; fi
+printf '%s\n' '{"type":"compacted"}' >> "$scratch/usage.jsonl"
+hook PostCompact "$usage_payload"
+if rg -q context "$feed"; then echo 'FAIL: old usage returned after compaction' >&2; exit 1; fi
+hook SessionEnd
+
+# A real background process leaves the count on exit without another feed update.
+probe_thread="g13map-shell-test-$BASHPID"
+shell_payload=$(jq -nc --arg session "$probe_thread" '{session_id:$session,tool_name:"Bash"}')
+hook UserPromptSubmit "$shell_payload"
+env CODEX_THREAD_ID="$probe_thread" CODEX_TOOL_CALL_ID=background-probe sleep 1 &
+shell_pid=$!
+trap 'kill "$shell_pid" 2>/dev/null || true; rm -rf -- "$scratch"' EXIT
+hook PreToolUse "$shell_payload"
+if ! "$bin" agent status | rg -q '424242: .*shells 1'; then
+  echo 'FAIL: background shell absent at next tool start' >&2; exit 1
+fi
+wait "$shell_pid"
+if "$bin" agent status | rg -q '424242: .*shells'; then echo 'FAIL: exited shell still counted' >&2; exit 1; fi
+hook SessionEnd "$shell_payload"
+test ! -e "$XDG_RUNTIME_DIR/g13map-pipe.agents/shells-424242"
 "$bin" agent hooks codex | jq -e '.hooks | length == 11' > /dev/null
-echo 'PASS: native hook lifecycle, silent output, permission clock, concurrent counts, TUI window keying, cleanup'
+echo 'PASS: hook lifecycle, silent output, clocks, concurrent counts, TUI keying, context metadata, background shell exit, cleanup'

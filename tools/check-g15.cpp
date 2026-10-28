@@ -11,7 +11,18 @@
 #include <string>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
+#include <sys/time.h>
 #include <unistd.h>
+
+// Just beyond signed 32-bit milliseconds: the old module treated this negative
+// wrapped timestamp as its "no death yet" sentinel and reset the hold every call.
+static int64_t test_time_ms = 2200000000LL;
+extern "C" int gettimeofday(timeval *tv, void *) noexcept {
+    tv->tv_sec = static_cast<time_t>(test_time_ms / 1000);
+    tv->tv_usec = static_cast<suseconds_t>((test_time_ms % 1000) * 1000);
+    return 0;
+}
 
 typedef void *G15_HANDLE;
 struct IG15 {
@@ -117,7 +128,7 @@ int main(int argc, char **argv) {
     expect("with a shield", "70/100 shield 30 ttl 5");
     lcd->SetText(line, "G13 -5 100 \x01");
     expect("just died (negative health)", "0 ttl 5");
-    usleep(1200 * 1000);
+    test_time_ms += 1200;
     lcd->SetText(line, "G13 1 100 \x02");
     expect("dead a second later", "wait ttl 5");
     lcd->SetText(line, "G13 100 100 ");

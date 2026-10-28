@@ -29,6 +29,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -63,10 +64,10 @@ const long KEEP_ALIVE_MS = 2000;
 // one read), then waits until the next spawn.
 const long DEATH_HOLD_MS = 1000;
 
-long now_ms() {
+int64_t now_ms() {
     timeval tv;
     gettimeofday(&tv, 0);
-    return tv.tv_sec * 1000L + tv.tv_usec / 1000;
+    return static_cast<int64_t>(tv.tv_sec) * 1000 + tv.tv_usec / 1000;
 }
 
 // $XDG_STATE_HOME/g13map, else $HOME/.local/state/g13map, made if missing.
@@ -195,9 +196,9 @@ bool parse(const char *text, Reading &r) {
 
 struct Feeder {
     char last[160];
-    long last_ms;
+    int64_t last_ms;
     bool alive_seen;
-    long died_ms;
+    int64_t died_ms;
     // The shield from the singleplayer hook, until the next wait (a map change).
     bool hook_shield;
     long shield;
@@ -215,7 +216,7 @@ struct Feeder {
             snprintf(full, sizeof full, "%s ttl %s", line, FEED_TTL);
         else
             snprintf(full, sizeof full, "%s", line);
-        long now = now_ms();
+        int64_t now = now_ms();
         if (strcmp(full, last) == 0 && now - last_ms < KEEP_ALIVE_MS) return;
         if (write_feed(full)) {
             snprintf(last, sizeof last, "%s", full);
@@ -244,7 +245,7 @@ struct Feeder {
             emit(line, true);
         } else if (alive_seen) {
             // A death: the drop to zero first, then the wait for the next spawn.
-            long now = now_ms();
+            int64_t now = now_ms();
             if (died_ms < 0) died_ms = now;
             emit(now - died_ms < DEATH_HOLD_MS ? "0" : "wait", true);
         } else {

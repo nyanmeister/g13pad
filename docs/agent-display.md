@@ -5,13 +5,28 @@ duration and, in the lower right, the background-agent count. Permissions blink 
 Questions blink slowly in the working colour, then green when the turn finishes with a
 question pending. Reported tool errors flash orange.
 The pulse (a resting lub-dub) is a display animation, not a signal from the model.
-The stopwatch and completed-turn duration use **HH:MM:SS.CC**.
+The stopwatch and completed-turn duration use **HH:MM:SS.CC**. TURN and LAST share
+numeric columns, with hours, minutes and seconds aligned; LAST omits hundredths
+while another turn is running.
 
 **Context ring.** When the harness reports how full the model's context window is, a
 ring draws clockwise around the pulse by that fraction, and a lit disc rises inside it by
 the same fraction with the heart dark where the disc covers it: at a third the heart's
 feet are under water, near full it is a dark heart in a bright disc. Claude Code reports
-it through the status line (below); Codex's hooks do not, so a Codex session shows no ring.
+it through the status line (below). Codex uses a compact GX-style perimeter with twelve
+progress segments, keeping the pulsing heart clear. An unknown reading draws no gauge.
+The latest reading survives normal turn/phase changes; compaction clears it until a new
+measurement is available.
+
+**Background shells.** Codex's SHELL/SHELLS count sits above AGENT/AGENTS. Counts are
+right-aligned in a two-digit field and the words share one column. The observer uses
+Codex's thread/tool-call process tags, grouping a sandbox, shell and child programs as
+one session. The display checks recorded PIDs and their start times, so an exited command
+disappears without another hook or tool poll. Discovery refreshes at the next tool start,
+tool completion, prompt or turn end; a newly backgrounded command can appear at the next
+such event. Untracked/detached jobs and processes whose
+environment cannot be read may be absent. Claude's background-shell collection is not
+implemented; its subagent counter still works.
 
 **A key that raises the agent's terminal.** `g13map agent focus` activates the terminal
 window of the agent waiting on you (a permission or question, the longest-pending first),
@@ -66,6 +81,13 @@ permission, compaction, subagent, stop, interruption and session-end events. Rea
 and trust review. Hosted tools can be invisible to tool hooks; THINKING means an
 active turn with no currently reported tool, not proof of model activity.
 
+For context, the adapter reads the latest usage metadata from the hook's `transcript_path`:
+`info.last_token_usage.total_tokens / info.model_context_window`, rounded to a whole percent.
+It never uses cumulative usage, cached-token subtraction, or rate-limit budgets. The reader
+starts with an 8 KiB tail and grows to at most 1 MiB, returning unknown if no supported
+measurement is found. The rollout format is not a stable hook interface; unsupported
+formats show an empty gauge. These samples can lag the current model request.
+
 `g13map agent hooks codex` prints valid `hooks.json`. Merge its `hooks` entries into
 `~/.codex/hooks.json`, preserving other hooks. Each command calls
 `g13map agent codex EVENT`; use an absolute executable path if `g13map` is not on
@@ -91,7 +113,7 @@ Actual permissions retain their faster yellow blink; remote checks stay steady.
 Hooks run synchronously with a three-second timeout. The feeder is silent, exits
 successfully even without a terminal ID, stores no prompt/tool/transcript contents,
 and makes no approval decisions. It only writes the existing per-terminal display
-feed. Agent counts use SubagentStart/Stop, so a rejected spawn does not add one.
+feed and numeric PID/start-time sidecar. Agent counts use SubagentStart/Stop, so a rejected spawn does not add one.
 Approval waits preserve the turn clock across hook invocations. Interruptions show
 the completed duration. SessionEnd removes the feed; crashes expire after 15
 minutes during a turn, or six hours after completion.

@@ -55,12 +55,12 @@ fn ttl_for(state: &State) -> Duration {
 
 /// The context window used, as the status line JSON reports it (`context_window.
 /// used_percentage`, a float), rounded to whole percent and clamped to 0..=100.
-fn context_pct(json: &Value) -> Option<u8> {
+fn context_pct(json: &Value) -> Option<super::Context> {
     let pct = json["context_window"]["used_percentage"].as_f64()?;
     if !pct.is_finite() {
         return None;
     }
-    Some(pct.round().clamp(0.0, 100.0) as u8)
+    Some(super::Context::Rising(pct.round().clamp(0.0, 100.0) as u8))
 }
 
 /// Best-effort failure test on a PostToolUse `tool_response`. Tools differ; this catches the
@@ -98,6 +98,7 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
     match event {
         // A new turn: reset the agent count, carry the previous turn's length as `last`.
         "prompt" => {
+            let previous = carried(&current);
             let last = current.as_ref().and_then(|s| s.trailer().last);
             Action::Set(
                 State::Turn {
@@ -105,6 +106,8 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
                     started: now,
                     trailer: Trailer {
                         last,
+                        context: previous.context,
+                        shells: previous.shells,
                         ..Default::default()
                     },
                 },
@@ -237,6 +240,7 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
         }
         // The turn ended: freeze its length as `last`, show READY.
         "stop" => {
+            let previous = carried(&current);
             let (last, agents) = match current {
                 Some(State::Turn {
                     started, trailer, ..
@@ -260,7 +264,7 @@ pub(crate) fn next(event: &str, json: &Value, current: Option<State>, now: Syste
                     trailer: Trailer {
                         agents,
                         last: Some(last),
-                        ..Default::default()
+                        ..previous
                     },
                 },
                 REST_TTL,
@@ -479,6 +483,14 @@ fn feed(event: &str, codex: bool) {
     if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
         return;
     }
+    if codex
+        && matches!(
+            event,
+            "PreToolUse" | "PostToolUse" | "UserPromptSubmit" | "Stop"
+        )
+    {
+        super::shells::refresh(win, json["session_id"].as_str().unwrap_or(""));
+    }
     let current = super::read_for(win);
     let action = if codex {
         super::codex::event(event, &json, current, SystemTime::now())
@@ -486,12 +498,25 @@ fn feed(event: &str, codex: bool) {
         next(event, &json, current, SystemTime::now())
     };
     match action {
-        Action::Set(state, ttl) => {
+        Action::Set(mut state, ttl) => {
+            if codex {
+                if event == "PreCompact" {
+                    let mut trailer = state.trailer();
+                    trailer.context = None;
+                    state = state.with_trailer(trailer);
+                } else if let Some(path) = json["transcript_path"].as_str() {
+                    let mut trailer = state.trailer();
+                    trailer.context = super::context::read(std::path::Path::new(path))
+                        .map(super::Context::Segmented);
+                    state = state.with_trailer(trailer);
+                }
+            }
             if let Err(e) = super::write(win, Some(state), Some(ttl)) {
                 eprintln!("g13map agent feed: {e}");
             }
         }
         Action::Clear => {
+            super::shells::clear(win);
             if let Err(e) = super::write(win, None, None) {
                 eprintln!("g13map agent feed: {e}");
             }
@@ -666,9 +691,12 @@ mod tests {
         else {
             panic!("status should keep the turn");
         };
-        assert_eq!((trailer.context, ttl), (Some(42), TURN_TTL));
+        assert_eq!(
+            (trailer.context, ttl),
+            (Some(super::super::Context::Rising(42)), TURN_TTL)
+        );
         let same = turn.with_trailer(Trailer {
-            context: Some(42),
+            context: Some(super::super::Context::Rising(42)),
             ..Default::default()
         });
         assert!(matches!(
@@ -694,7 +722,7 @@ mod tests {
         else {
             panic!();
         };
-        assert_eq!(trailer.context, Some(100));
+        assert_eq!(trailer.context, Some(super::super::Context::Rising(100)));
 
         // posttool with a failure flashes; substop drops an agent.
         let busy = State::Turn {

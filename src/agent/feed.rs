@@ -71,10 +71,18 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
         match key {
             "started" => started = Some(epoch(value)?),
             "agents" => trailer.agents = value.parse::<u32>().ok()?.min(MAX_AGENTS),
+            "shells" => trailer.shells = value.parse::<u32>().ok()?.min(MAX_AGENTS),
             "last" => trailer.last = Some(millis(value)?),
             "fail" => trailer.fail_at = Some(epoch(value)?),
             "deny" => trailer.deny_at = Some(epoch(value)?),
-            "context" => trailer.context = Some(value.parse::<u8>().ok()?.min(100)),
+            "context" | "context_gx" => {
+                let pct = value.parse::<u8>().ok()?.min(100);
+                trailer.context = Some(if key == "context" {
+                    Context::Rising(pct)
+                } else {
+                    Context::Segmented(pct)
+                });
+            }
             "ttl" => {
                 let ttl = Duration::try_from_secs_f64(value.parse::<f64>().ok()?).ok()?;
                 if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {
@@ -148,7 +156,7 @@ pub fn read_all() -> Vec<(u64, SystemTime, State)> {
             continue;
         };
         if let Some(Outcome::Live(state)) = outcome(&text, written, now) {
-            live.push((win, written, state));
+            live.push((win, written, with_shells(win, state)));
         }
     }
     live
@@ -160,9 +168,18 @@ pub fn read_for(win: u64) -> Option<State> {
     let p = file(win).ok()?;
     let written = fs::metadata(&p).ok()?.modified().ok()?;
     match outcome(&fs::read_to_string(&p).ok()?, written, now)? {
-        Outcome::Live(state) => Some(state),
+        Outcome::Live(state) => Some(with_shells(win, state)),
         Outcome::Off => None,
     }
+}
+
+fn with_shells(win: u64, state: State) -> State {
+    let Some(shells) = super::shells::count(win) else {
+        return state;
+    };
+    let mut trailer = state.trailer();
+    trailer.shells = shells;
+    state.with_trailer(trailer)
 }
 
 /// The newest live feed across all terminals. A focus-agnostic fallback the watcher uses
@@ -229,6 +246,15 @@ mod tests {
             .set_modified(written)
             .unwrap();
         assert_eq!(fs::metadata(path).unwrap().modified().unwrap(), written);
+    }
+
+    #[test]
+    fn segmented_context_and_background_shells_round_trip() {
+        let line = "turn EDITING started 1000 agents 12 shells 1 context_gx 75 ttl 30";
+        let state = parse(line, at(1000), at(2000)).unwrap();
+        assert_eq!(state.trailer().context, Some(Context::Segmented(75)));
+        assert_eq!(state.trailer().shells, 1);
+        assert_eq!(parse(&state.to_line(), at(1000), at(2000)), Some(state));
     }
 
     #[test]

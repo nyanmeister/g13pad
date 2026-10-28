@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(g13pad VERSION 0.3.10 LANGUAGES C CXX)
+project(g13pad VERSION 0.3.11 LANGUAGES C CXX)
 include(GNUInstallDirs)
 include(CTest)
 install(DIRECTORY contrib/df-health/
@@ -211,6 +211,8 @@ if(G13PAD_BUILD_SOURCE_HEALTH)
   if(BUILD_TESTING)
     foreach(g15_arch IN LISTS g15_archs)
       add_executable(check-g15-${g15_arch} tools/check-g15.cpp)
+      # Let the loaded module use the fixture's deterministic gettimeofday.
+      set_target_properties(check-g15-${g15_arch} PROPERTIES ENABLE_EXPORTS ON)
       target_link_libraries(check-g15-${g15_arch} PRIVATE ${CMAKE_DL_LIBS})
       # The stand-in client library the sp module patches; its name is what the hook looks for.
       add_library(fake-client-${g15_arch} MODULE tools/fake-client.cpp)

@@ -87,14 +87,19 @@ fn in_disc(x: usize, y: usize) -> bool {
 /// the heart dark where the disc covers it (option C of the 2026-10-27 sheet, asked as
 /// "inverse colouring for the heart as the gauge fills"; a lit field was the only inverse
 /// a one-bit panel has).
-fn pulse(bm: &mut Bitmap, now: SystemTime, context: Option<u8>) {
+fn pulse(bm: &mut Bitmap, now: SystemTime, context: Option<super::Context>) {
     if beating(now) {
         bm.sprite(6, 7, HEART);
     } else {
         bm.sprite(5, 6, HEART_BIG);
     }
-    let Some(pct) = context else {
-        return;
+    let pct = match context {
+        Some(super::Context::Rising(pct)) => pct,
+        Some(super::Context::Segmented(pct)) => {
+            segmented_context(bm, pct);
+            return;
+        }
+        None => return,
     };
     ring(bm, pct);
     let top = 19.0 - 19.0 * pct.min(100) as f32 / 100.0;
@@ -103,6 +108,37 @@ fn pulse(bm: &mut Bitmap, now: SystemTime, context: Option<u8>) {
             if in_disc(px, py) && py as f32 >= top {
                 bm.set(px, py, !bm.get(px, py));
             }
+        }
+    }
+}
+
+/// The selected compact GX-style perimeter. Geometry is computed once, not at
+/// the animation rate; the heart stays clear inside the progress track.
+fn segmented_context(bm: &mut Bitmap, pct: u8) {
+    static PIXELS: std::sync::OnceLock<Vec<(u8, u8, u8)>> = std::sync::OnceLock::new();
+    let pixels = PIXELS.get_or_init(|| {
+        use std::f32::consts::TAU;
+        let mut pixels = Vec::new();
+        for y in 0..19 {
+            for x in 0..19 {
+                let (dx, dy) = (x as i32 - 9, y as i32 - 9);
+                let r2 = dx * dx + dy * dy;
+                if (72..=81).contains(&r2) {
+                    pixels.push((x, y, 12)); // Thin complete outline.
+                } else if (49..72).contains(&r2) {
+                    let angle = (dx as f32).atan2(-dy as f32).rem_euclid(TAU);
+                    if angle.rem_euclid(TAU / 12.0) > 0.10 {
+                        pixels.push((x, y, (angle / (TAU / 12.0)).floor() as u8));
+                    }
+                }
+            }
+        }
+        pixels
+    });
+    let filled = u32::from(pct.min(100)) * 12 / 100;
+    for &(x, y, sector) in pixels {
+        if sector == 12 || u32::from(sector) < filled {
+            bm.set(x as usize, y as usize, true);
         }
     }
 }
@@ -127,21 +163,34 @@ pub fn frame(state: &State, age: Duration, now: SystemTime) -> Bitmap {
     }
     pulse(&mut bm, now, t.context);
     if let Some(main) = main {
-        text(&mut bm, 4, 24, &main, 1);
+        let label = if matches!(state, State::Turn { .. }) {
+            "TURN"
+        } else {
+            "LAST"
+        };
+        text(&mut bm, 4, 24, label, 1);
+        text(&mut bm, 34, 24, &main, 1);
     }
     if let Some(sub) = sub {
         text(&mut bm, 4, 34, &sub, 1);
     }
     // The subagent count sits in the lower right (asked 2026-10-27; it shared the
     // stopwatch row before), clear of the sub-line's longest form, `LAST HH:MM:SS`.
+    if t.shells > 0 {
+        let label = format!(
+            "{:>2} {}",
+            t.shells.min(99),
+            if t.shells == 1 { "SHELL" } else { "SHELLS" }
+        );
+        text(&mut bm, 105, 24, &label, 1);
+    }
     if t.agents > 0 {
         let label = if t.agents == 1 {
-            "1 AGENT".to_string()
+            " 1 AGENT".to_string()
         } else {
-            format!("{} AGENTS", t.agents)
+            format!("{:>2} AGENTS", t.agents.min(99))
         };
-        let width = label.chars().count() as i32 * 6 - 1;
-        text(&mut bm, W as i32 - width - 2, 34, &label, 1);
+        text(&mut bm, 105, 34, &label, 1);
     }
 
     if inverted(state, age) {
@@ -443,7 +492,17 @@ fn dump_agent_frames() {
         cases.push((
             format!("ring-{pct}"),
             turn.with_trailer(Trailer {
-                context: Some(pct),
+                context: Some(super::Context::Rising(pct)),
+                ..turn_trailer
+            }),
+            Duration::ZERO,
+            t0 + Duration::from_millis(83_450),
+        ));
+        cases.push((
+            format!("gx-{pct}"),
+            turn.with_trailer(Trailer {
+                context: Some(super::Context::Segmented(pct)),
+                shells: 1,
                 ..turn_trailer
             }),
             Duration::ZERO,
@@ -506,6 +565,66 @@ mod tests {
         // 50 fps steps the hundredths by 2; a 20 ms tick is exactly 2 cs.
         assert_eq!(hmsc(Duration::from_millis(20)), "00:00:00.02");
         assert_eq!(hms(Duration::from_millis(178_900)), "00:02:58");
+    }
+
+    #[test]
+    fn time_fields_and_counter_nouns_have_fixed_columns() {
+        let state = State::Turn {
+            activity: Activity::parse("EDITING"),
+            started: at(0),
+            trailer: Trailer {
+                last: Some(Duration::from_millis(3_723_450)),
+                agents: 12,
+                shells: 1,
+                ..Default::default()
+            },
+        };
+        let bm = frame(&state, Duration::ZERO, at(3_723_450));
+        // Both rows read 01:02:03; only the current row adds .45. Numeric
+        // hours start at34, minutes52, seconds70, independent of the labels.
+        for y in 0..7 {
+            for x in 34..81 {
+                assert_eq!(
+                    bm.get(x, 24 + y),
+                    bm.get(x, 34 + y),
+                    "time column{x}, row{y}"
+                );
+            }
+        }
+        let mut expected = Bitmap::blank();
+        // A two-digit count field puts S and A at123 in both rows.
+        text(&mut expected, 105, 24, " 1 SHELL", 1);
+        text(&mut expected, 105, 34, "12 AGENTS", 1);
+        for y in 24..41 {
+            for x in 105..160 {
+                assert_eq!(bm.get(x, y), expected.get(x, y), "counter{x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn segmented_context_keeps_the_heart_clear_and_fills_clockwise() {
+        let draw = |context| {
+            let mut bm = Bitmap::blank();
+            pulse(&mut bm, at(10_300), context);
+            bm
+        };
+        let none = draw(None);
+        let zero = draw(Some(super::super::Context::Segmented(0)));
+        let half = draw(Some(super::super::Context::Segmented(50)));
+        let full = draw(Some(super::super::Context::Segmented(100)));
+        assert!(zero.get(9, 0)); // A thin outline remains even at zero.
+        assert!(!zero.get(16, 8));
+        assert!(half.get(16, 8)); // Inside the right-hand progress track.
+        assert!(!half.get(2, 8));
+        assert!(full.get(2, 8)); // Left-hand track waits for the second half.
+        for bm in [zero, half, full] {
+            for y in 6..14 {
+                for x in 5..14 {
+                    assert_eq!(bm.get(x, y), none.get(x, y), "pulse obscured at{x},{y}");
+                }
+            }
+        }
     }
 
     #[test]
@@ -705,16 +824,16 @@ mod tests {
             frame(&state, Duration::ZERO, at(10_300)) // relaxed heart (300 ms into a beat)
         };
         let none = draw(None);
-        let zero = draw(Some(0));
+        let zero = draw(Some(super::super::Context::Rising(0)));
         assert_eq!(none, zero, "0% draws no ring and leaves the heart alone");
         assert!(none.get(9, 8), "heart centre lit without context");
         assert!(!none.get(9, 0) && !none.get(18, 9) && !none.get(0, 9) && !none.get(9, 15));
-        let half = draw(Some(50));
+        let half = draw(Some(super::super::Context::Rising(50)));
         assert!(half.get(9, 0) && half.get(18, 9), "right half of the ring");
         assert!(!half.get(0, 9), "left half not yet");
         assert!(half.get(9, 15), "the disc has risen past row 15 at 50%");
         assert!(half.get(9, 8), "and not yet reached the heart's centre");
-        let full = draw(Some(100));
+        let full = draw(Some(super::super::Context::Rising(100)));
         assert!(full.get(0, 9), "nine o'clock lit at 100%");
         assert!(!full.get(9, 8), "the heart is dark inside the lit disc");
         assert!(
