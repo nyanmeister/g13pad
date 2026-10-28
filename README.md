@@ -124,13 +124,19 @@ The supported route is an OS package: it installs the services, udev rules and g
 access together, and keeps your changed startup bindings and calibration across upgrades.
 
 On Arch, download `PKGBUILD` and `g13pad.install` from the
-[0.3.7 release](https://github.com/nyanmeister/g13pad/releases/tag/v0.3.7) into an
+[latest release](https://github.com/nyanmeister/g13pad/releases/latest) into an
 empty directory and run `makepkg`. That recipe downloads the source archive and
 verifies its SHA-256 checksum. xboxdrv is an optional separate dependency, not bundled.
 
-For a local checkout, export a committed tree as `g13pad-0.3.7.tar.gz` with
-`git archive --format=tar.gz --prefix=g13pad-0.3.7/ HEAD > g13pad-0.3.7.tar.gz`, put it beside both files
-from `packaging/`, and run `makepkg`. The in-tree recipe uses `SKIP` only for this
+For a local checkout, export a committed tree using the version in its package recipe:
+
+```sh
+version=$(sed -n 's/^pkgver=//p' packaging/PKGBUILD)
+git archive --format=tar.gz --prefix="g13pad-$version/" HEAD > "g13pad-$version.tar.gz"
+```
+
+Put the archive beside both files from `packaging/` and run `makepkg`.
+The in-tree recipe uses `SKIP` only for this
 locally generated archive; published release recipes carry a fixed checksum.
 
 After installing, read [installation and activation](docs/installation.md) for the
