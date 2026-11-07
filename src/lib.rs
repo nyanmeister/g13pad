@@ -9,10 +9,13 @@
 #[cfg(feature = "editor")]
 mod adjust;
 pub mod agent;
+pub mod alert;
 mod application;
 #[cfg(feature = "art")]
 pub mod art;
 pub mod audio;
+#[cfg(test)]
+mod bench_tests;
 #[cfg(feature = "editor")]
 mod board;
 #[cfg(feature = "editor")]
@@ -24,6 +27,8 @@ mod demo;
 mod display_clock;
 pub mod doctor;
 mod draw;
+mod feed;
+mod files;
 mod focus;
 #[cfg(feature = "editor")]
 mod fonts;
@@ -43,13 +48,15 @@ pub mod mpv;
 pub mod music;
 #[cfg(feature = "editor")]
 pub mod obs;
+#[cfg(test)]
+mod oracle_tests;
 pub mod overlay;
 mod panel;
-mod panel_feed;
 pub mod pressure;
 pub mod profile;
 pub mod ra;
 pub mod run;
+mod screen;
 mod session;
 pub mod ship;
 #[cfg(test)]
@@ -158,12 +165,7 @@ pub fn load(name: &str) -> Result<(Profile, Vec<String>), String> {
 /// Atomic save: write beside, then rename.
 pub fn save(name: &str, p: &Profile) -> Result<(), String> {
     validate_name(name)?;
-    fs::create_dir_all(profiles_dir()).map_err(|e| e.to_string())?;
-    let path = profile_path(name);
-    let tmp = path.with_extension("bind.new");
-    fs::write(&tmp, p.to_text())
-        .and_then(|_| fs::rename(&tmp, &path))
-        .map_err(|e| format!("{}: {e}", path.display()))
+    files::atomic_write(&profile_path(name), p.to_text())
 }
 
 /// The daemon's startup config, the baseline `apply` diffs against.
@@ -219,26 +221,28 @@ fn ensure_profile() -> Result<String, String> {
     }
 }
 
-fn apply() -> Result<String, String> {
-    let name = ensure_profile()?;
-    let (p, _) = load(&name)?;
+/// Puts a saved profile on the daemon, cleared controls included: the profile and the
+/// command lines sent.
+pub(crate) fn put_on(name: &str, previous: Option<&Profile>) -> Result<(Profile, String), String> {
+    let (p, _) = load(name)?;
     let baseline = daemon_base();
     let plan = application::Plan {
         target: &p,
-        previous: None,
+        previous,
         baseline: baseline.as_ref(),
-        routing: if modes::Modes::load().on {
-            application::Routing::Routes
-        } else {
-            application::Routing::Profile
-        },
+        routing: application::routing(),
     };
-    let analog = plan.execute_complete()?;
+    let analog = daemon::apply_stick(p.stick, p.gamepad)?;
     let cmds = plan.complete_commands(analog);
+    daemon::send(&cmds)?;
+    Ok((p, cmds))
+}
+
+fn apply() -> Result<String, String> {
+    let name = ensure_profile()?;
+    let (p, cmds) = put_on(&name, None)?;
     let mut msg = format!("applied profile '{name}': {} lines", cmds.lines().count());
     if let Some(image) = &p.lcd {
-        // The daemon starts with its logo; a profile without an image leaves that alone.
-        // An animation gets its first frame here; `g13map watch` plays the rest.
         drop(lcd::show(Some(image), false)?);
         let frames = lcd::frame_count(image);
         if frames > 1 {

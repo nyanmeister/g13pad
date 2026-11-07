@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! PSI sampling and the shared System pressure LCD renderer; no device ownership.
+use crate::{
+    draw::Draw,
+    lcd::{Bitmap, BYTES},
+    meter::text,
+};
 use std::{
     collections::VecDeque,
     fs,
@@ -8,9 +13,6 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, Instant},
 };
-const W: usize = 160;
-const H: usize = 43;
-const BYTES: usize = 960;
 const HISTORY: usize = 90;
 const NAMES: [&str; 3] = ["cpu", "memory", "io"];
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -99,55 +101,6 @@ fn advance(history: &mut [VecDeque<Option<f64>>; 3], buckets: u64, samples: [Opt
 }
 
 type Frame = [u8; BYTES];
-fn pixel(frame: &mut Frame, x: usize, y: usize) {
-    if x < W && y < H {
-        frame[x + y / 8 * W] |= 1 << (y % 8);
-    }
-}
-// The same 5x7 letter/digit designs used by the meter, restricted to this page.
-fn glyph(c: char) -> [u8; 7] {
-    match c {
-        '0' => [14, 17, 19, 21, 25, 17, 14],
-        '1' => [4, 12, 4, 4, 4, 4, 14],
-        '2' => [14, 17, 1, 2, 4, 8, 31],
-        '3' => [31, 2, 4, 2, 1, 17, 14],
-        '4' => [2, 6, 10, 18, 31, 2, 2],
-        '5' => [31, 16, 30, 1, 1, 17, 14],
-        '6' => [6, 8, 16, 30, 17, 17, 14],
-        '7' => [31, 1, 2, 4, 8, 8, 8],
-        '8' => [14, 17, 17, 14, 17, 17, 14],
-        '9' => [14, 17, 17, 15, 1, 2, 12],
-        'A' => [14, 17, 17, 31, 17, 17, 17],
-        'C' => [14, 17, 16, 16, 16, 17, 14],
-        'D' => [30, 17, 17, 17, 17, 17, 30],
-        'E' => [31, 16, 16, 30, 16, 16, 31],
-        'I' => [31, 4, 4, 4, 4, 4, 31],
-        'L' => [16, 16, 16, 16, 16, 16, 31],
-        'M' => [17, 27, 21, 17, 17, 17, 17],
-        'O' => [14, 17, 17, 17, 17, 17, 14],
-        'P' => [30, 17, 17, 30, 16, 16, 16],
-        'S' => [15, 16, 16, 14, 1, 1, 30],
-        'T' => [31, 4, 4, 4, 4, 4, 4],
-        'U' => [17, 17, 17, 17, 17, 17, 14],
-        '%' => [25, 25, 2, 4, 8, 19, 19],
-        '/' => [1, 1, 2, 4, 8, 16, 16],
-        '.' => [0, 0, 0, 0, 0, 4, 4],
-        '-' => [0, 0, 0, 31, 0, 0, 0],
-        ' ' => [0; 7],
-        _ => [14, 17, 1, 2, 4, 0, 4],
-    }
-}
-fn text(frame: &mut Frame, x: usize, y: usize, value: &str) {
-    for (i, c) in value.chars().enumerate() {
-        for (row, bits) in glyph(c).iter().enumerate() {
-            for col in 0..5 {
-                if bits & (1 << (4 - col)) != 0 {
-                    pixel(frame, x + i * 6 + col, y + row);
-                }
-            }
-        }
-    }
-}
 fn scale(history: &[VecDeque<Option<f64>>; 3]) -> u32 {
     let peak = history
         .iter()
@@ -165,10 +118,10 @@ fn render(
     history: &[VecDeque<Option<f64>>; 3],
     synthetic: bool,
 ) -> Frame {
-    let mut frame = [0; BYTES];
+    let mut bm = Bitmap::blank();
     let ceiling = scale(history);
     text(
-        &mut frame,
+        &mut bm,
         0,
         0,
         &format!(
@@ -176,25 +129,24 @@ fn render(
             if synthetic { "DEMO" } else { "STALL" },
             ceiling
         ),
+        1,
     );
     for (row, label) in ["CPU", "MEM", "I/O"].into_iter().enumerate() {
-        let y = 11 + row * 11;
-        text(&mut frame, 0, y, label);
+        let y = 11 + row as i32 * 11;
+        text(&mut bm, 0, y, label, 1);
         let value = current[row].map_or_else(|| "--.-%".into(), |p| format!("{:5.1}%", p.avg10));
-        text(&mut frame, 24, y, &value);
+        text(&mut bm, 24, y, &value, 1);
         // Ninety one-second intervals, fixed time axis; one shared labelled scale.
         for (i, value) in history[row].iter().enumerate() {
-            let x = 70 + HISTORY - history[row].len() + i;
+            let x = (70 + HISTORY - history[row].len() + i) as i32;
             if let Some(value) = value {
-                let height = (value / f64::from(ceiling) * 7.0).ceil().clamp(0.0, 7.0) as usize;
-                pixel(&mut frame, x, y + 7);
-                for h in 0..height {
-                    pixel(&mut frame, x, y + 6 - h);
-                }
+                let height = (value / f64::from(ceiling) * 7.0).ceil().clamp(0.0, 7.0) as i32;
+                bm.plot(x, y + 7);
+                bm.fill(x, y + 7 - height, 1, height, true);
             }
         }
     }
-    frame
+    bm.0.try_into().unwrap()
 }
 /// One-second samples continue while the editor temporarily owns the LCD.
 pub struct Sampler {

@@ -453,16 +453,9 @@ impl Snapshot {
             }
             let energy = self.energy.unwrap_or(0.0).round() as u32;
             text(&mut bm, 46, 10, &format!("E{energy}%"), 1);
-            bm.line(82, 9, 157, 9);
-            bm.line(82, 17, 157, 17);
-            bm.line(82, 9, 82, 17);
-            bm.line(157, 9, 157, 17);
+            bm.frame(82, 9, 157, 17);
             let width = energy.min(100) * 72 / 100;
-            for y in 11..=15 {
-                for x in 84..84 + width as i32 {
-                    bm.plot(x, y);
-                }
-            }
+            bm.fill(84, 11, width as i32, 5, true);
             let digits = format!("{}", speed.round() as u32);
             text(
                 &mut bm,
@@ -473,12 +466,14 @@ impl Snapshot {
             );
             text(&mut bm, 112, 26, "KM/H", 1);
             if let (Some(n), Some(t)) = (model.earned, model.total.filter(|t| *t > 0)) {
-                for x in 46..=157 {
-                    bm.plot(x, 33);
-                }
-                for x in 46..46 + (u64::from(n.min(t)) * 112 / u64::from(t)) as i32 {
-                    bm.plot(x, 34);
-                }
+                bm.line(46, 33, 157, 33);
+                bm.fill(
+                    46,
+                    34,
+                    (u64::from(n.min(t)) * 112 / u64::from(t)) as i32,
+                    1,
+                    true,
+                );
             }
             let count = match (model.earned, model.total) {
                 (Some(n), Some(t)) => format!("{n}/{t}"),

@@ -15,21 +15,7 @@ use crate::meter::text;
 use std::time::{Duration, SystemTime};
 
 /// The relaxed heart (9x8) and its contraction on the beat (7x6, centred in the same box).
-#[rustfmt::skip]
-const HEART_BIG: &[&str] = &[
-    ".###.###.",
-    "#########",
-    "#########",
-    "#########",
-    ".#######.",
-    "..#####..",
-    "...###...",
-    "....#....",
-];
-#[rustfmt::skip]
-const HEART: &[&str] = &[
-    ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...",
-];
+use crate::draw::{HEART, HEART_BIG};
 
 // Working backlight is the profile's own colour; the alerts override it.
 // Saturated for the backlight: the G13's RGB LED is additive, so any light in all three
@@ -155,11 +141,7 @@ pub fn frame(state: &State, age: Duration, now: SystemTime) -> Bitmap {
     // The activity's viewport starts after the pulse. Text's ordinary clipping
     // handles the right edge; erase only this row's left gutter before the pulse.
     if offset > 0 {
-        for x in 0..GUTTER as usize {
-            for y in 3..17 {
-                bm.set(x, y, false);
-            }
-        }
+        bm.fill(0, 3, GUTTER, 14, false);
     }
     pulse(&mut bm, now, t.context);
     if let Some(main) = main {
@@ -342,11 +324,7 @@ fn breathe(c: [u8; 3], age: Duration) -> [u8; 3] {
 
 /// Invert every pixel: the "blink".
 fn invert(bm: &mut Bitmap) {
-    for y in 0..crate::lcd::H {
-        for x in 0..crate::lcd::W {
-            bm.set(x, y, !bm.get(x, y));
-        }
-    }
+    bm.invert(0, 0, crate::lcd::W as i32, crate::lcd::H as i32);
 }
 
 /// Mockup-only: dump the real renderer's frames for the key phases as PBMs plus a manifest

@@ -29,8 +29,10 @@ const HELP: &str = "g13map — Logitech G13 configuration
   g13map profile health NAME MODE      game integration: off, feed (a mod or script),
                                        cs2, log (health console log), retroarch or dolphin (RA)
   g13map profile pressure NAME on|off  show the computer's load (one live display at a time)
+  g13map profile agent NAME on|off     the coding agent's turn and context, from its hooks
   g13map profile combat NAME on|off    accuracy, style per minute and deaths from a game mod
   g13map profile ship NAME on|off      hull, shields and energy from a game observer
+  g13map profile alert NAME on|off     compass to off-screen events from a game widget
   g13map profile mpv NAME on|off       select mpv playback diagnostics and progress
   g13map profile mpd NAME on|off       select MPD playback and listening history
   g13map profile audio NAME on|off     select System audio (mic state and level history)
@@ -221,17 +223,8 @@ fn profile(args: &[&str]) -> Result<String, String> {
         }
         // `X on` selects that live display (there is only ever one); `X off` goes back
         // to the picture if X is the one selected, and otherwise changes nothing.
-        ("pressure" | "mpv" | "mpd" | "audio" | "agent" | "combat" | "ship", [mode]) => {
-            let what = *op;
-            let display = match what {
-                "pressure" => Display::Pressure,
-                "mpv" => Display::Mpv,
-                "mpd" => Display::Mpd,
-                "agent" => Display::Agent,
-                "combat" => Display::Combat,
-                "ship" => Display::Ship,
-                _ => Display::Audio,
-            };
+        (word, [mode]) if Display::switch(word).is_some() => {
+            let display = Display::switch(word).unwrap();
             match *mode {
                 "on" => p.display = display,
                 "off" => {
@@ -239,7 +232,7 @@ fn profile(args: &[&str]) -> Result<String, String> {
                         p.display = Display::Picture;
                     }
                 }
-                _ => return Err(format!("{what} must be on or off")),
+                _ => return Err(format!("{word} must be on or off")),
             }
         }
         ("mic", [source]) => {
@@ -334,20 +327,8 @@ fn focus(args: &[&str]) -> Result<String, String> {
 }
 
 fn use_profile(name: &str) -> Result<String, String> {
-    let (p, _) = load(name)?;
     let previous = load(&active_name()).ok().map(|(p, _)| p);
-    let baseline = daemon_base();
-    application::Plan {
-        target: &p,
-        previous: previous.as_ref(),
-        baseline: baseline.as_ref(),
-        routing: if modes::Modes::load().on {
-            application::Routing::Routes
-        } else {
-            application::Routing::Profile
-        },
-    }
-    .execute_complete()?;
+    let (p, _) = crate::put_on(name, previous.as_ref())?;
     drop(lcd::show(p.lcd.as_deref(), false)?);
     set_active(name)?;
     Ok(format!("applied profile '{name}'"))
@@ -403,6 +384,7 @@ pub fn dispatch(args: &[String]) -> Result<String, String> {
         }
         ["health", rest @ ..] => health(rest),
         ["agent", rest @ ..] => crate::agent::feeder::command(rest),
+        ["alert", rest @ ..] => crate::alert::command(rest),
         ["demo", rest @ ..] => crate::demo::command(rest),
         ["mpv", "preview", path] => crate::mpv::preview(std::path::Path::new(path)),
         ["music", action] => g13pad_music::request(action),

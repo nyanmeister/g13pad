@@ -28,15 +28,11 @@ pub(super) fn bar(bm: &mut Bitmap, model: &Model, y: i32) {
     progress_bar(bm, model, y, 5);
 }
 pub(super) fn progress_bar(bm: &mut Bitmap, model: &Model, y: i32, height: i32) {
-    bm.line(0, y, 159, y);
-    bm.line(0, y + height, 159, y + height);
-    bm.line(0, y, 0, y + height);
-    bm.line(159, y, 159, y + height);
+    bm.frame(0, y, 159, y + height);
     if let (Some(n), Some(total)) = (model.earned, model.total) {
         if total != 0 {
-            for x in 1..=((u64::from(n) * 158 / u64::from(total)) as i32).min(158) {
-                bm.line(x, y + 1, x, y + height - 1);
-            }
+            let w = ((u64::from(n) * 158 / u64::from(total)) as i32).min(158);
+            bm.fill(1, y + 1, w, height - 1, true);
         }
     }
 }

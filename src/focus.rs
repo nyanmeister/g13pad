@@ -72,46 +72,28 @@ impl Rules {
     /// `on`/`off`, then `CLASS<TAB>PROFILE` lines (or the last run of spaces as the split).
     pub fn parse(text: &str) -> Rules {
         let mut r = Rules::default();
-        for raw in text.lines() {
-            let line = raw.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
+        r.on = crate::files::parse_switch(text, |line| {
+            let split = line
+                .split_once('\t')
+                .or_else(|| line.rsplit_once(' '))
+                .map(|(c, p)| (c.trim(), p.trim()));
+            if let Some((c, p)) = split.filter(|(c, p)| !c.is_empty() && !p.is_empty()) {
+                r.set(c, Some(p));
             }
-            match line {
-                "on" => r.on = true,
-                "off" => r.on = false,
-                _ => {
-                    let split = line
-                        .split_once('\t')
-                        .or_else(|| line.rsplit_once(' '))
-                        .map(|(c, p)| (c.trim(), p.trim()));
-                    if let Some((c, p)) = split.filter(|(c, p)| !c.is_empty() && !p.is_empty()) {
-                        r.set(c, Some(p));
-                    }
-                }
-            }
-        }
+        });
         r
     }
     pub fn to_text(&self) -> String {
-        let mut out = String::from(
+        crate::files::switch_text(
             "# g13map: profiles by focused window (i3, or any X11 window manager).\n\
              # `CLASS<TAB>PROFILE`, CLASS being the\n\
              # window's WM_CLASS class as the Windows… list shows it.\n",
-        );
-        out.push_str(if self.on { "on\n" } else { "off\n" });
-        for (c, p) in &self.rules {
-            out.push_str(&format!("{c}\t{p}\n"));
-        }
-        out
+            self.on,
+            self.rules.iter().map(|(c, p)| format!("{c}\t{p}")),
+        )
     }
     pub fn save(&self) -> Result<(), String> {
-        fs::create_dir_all(crate::config_dir()).map_err(|e| e.to_string())?;
-        let p = path();
-        let tmp = p.with_extension("new");
-        fs::write(&tmp, self.to_text())
-            .and_then(|_| fs::rename(&tmp, &p))
-            .map_err(|e| format!("{}: {e}", p.display()))
+        crate::files::atomic_write(&path(), self.to_text())
     }
     pub fn profile_for(&self, class: &str) -> Option<&str> {
         self.rules

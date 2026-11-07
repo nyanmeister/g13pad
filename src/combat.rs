@@ -6,11 +6,7 @@ use crate::{
     lcd::Bitmap,
     meter::{text, RANKS},
 };
-use std::{
-    fs,
-    io::Read,
-    time::{Duration, SystemTime},
-};
+use std::time::SystemTime;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct State {
@@ -92,10 +88,7 @@ pub fn parse(line: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 s.time_ms = (seconds * 1000.0).round() as u32;
             }
             "ttl" => {
-                let ttl = Duration::try_from_secs_f64(value.parse().ok()?).ok()?;
-                if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {
-                    return None;
-                }
+                crate::feed::fresh(value, written, now)?;
             }
             _ => unreachable!(),
         }
@@ -104,29 +97,8 @@ pub fn parse(line: &str, written: SystemTime, now: SystemTime) -> Option<State> 
 }
 
 pub fn read() -> Option<State> {
-    let mut paths = vec![crate::state_dir().join("combat")];
-    if let Ok(path) = crate::daemon::runtime_file("combat") {
-        paths.push(path);
-    }
-    // A fresh wait/invalid record clears an older live record, never resurrects it.
-    let (written, path) = paths
-        .into_iter()
-        .filter_map(|p| Some((fs::metadata(&p).ok()?.modified().ok()?, p)))
-        .max_by_key(|(time, _)| *time)?;
-    let mut bytes = Vec::new();
-    fs::File::open(path)
-        .ok()?
-        .take(1025)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() > 1024 {
-        return None;
-    }
-    parse(
-        std::str::from_utf8(&bytes).ok()?,
-        written,
-        SystemTime::now(),
-    )
+    // `wait` is the mod saying "no fight": it clears the screen like `off`.
+    crate::feed::newest(crate::feed::pair("combat"), &["off", "wait"], parse)
 }
 
 pub fn frame(state: Option<State>) -> Bitmap {
@@ -191,8 +163,8 @@ pub(crate) fn paint(tuning: &crate::meter::Tuning, rest: [u8; 3]) -> (Bitmap, [u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::panel_feed::Live;
     use std::thread;
+    use std::{fs, io::Read, time::Duration};
     const EXAMPLE: &str =
         "combat 1 hp 74 shots 50 hits 43 style 8928 time 124.000 deaths 2 rank SS known 1 ttl 3";
     fn parsed(line: &str) -> Option<State> {
@@ -304,7 +276,11 @@ mod tests {
         fs::create_dir_all(runtime.parent().unwrap()).unwrap();
         fs::write(&runtime, "wait ttl 3").unwrap();
         assert!(read().is_none());
+        // An oversize file is nobody's: it is skipped, so the older live record stands
+        // (since 2026-11-07; before, any newest file that failed to parse cleared the screen).
         fs::write(&runtime, "x".repeat(1025)).unwrap();
+        assert!(read().is_some());
+        fs::remove_file(&state).unwrap();
         assert!(read().is_none());
     }
     #[test]
@@ -314,7 +290,7 @@ mod tests {
         let path = crate::state_dir().join("combat");
         fs::create_dir_all(path.parent().unwrap()).unwrap();
         fs::write(&path, EXAMPLE).unwrap();
-        let live = Live::start([0, 0, 0], "test", paint);
+        let live = crate::screen::fed([0, 0, 0], "test", "combat", paint);
         let mut bytes = pipe.read();
         // RGB and LCD may arrive in separate FIFO reads.
         if !bytes

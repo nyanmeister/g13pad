@@ -466,11 +466,7 @@ impl Display {
             .flash
             .is_some_and(|t| now.saturating_duration_since(t) < Duration::from_millis(300));
         if self.flash_active {
-            for y in 0..H {
-                for x in 0..W {
-                    bm.set(x, y, true);
-                }
-            }
+            bm.fill(0, 0, W as i32, H as i32, true);
         }
     }
 }

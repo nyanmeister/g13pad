@@ -5,11 +5,7 @@ use crate::{
     lcd::Bitmap,
     meter::{gauge, parts::Pie, text},
 };
-use std::{
-    fs,
-    io::Read,
-    time::{Duration, SystemTime},
-};
+use std::{fs, time::SystemTime};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct State {
@@ -76,10 +72,7 @@ pub fn parse(line: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 )
             }
             "ttl" => {
-                let ttl = Duration::try_from_secs_f64(value.parse().ok()?).ok()?;
-                if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {
-                    return None;
-                }
+                crate::feed::fresh(value, written, now)?;
             }
             _ => unreachable!(),
         }
@@ -98,29 +91,12 @@ pub fn read() -> Option<State> {
                 .filter(|s| !s.trim().is_empty())
                 .map(|s| std::path::PathBuf::from(s.trim()))
         });
-    let paths = if let Some(path) = configured {
-        vec![path]
-    } else {
-        let mut paths = vec![crate::state_dir().join("ship")];
-        if let Ok(path) = crate::daemon::runtime_file("ship") {
-            paths.push(path);
-        }
-        paths
+    let paths = match configured {
+        Some(path) => vec![path],
+        None => crate::feed::pair("ship"),
     };
-    let (written, path) = paths
-        .into_iter()
-        .filter_map(|p| Some((fs::metadata(&p).ok()?.modified().ok()?, p)))
-        .max_by_key(|(time, _)| *time)?;
-    let mut line = Vec::new();
-    fs::File::open(path)
-        .ok()?
-        .take(513)
-        .read_to_end(&mut line)
-        .ok()?;
-    if line.len() > 512 {
-        return None;
-    }
-    parse(std::str::from_utf8(&line).ok()?, written, SystemTime::now())
+    // `wait` is the feeder saying "no ship": it clears the screen like `off`.
+    crate::feed::newest(paths, &["off", "wait"], parse)
 }
 const ENERGY: Pie = Pie {
     cx: 26,
@@ -240,6 +216,7 @@ pub(crate) fn paint(tuning: &crate::meter::Tuning, rest: [u8; 3]) -> (Bitmap, [u
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::{io::Read, time::Duration};
     const EXAMPLE: &str = "ship 1 hull 74 shield 38 energy 78 ttl 3";
     fn parsed(line: &str) -> Option<State> {
         parse(line, SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH)
@@ -477,7 +454,7 @@ mod tests {
             "ship 1 hull 20 shield none energy 80 ttl 30",
         )
         .unwrap();
-        let live = crate::panel_feed::Live::start([0, 0, 255], "test", paint);
+        let live = crate::screen::fed([0, 0, 255], "test", "ship", paint);
         let mut output = pipe.read();
         if output.len() < crate::lcd::BYTES {
             output.extend(pipe.read());

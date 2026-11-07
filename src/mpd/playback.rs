@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Now-playing presentation. Acquisition outlives profile visibility; no controls.
 use super::{mpd_send_status, Client, Error};
+use crate::draw::Draw;
 use crate::{
     audio::MusicPeaks,
     lcd::{Bitmap, BYTES, W},
@@ -103,14 +104,7 @@ fn history(track: &mut Track, endpoint: &str) {
 fn time(value: Option<f64>) -> String {
     value
         .filter(|v| v.is_finite() && *v >= 0. && *v <= 999_999.)
-        .map_or("--:--".into(), |s| {
-            let s = s.floor() as u64;
-            if s >= 3600 {
-                format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
-            } else {
-                format!("{}:{:02}", s / 60, s % 60)
-            }
-        })
+        .map_or("--:--".into(), |s| crate::meter::clock(s.floor() as u64))
 }
 fn compact(n: u64) -> String {
     for (size, suffix) in [
@@ -187,10 +181,8 @@ impl Graph {
                 } else {
                     -60.
                 };
-                let height = (((db + 60.) / 60.) * 10.).round() as usize;
-                for y in (42 - height)..43 {
-                    bm.set(x, y, true);
-                }
+                let height = (((db + 60.) / 60.) * 10.).round() as i32;
+                bm.fill(x as i32, 42 - height, 1, height + 1, true);
                 if p >= 0.999 {
                     bm.set(x, 31, true);
                 }
@@ -227,21 +219,16 @@ fn render(
                 1,
             );
             if t.paused {
-                for x in [77, 78, 81, 82] {
-                    for y in 21..26 {
-                        bm.set(x, y, true);
-                    }
-                }
+                bm.fill(77, 21, 2, 5, true);
+                bm.fill(81, 21, 2, 5, true);
             }
             let fill = t
                 .elapsed
                 .zip(t.duration)
                 .map(|(p, d)| ((p / d).clamp(0., 1.) * W as f64).round() as usize);
-            for x in 0..W {
-                bm.set(x, 29, true);
-                if fill.is_some_and(|n| x < n) {
-                    bm.set(x, 28, true);
-                }
+            bm.line(0, 29, W as i32 - 1, 29);
+            if let Some(n) = fill {
+                bm.fill(0, 28, n as i32, 1, true);
             }
             graph.paint(&mut bm);
         }

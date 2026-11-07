@@ -16,6 +16,22 @@
 #include <string.h>
 #include <sys/stat.h>
 
+/* OBS 33 replaced gs_image_file4_t (a nest of image structs) with gs_image_file_ex_t, a
+ * flat one; the plugin draws the same sheet either way. */
+#if LIBOBS_API_MAJOR_VER >= 33
+typedef gs_image_file_ex_t g13_sheet_t;
+#define g13_sheet_init gs_image_file_ex_init
+#define g13_sheet_free gs_image_file_ex_free
+#define g13_sheet_init_texture gs_image_file_ex_init_texture
+#define G13_SHEET_IMAGE(sheet) (sheet)
+#else
+typedef gs_image_file4_t g13_sheet_t;
+#define g13_sheet_init gs_image_file4_init
+#define g13_sheet_free gs_image_file4_free
+#define g13_sheet_init_texture gs_image_file4_init_texture
+#define G13_SHEET_IMAGE(sheet) ((sheet).image3.image2.image)
+#endif
+
 OBS_DECLARE_MODULE()
 OBS_MODULE_USE_DEFAULT_LOCALE("g13pad-obs", "en-US")
 
@@ -51,7 +67,7 @@ struct g13 {
 	bool lcd_only;
 	int lcd_scale;
 
-	gs_image_file4_t sheet;
+	g13_sheet_t sheet;
 	bool sheet_loaded;
 	struct element *elements;
 	size_t count;
@@ -328,7 +344,7 @@ static void sheet_free(struct g13 *s)
 {
 	obs_enter_graphics();
 	if (s->sheet_loaded)
-		gs_image_file4_free(&s->sheet);
+		g13_sheet_free(&s->sheet);
 	obs_leave_graphics();
 	s->sheet_loaded = false;
 	bfree(s->elements);
@@ -404,12 +420,12 @@ static void sheet_load(struct g13 *s)
 	}
 	json_decref(root);
 
-	gs_image_file4_init(&s->sheet, png.array, GS_IMAGE_ALPHA_PREMULTIPLY);
+	g13_sheet_init(&s->sheet, png.array, GS_IMAGE_ALPHA_PREMULTIPLY);
 	obs_enter_graphics();
-	gs_image_file4_init_texture(&s->sheet);
+	g13_sheet_init_texture(&s->sheet);
 	obs_leave_graphics();
 	s->sheet_loaded = true;
-	if (!s->sheet.image3.image2.image.loaded)
+	if (!G13_SHEET_IMAGE(s->sheet).loaded)
 		blog(LOG_WARNING, "[g13pad-obs] %s: cannot load", png.array);
 	else
 		blog(LOG_INFO, "[g13pad-obs] sheet %s, %zu elements, %ux%u", dir.array, s->count, s->width, s->height);
@@ -547,8 +563,8 @@ static void g13_render(void *data, gs_effect_t *effect)
 			gs_draw_sprite(s->lcd_tex, 0, LCD_W, LCD_H);
 			gs_matrix_pop();
 		}
-	} else if (s->sheet_loaded && s->sheet.image3.image2.image.texture) {
-		gs_texture_t *tex = s->sheet.image3.image2.image.texture;
+	} else if (s->sheet_loaded && G13_SHEET_IMAGE(s->sheet).texture) {
+		gs_texture_t *tex = G13_SHEET_IMAGE(s->sheet).texture;
 		bool clicked = held(s, "TOP");
 		for (size_t i = 0; i < s->count; i++) {
 			const struct element *e = &s->elements[i];

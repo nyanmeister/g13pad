@@ -84,10 +84,7 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 });
             }
             "ttl" => {
-                let ttl = Duration::try_from_secs_f64(value.parse::<f64>().ok()?).ok()?;
-                if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {
-                    return None;
-                }
+                crate::feed::fresh(value, written, now)?;
             }
             _ => return None,
         }
@@ -110,22 +107,10 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
     }
 }
 
-enum Outcome {
-    Off,
-    Live(State),
-}
+use crate::feed::{self, Outcome};
 
-/// Keep a valid shutdown/expiry in the timestamp ordering, but skip broken feeds. Mirrors
-/// the health feed: a line that was valid when written but has since expired counts as a
-/// clean `Off`, so it can still suppress an older live line; genuine garbage cannot.
-fn outcome(text: &str, written: SystemTime, now: SystemTime) -> Option<Outcome> {
-    if text.split_whitespace().next() == Some("off") {
-        return Some(Outcome::Off);
-    }
-    if let Some(state) = parse(text, written, now) {
-        return Some(Outcome::Live(state));
-    }
-    parse(text, written, written).map(|_| Outcome::Off)
+fn outcome(text: &str, written: SystemTime, now: SystemTime) -> Option<Outcome<State>> {
+    feed::outcome(text, written, now, &["off"], parse)
 }
 
 /// Every terminal with a live feed now: (window id, mtime, state), newest last by nothing
@@ -152,7 +137,7 @@ pub fn read_all() -> Vec<(u64, SystemTime, State)> {
         let Ok(written) = entry.metadata().and_then(|m| m.modified()) else {
             continue;
         };
-        let Ok(text) = fs::read_to_string(entry.path()) else {
+        let Some(text) = feed::read_line(&entry.path()) else {
             continue;
         };
         if let Some(Outcome::Live(state)) = outcome(&text, written, now) {
@@ -166,8 +151,8 @@ pub fn read_all() -> Vec<(u64, SystemTime, State)> {
 pub fn read_for(win: u64) -> Option<State> {
     let now = SystemTime::now();
     let p = file(win).ok()?;
-    let written = fs::metadata(&p).ok()?.modified().ok()?;
-    match outcome(&fs::read_to_string(&p).ok()?, written, now)? {
+    let written = feed::modified(&p)?;
+    match outcome(&feed::read_line(&p)?, written, now)? {
         Outcome::Live(state) => Some(with_shells(win, state)),
         Outcome::Off => None,
     }
@@ -210,21 +195,13 @@ pub fn select(focused: Option<u64>, latest: &mut Option<u64>) -> Option<State> {
 pub fn write(win: u64, state: Option<State>, ttl: Option<Duration>) -> Result<(), String> {
     let p = file(win)?;
     let Some(state) = state else {
-        return match fs::remove_file(&p) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("{}: {e}", p.display())),
-        };
+        return feed::remove(&p);
     };
     let mut line = state.to_line();
     if let Some(ttl) = ttl {
         line.push_str(&format!(" ttl {}", ttl.as_secs().max(1)));
     }
-    line.push('\n');
-    let tmp = p.with_extension("new");
-    fs::write(&tmp, line)
-        .and_then(|_| fs::rename(&tmp, &p))
-        .map_err(|e| format!("{}: {e}", p.display()))
+    feed::write_line(&p, &line)
 }
 
 #[cfg(test)]

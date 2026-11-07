@@ -107,6 +107,22 @@ pub struct PanelPipe {
 }
 
 impl PanelPipe {
+    /// The next LCD frame's bytes: a `rgb R G B` line a screen sends first is skipped,
+    /// whether it arrives alone or glued to the frame.
+    pub fn read_frame(&self) -> Vec<u8> {
+        let mut bytes = self.read();
+        while bytes.starts_with(b"rgb ") {
+            let nl = bytes
+                .iter()
+                .position(|b| *b == b'\n')
+                .map_or(bytes.len(), |i| i + 1);
+            bytes.drain(..nl);
+            if bytes.is_empty() {
+                bytes = self.read();
+            }
+        }
+        bytes
+    }
     pub fn new() -> Self {
         use std::{io::Read, os::unix::fs::OpenOptionsExt, sync::atomic::Ordering};
         let path = crate::daemon::pipe_path();

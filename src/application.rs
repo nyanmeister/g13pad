@@ -11,6 +11,15 @@ pub enum Routing {
     Sum(u8),
 }
 
+/// How a profile's bindings reach the daemon: through the M-sum routes when modes are on.
+pub fn routing() -> Routing {
+    if modes::Modes::load().on {
+        Routing::Routes
+    } else {
+        Routing::Profile
+    }
+}
+
 pub struct Plan<'a> {
     pub target: &'a Profile,
     pub previous: Option<&'a Profile>,
@@ -52,12 +61,6 @@ impl Plan<'_> {
         }
         commands.push_str(&self.commands(analog));
         commands
-    }
-
-    pub fn execute_complete(&self) -> Result<bool, String> {
-        let analog = daemon::apply_stick(self.target.stick, self.target.gamepad)?;
-        daemon::send(&self.complete_commands(analog))?;
-        Ok(analog)
     }
 }
 

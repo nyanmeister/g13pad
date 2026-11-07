@@ -77,7 +77,7 @@ impl Glass {
 
     /// When the file last changed, if it exists.
     pub fn stamp() -> Option<SystemTime> {
-        fs::metadata(Self::path()).and_then(|m| m.modified()).ok()
+        crate::files::modified(&Self::path())
     }
 
     /// The user's table, else the built-in one.
@@ -164,11 +164,7 @@ impl Glass {
     }
 
     pub fn save(&self) -> Result<(), String> {
-        let path = Self::path();
-        if let Some(dir) = path.parent() {
-            fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        }
-        fs::write(&path, self.to_text()).map_err(|e| format!("{}: {e}", path.display()))
+        crate::files::atomic_write(&Self::path(), self.to_text())
     }
 
     /// The matched colour for this LED value, if it is in the table.

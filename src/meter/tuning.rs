@@ -135,7 +135,7 @@ impl Tuning {
     }
     /// When either file last changed, for the watcher's re-read.
     pub fn stamp(profile: &str) -> (Option<SystemTime>, Option<SystemTime>) {
-        let m = |p: PathBuf| fs::metadata(p).ok()?.modified().ok();
+        let m = |p: PathBuf| crate::files::modified(&p);
         (m(Self::path()), m(Self::profile_path(profile)))
     }
     pub fn parse(text: &str) -> Tuning {
@@ -235,8 +235,11 @@ impl Tuning {
                         .unwrap_or(t.cs2_port)
                 }
                 "log_file" => {
-                    if let Some(v) = values.first() {
-                        t.log_file = PathBuf::from(v);
+                    // The rest of the line: Steam library paths have spaces in them
+                    // (found by the round-trip generator, 2026-11-07).
+                    let rest = line.trim_start()["log_file".len()..].trim();
+                    if !rest.is_empty() {
+                        t.log_file = PathBuf::from(rest);
                     }
                 }
                 _ => {

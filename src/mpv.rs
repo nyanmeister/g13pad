@@ -1,76 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Read-only mpv feed display. Playback and editor ownership stay independent.
+use crate::draw::Draw;
 use crate::lcd::{Bitmap, BYTES, W};
 use serde_json::Value;
 use std::{
     fs,
     io::Read,
     path::Path,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-    thread,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-pub struct Live {
-    stop: Arc<AtomicBool>,
-    thread: Option<thread::JoinHandle<()>>,
-}
-impl Live {
-    pub fn start() -> Self {
-        let stop = Arc::new(AtomicBool::new(false));
-        let flag = stop.clone();
-        let worker = thread::spawn(move || {
-            let mut due = Instant::now();
-            let mut frame = render(None);
-            let mut shown = false;
-            let mut refresh = true;
-            let mut retry = Instant::now();
-            let mut error = String::new();
-            while !flag.load(Ordering::Relaxed) {
-                let now = Instant::now();
-                if now >= due {
-                    frame =
-                        render(read(&crate::state_dir().join("mpv"), SystemTime::now()).as_ref());
-                    due = now + Duration::from_millis(250);
-                    refresh = true;
-                }
-                if crate::lcd::editor_open() {
-                    shown = false;
-                } else if now >= retry && (refresh || !shown) {
-                    match crate::daemon::send_lcd(&frame) {
-                        Ok(()) => {
-                            shown = true;
-                            refresh = false;
-                            error.clear();
-                        }
-                        Err(e) => {
-                            if error != e {
-                                eprintln!("mpv playback: {e}");
-                                error = e;
-                            }
-                            retry = now + Duration::from_secs(1);
-                        }
-                    }
-                }
-                thread::sleep(Duration::from_millis(50));
-            }
-        });
-        Self {
-            stop,
-            thread: Some(worker),
-        }
-    }
-}
-impl Drop for Live {
-    fn drop(&mut self) {
-        self.stop.store(true, Ordering::Relaxed);
-        if let Some(worker) = self.thread.take() {
-            let _ = worker.join();
-        }
-    }
+/// The mpv screen: the newest player's JSON under the state dir, re-read every 250 ms.
+pub fn start(rest: [u8; 3]) -> crate::screen::Live {
+    let dir = crate::state_dir().join("mpv");
+    crate::screen::Live::start(
+        rest,
+        Duration::from_millis(250),
+        "mpv playback",
+        move |_| {
+            let frame = render(read(&dir, SystemTime::now()).as_ref());
+            (Bitmap(frame.to_vec()), None)
+        },
+    )
 }
 
 /// Prefer a focused player, then its most recent sample. Never replay expired feeds.
@@ -153,12 +104,7 @@ fn time(seconds: Option<f64>) -> String {
     let Some(s) = seconds.filter(|s| s.is_finite() && *s >= 0.0 && *s < 360000.0) else {
         return "--:--".into();
     };
-    let s = s.floor() as u64;
-    if s >= 3600 {
-        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
-    } else {
-        format!("{}:{:02}", s / 60, s % 60)
-    }
+    crate::meter::clock(s.floor() as u64)
 }
 fn line(bm: &mut Bitmap, y: i32, text: &str) {
     let bounded: String = text.chars().take(26).collect();
@@ -210,11 +156,8 @@ pub fn render(sample: Option<&Value>) -> [u8; BYTES] {
             .map_or("--".into(), |s| format!("{s:.1}"));
         line(&mut bm, 16, &format!("BUF:{buffer}S GPU:{gpu}MS"));
         if v["paused"].as_bool() == Some(true) {
-            for x in [0, 1, 4, 5] {
-                for y in 24..28 {
-                    bm.set(x, y, true);
-                }
-            }
+            bm.fill(0, 24, 2, 4, true);
+            bm.fill(4, 24, 2, 4, true);
         }
     }
     let position = (!idle)
@@ -239,18 +182,12 @@ pub fn render(sample: Option<&Value>) -> [u8; BYTES] {
     let fill = position
         .zip(duration)
         .map(|(p, d)| ((p / d).clamp(0.0, 1.0) * W as f64).round() as usize);
-    for x in 0..W {
-        bm.set(x, 40, true);
-        if fill.is_some_and(|n| x < n) {
-            for y in 38..43 {
-                bm.set(x, y, true);
-            }
-        }
-    }
-    if fill.is_none() {
-        for y in 38..43 {
-            bm.set(0, y, true);
-            bm.set(W - 1, y, true);
+    bm.line(0, 40, W as i32 - 1, 40);
+    match fill {
+        Some(n) => bm.fill(0, 38, n as i32, 5, true),
+        None => {
+            bm.fill(0, 38, 1, 5, true);
+            bm.fill(W as i32 - 1, 38, 1, 5, true);
         }
     }
     bm.0.try_into().unwrap()
@@ -298,10 +235,10 @@ mod tests {
     fn editor_yields_without_stopping_playback_display() {
         let _sandbox = crate::test_support::Sandbox::new("mpv-editor");
         let pipe = crate::test_support::PanelPipe::new();
-        let live = Live::start();
+        let live = start([0, 0, 255]);
         assert_eq!(pipe.read().len(), BYTES);
         let editor = crate::lcd::editor_lock().expect("mpv held editor lock");
-        thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(Duration::from_millis(100));
         pipe.expect_quiet();
         drop(editor);
         assert_eq!(pipe.read().len(), BYTES);

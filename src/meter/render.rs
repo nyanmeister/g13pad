@@ -17,21 +17,7 @@ pub(super) const SCROLL: i32 = 1;
 pub(super) const TICKS_PER_100MS: u32 = (100 / TICK.as_millis()) as u32;
 pub(super) const BASE: i32 = 22;
 
-#[rustfmt::skip]
-pub(super) const HEART: &[&str] = &[
-    ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...",
-];
-#[rustfmt::skip]
-pub(super) const HEART_BIG: &[&str] = &[
-    ".###.###.",
-    "#########",
-    "#########",
-    "#########",
-    ".#######.",
-    "..#####..",
-    "...###...",
-    "....#....",
-];
+pub(super) use crate::draw::{HEART, HEART_BIG};
 #[rustfmt::skip]
 pub(super) const HEART_OUTLINE: &[&str] = &[
     ".##.##.", "#..#..#", "#.....#", ".#...#.", "..#.#..", "...#...",
@@ -142,15 +128,15 @@ pub(super) fn glyph(c: char) -> &'static [&'static str; 7] {
         .map_or(&GLYPHS[10], |(_, g)| g)
 }
 
-/// `text` in 5x7 glyphs at `scale`, top-left at `x, y`; returns the width drawn.
-pub(crate) fn text(bm: &mut Bitmap, x: i32, y: i32, text: &str, scale: i32) -> i32 {
-    for (i, c) in text.chars().enumerate() {
+/// Every lit pixel of `s` in 5x7 glyphs at `scale`, top-left at `x, y`, six columns a glyph.
+fn glyph_pixels(x: i32, y: i32, s: &str, scale: i32, mut lit: impl FnMut(i32, i32)) {
+    for (i, c) in s.chars().enumerate() {
         for (r, row) in glyph(c).iter().enumerate() {
             for (k, cell) in row.bytes().enumerate() {
                 if cell == b'#' {
                     for dy in 0..scale {
                         for dx in 0..scale {
-                            bm.plot(
+                            lit(
                                 x + (i as i32 * 6 + k as i32) * scale + dx,
                                 y + r as i32 * scale + dy,
                             );
@@ -160,36 +146,23 @@ pub(crate) fn text(bm: &mut Bitmap, x: i32, y: i32, text: &str, scale: i32) -> i
             }
         }
     }
+}
+
+/// `text` in 5x7 glyphs at `scale`, top-left at `x, y`; returns the width drawn.
+pub(crate) fn text(bm: &mut Bitmap, x: i32, y: i32, text: &str, scale: i32) -> i32 {
+    glyph_pixels(x, y, text, scale, |px, py| bm.plot(px, py));
     (text.chars().count() as i32 * 6 - 1) * scale
 }
 
 /// Like `text`, but XORs each glyph pixel against what is already there, so numbers drawn
 /// over a filled gauge stay legible on both the lit and unlit parts of the bar.
 fn text_xor(bm: &mut Bitmap, x: i32, y: i32, s: &str, scale: i32) {
-    for (i, c) in s.chars().enumerate() {
-        for (r, row) in glyph(c).iter().enumerate() {
-            for (k, cell) in row.bytes().enumerate() {
-                if cell == b'#' {
-                    for dy in 0..scale {
-                        for dx in 0..scale {
-                            let px = x + (i as i32 * 6 + k as i32) * scale + dx;
-                            let py = y + r as i32 * scale + dy;
-                            if px >= 0 && py >= 0 {
-                                let (ux, uy) = (px as usize, py as usize);
-                                if ux < W && uy < H {
-                                    bm.set(ux, uy, !bm.get(ux, uy));
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    glyph_pixels(x, y, s, scale, |px, py| bm.invert(px, py, 1, 1));
 }
 
-/// The level timer as `m:ss`, or `h:mm:ss` past an hour (a hard boss can take three).
-pub(super) fn clock(secs: u32) -> String {
+/// A time as `m:ss`, or `h:mm:ss` past an hour: the level timer (a hard boss can take
+/// three), a track's position, a video's.
+pub(crate) fn clock(secs: u64) -> String {
     let (h, m, s) = (secs / 3600, secs / 60 % 60, secs % 60);
     if h > 0 {
         format!("{h}:{m:02}:{s:02}")
@@ -225,16 +198,9 @@ pub(super) fn readout(bm: &mut Bitmap, text: &str, right: i32, y: i32) {
 /// A small gauge: a box `w` by `h` with `fill` (0–100) of its inside lit.
 pub(crate) fn gauge(bm: &mut Bitmap, x: i32, y: i32, w: i32, h: i32, fill: u32) {
     bm.halo(x, y, w, h);
-    bm.line(x, y, x + w - 1, y);
-    bm.line(x, y + h - 1, x + w - 1, y + h - 1);
-    bm.line(x, y, x, y + h - 1);
-    bm.line(x + w - 1, y, x + w - 1, y + h - 1);
+    bm.frame(x, y, x + w - 1, y + h - 1);
     let f = ((w - 4) * fill.min(100) as i32 + 50) / 100;
-    for xx in x + 2..x + 2 + f {
-        for yy in y + 2..y + h - 2 {
-            bm.plot(xx, yy);
-        }
-    }
+    bm.fill(x + 2, y + 2, f, h - 4, true);
 }
 
 /// Eight teeth and three cutouts remain legible in the small vehicle icon.
@@ -317,23 +283,12 @@ pub(super) fn bars(
             }
         }
     }
-    for x in 2..=157 {
-        bm.plot(x, 34);
-        bm.plot(x, 42);
-    }
-    for y in 34..=42 {
-        bm.plot(2, y);
-        bm.plot(157, y);
-    }
+    bm.frame(2, 34, 157, 42);
     for &x in notches {
         bm.put(x, 34, false);
         bm.put(x, 42, false);
     }
-    for x in BAR_X..BAR_X + fill.clamp(0, BAR_W) {
-        for y in 36..=40 {
-            bm.plot(x, y);
-        }
-    }
+    bm.fill(BAR_X, 36, fill.clamp(0, BAR_W), 5, true);
     let hatch = |bm: &mut Bitmap, x: i32, y: i32| {
         if solid || (x + y) % 2 == 0 {
             bm.plot(x, y);
@@ -442,11 +397,7 @@ impl Meter {
                 {
                     // Fill the entire visible glass, including the bars. A steady label
                     // remains between flashes; changing alert counts cannot retrigger it.
-                    for y in 0..H {
-                        for x in 0..W {
-                            bm.set(x, y, true);
-                        }
-                    }
+                    bm.fill(0, 0, W as i32, H as i32, true);
                 }
             }
         }
@@ -576,11 +527,7 @@ impl Meter {
                 Flash::Trace => SHIELD_TOP as usize - 1,
                 Flash::Panel => H,
             };
-            for y in 0..rows {
-                for x in 0..W {
-                    bm.set(x, y, !bm.get(x, y));
-                }
-            }
+            bm.invert(0, 0, W as i32, rows as i32);
         }
     }
 
@@ -627,7 +574,7 @@ impl Meter {
         // skip this placement when deaths are present.
         if extra.deaths.is_none() {
             if let Some(t) = extra.time {
-                let s = clock(t);
+                let s = clock(u64::from(t));
                 let w = s.len() as i32 * 6 - 1;
                 bm.halo(rx - w, ry + 16, w, 7);
                 text(bm, rx - w, ry + 16, &s, 1);
@@ -731,10 +678,7 @@ impl Meter {
         if deck.next > 0 && first < last {
             let (x0, y0) = (DECK_X + DECK_STEP * first as i32 - 2, DECK_Y - 1);
             let (x1, y1) = (DECK_X + DECK_STEP * last as i32 - 3, DECK_Y + 16);
-            bm.line(x0, y0, x1, y0);
-            bm.line(x0, y1, x1, y1);
-            bm.line(x0, y0, x0, y1);
-            bm.line(x1, y0, x1, y1);
+            bm.frame(x0, y0, x1, y1);
         }
     }
 

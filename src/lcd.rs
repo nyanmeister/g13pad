@@ -935,18 +935,11 @@ pub fn keep_animation(name: &str, anim: &Animation) -> Result<(), String> {
     fs::create_dir_all(dir()).map_err(|e| format!("{}: {e}", dir().display()))?;
     let a = anim_path(name);
     if anim.animated() {
-        let tmp = a.with_extension("anim.new");
-        fs::write(&tmp, anim.to_bytes())
-            .and_then(|_| fs::rename(&tmp, &a))
-            .map_err(|e| format!("{}: {e}", a.display()))?;
+        crate::files::atomic_write(&a, anim.to_bytes())?;
     } else if a.exists() {
         fs::remove_file(&a).map_err(|e| format!("{}: {e}", a.display()))?;
     }
-    let p = path(name);
-    let tmp = p.with_extension("lpbm.new");
-    fs::write(&tmp, &anim.first().0)
-        .and_then(|_| fs::rename(&tmp, &p))
-        .map_err(|e| format!("{}: {e}", p.display()))
+    crate::files::atomic_write(&path(name), &anim.first().0)
 }
 
 #[cfg(all(test, feature = "editor"))]

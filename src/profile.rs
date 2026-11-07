@@ -92,11 +92,13 @@ pub enum Display {
     Combat,
     /// A vessel's hull, shields and energy, without an organic heartbeat.
     Ship,
+    /// A compass to something that just happened off screen, fed by a game widget.
+    Alert,
 }
 
 impl Display {
     /// Every choice, in the order the editor lists them.
-    pub const ALL: [Self; 13] = {
+    pub const ALL: [Self; 14] = {
         use crate::meter::Reader;
         [
             Self::Picture,
@@ -112,6 +114,7 @@ impl Display {
             Self::Agent,
             Self::Combat,
             Self::Ship,
+            Self::Alert,
         ]
     };
     /// Short name, as the editor's list and the status line show it.
@@ -131,6 +134,7 @@ impl Display {
             Self::Agent => "Coding agent turn",
             Self::Combat => "Combat accuracy and style pace",
             Self::Ship => "Ship hull, shields and energy",
+            Self::Alert => "Off-screen alerts (compass)",
         }
     }
     /// One sentence for a layman, under the label.
@@ -154,6 +158,7 @@ impl Display {
             }
             Self::Combat => "Accuracy, style per minute and deaths from a game observer, with health, rank and level time.",
             Self::Ship => "Hull and shield gauges with an energy circle, supplied by a game observer; no heartbeat.",
+            Self::Alert => "A compass arrow to the last thing hit or lost out of view, with its name and how long ago, from a game widget (Zero-K ships one).",
         }
     }
     /// The comment line that selects this on disk, without the `# `; none for the picture.
@@ -161,42 +166,35 @@ impl Display {
         Some(match self {
             Self::Picture => return None,
             Self::Health(reader) => format!("health {}", reader.key()),
-            Self::Mpv => "mpv on".into(),
-            Self::Pressure => "pressure on".into(),
-            Self::Audio => "audio on".into(),
-            Self::Mpd => "mpd on".into(),
-            Self::Agent => "agent on".into(),
-            Self::Combat => "combat on".into(),
-            Self::Ship => "ship on".into(),
+            d => format!("{} on", d.word()),
         })
     }
     /// Reads a `# WORD VALUE` comment: `Some(Ok(display))` to select, `Some(Ok(Picture))`
     /// for an `off`, `Some(Err(why))` for a bad value, `None` for an unrelated comment.
     fn parse(word: &str, value: &str) -> Option<Result<Self, String>> {
-        let on_off = |on: Self, what: &str| match value {
-            "on" => Ok(on),
-            "off" => Ok(Self::Picture),
-            _ => Err(format!("ignored invalid {what}: {value}")),
-        };
-        Some(match word {
-            "health" => match value {
+        if word == "health" {
+            return Some(match value {
                 "off" => Ok(Self::Picture),
                 _ => crate::meter::Reader::parse(value)
                     .map(Self::Health)
                     .ok_or_else(|| format!("ignored invalid health mode: {value}")),
-            },
-            "mpv" => on_off(Self::Mpv, "mpv display"),
-            "pressure" => on_off(Self::Pressure, "System pressure mode"),
-            "audio" => on_off(Self::Audio, "System audio mode"),
-            "mpd" => on_off(Self::Mpd, "MPD playback mode"),
-            "agent" => on_off(Self::Agent, "agent display"),
-            "combat" => on_off(Self::Combat, "combat display"),
-            "ship" => on_off(Self::Ship, "ship display"),
-            _ => return None,
+            });
+        }
+        let display = Self::switch(word)?;
+        Some(match value {
+            "on" => Ok(display),
+            "off" => Ok(Self::Picture),
+            _ => Err(format!("ignored invalid {word} line: {value}")),
         })
     }
+    /// The display an `on` of this word selects (the health line has modes, not on/off).
+    pub(crate) fn switch(word: &str) -> Option<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|d| !matches!(d, Self::Picture | Self::Health(_)) && d.word() == word)
+    }
     /// The word the `off` of this line clears: `# mpv off` leaves another display alone.
-    fn word(self) -> &'static str {
+    pub(crate) fn word(self) -> &'static str {
         match self {
             Self::Picture => "",
             Self::Health(_) => "health",
@@ -207,6 +205,7 @@ impl Display {
             Self::Agent => "agent",
             Self::Combat => "combat",
             Self::Ship => "ship",
+            Self::Alert => "alert",
         }
     }
 }
@@ -538,6 +537,25 @@ pub fn chord_action(mods: &[String], main: Option<&str>) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn display_words_select_only_the_on_off_displays() {
+        assert_eq!(Display::switch("mpv"), Some(Display::Mpv));
+        assert_eq!(Display::switch("alert"), Some(Display::Alert));
+        assert_eq!(
+            Display::switch("health"),
+            None,
+            "health has modes, not on/off"
+        );
+        assert_eq!(Display::switch(""), None, "the picture has no word");
+        assert_eq!(Display::switch("bogus"), None);
+        for d in Display::ALL {
+            match d {
+                Display::Picture | Display::Health(_) => {}
+                d => assert_eq!(Display::switch(d.word()), Some(d)),
+            }
+        }
+    }
+
     use super::*;
     #[test]
     fn microphone_identity_round_trips_without_command_injection_or_mode_loss() {
@@ -571,7 +589,7 @@ mod tests {
     /// either side of the `Display` change read the same.
     #[test]
     fn every_display_round_trips_and_keeps_the_rest() {
-        const WORDS: [&str; 8] = [
+        const WORDS: [&str; 9] = [
             "# health ",
             "# mpv on",
             "# pressure on",
@@ -580,6 +598,7 @@ mod tests {
             "# agent on",
             "# combat on",
             "# ship on",
+            "# alert on",
         ];
         let mut p = Profile::parse("# lcd kept\nbind G1 KEY_A\n# audio-mic \"usb.mic\"\n").0;
         assert_eq!(p.display, Display::Picture);
@@ -601,7 +620,7 @@ mod tests {
             assert_eq!(p.needs_watcher(), display != Display::Picture);
             assert_eq!(p.health().is_some(), matches!(display, Display::Health(_)));
         }
-        assert_eq!(Display::ALL.len(), 13);
+        assert_eq!(Display::ALL.len(), 14);
         assert_eq!(
             Profile::parse("# health cs2").0.display.line().as_deref(),
             Some("health cs2")

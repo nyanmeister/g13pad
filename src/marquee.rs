@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! Reusable LCD text, rasterized using the same font engine as the editor, without a display.
+use crate::draw::Draw;
 use crate::lcd::{self, Animation, Bitmap, H, W};
 use crate::text_options::{Align, Options};
 use egui::{Color32, FontData, FontFamily, FontId};
@@ -197,11 +198,7 @@ fn scroll_with(strip: &image::GrayImage, options: &Options) -> Animation {
             }
         }
         if options.invert {
-            for y in 0..H {
-                for x in 0..W {
-                    bm.set(x, y, !bm.get(x, y));
-                }
-            }
+            bm.invert(0, 0, W as i32, H as i32);
         }
         frames.push((delay, bm));
     }

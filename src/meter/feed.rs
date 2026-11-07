@@ -14,12 +14,7 @@ pub fn path() -> Result<PathBuf, String> {
 /// only the home directory is shared with the host (found 2026-10-07 with DRG), so a
 /// mod inside it reaches the meter through the second one.
 pub fn paths() -> Vec<PathBuf> {
-    let mut v = Vec::new();
-    if let Ok(p) = path() {
-        v.push(p);
-    }
-    v.push(crate::state_dir().join("health"));
-    v
+    crate::feed::pair("health")
 }
 
 /// Makes the state directory, so a feeder in a container has somewhere to write, and
@@ -114,10 +109,7 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
                 }
             }
             "ttl" => {
-                let ttl = Duration::try_from_secs_f64(value.parse::<f64>().ok()?).ok()?;
-                if ttl.is_zero() || now.duration_since(written).unwrap_or_default() > ttl {
-                    return None;
-                }
+                crate::feed::fresh(value, written, now)?;
             }
             "deaths" => match &mut state {
                 State::Health { extra, .. } => {
@@ -171,47 +163,8 @@ pub fn parse(text: &str, written: SystemTime, now: SystemTime) -> Option<State> 
     Some(state)
 }
 
-enum Outcome {
-    Off,
-    Live(State),
-}
-
-/// Keep a valid shutdown/expiry in the timestamp ordering, but skip broken feeds.
-fn outcome(text: &str, written: SystemTime, now: SystemTime) -> Option<Outcome> {
-    if text.split_whitespace().next() == Some("off") {
-        return Some(Outcome::Off);
-    }
-    if let Some(state) = parse(text, written, now) {
-        return Some(Outcome::Live(state));
-    }
-    // The parsers use time only for TTL. A rejected line that was valid when
-    // written has expired; revalidation also rejects garbage after a TTL field.
-    parse(text, written, written).map(|_| Outcome::Off)
-}
-
-/// The newest valid feed decides, including off/expiry. At equal mtimes, off wins;
-/// otherwise the runtime path takes precedence over the container's state path.
 pub fn read() -> Option<State> {
-    let now = SystemTime::now();
-    paths()
-        .into_iter()
-        .enumerate()
-        .filter_map(|(priority, p)| {
-            let written = fs::metadata(&p).ok()?.modified().ok()?;
-            let outcome = outcome(&fs::read_to_string(&p).ok()?, written, now)?;
-            Some((written, priority, outcome))
-        })
-        .max_by_key(|(written, priority, outcome)| {
-            (
-                *written,
-                matches!(outcome, Outcome::Off),
-                std::cmp::Reverse(*priority),
-            )
-        })
-        .and_then(|(_, _, outcome)| match outcome {
-            Outcome::Off => None,
-            Outcome::Live(state) => Some(state),
-        })
+    crate::feed::newest(paths(), &["off"], parse)
 }
 
 /// Writes the feed (atomically: beside, then renamed) or, for `None`, removes every
@@ -226,14 +179,7 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
     });
     let p = path()?;
     let Some(state) = state else {
-        for p in paths() {
-            match fs::remove_file(&p) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => return Err(format!("{}: {e}", p.display())),
-            }
-        }
-        return Ok(());
+        return paths().iter().try_for_each(|p| crate::feed::remove(p));
     };
     let mut line = match state {
         State::Wait => "wait".to_string(),
@@ -324,11 +270,7 @@ pub fn write(state: Option<State>, ttl: Option<Duration>) -> Result<(), String> 
     if let Some(ttl) = ttl {
         line.push_str(&format!(" ttl {}", ttl.as_secs().max(1)));
     }
-    line.push('\n');
-    let tmp = p.with_extension("health.new");
-    fs::write(&tmp, line)
-        .and_then(|_| fs::rename(&tmp, &p))
-        .map_err(|e| format!("{}: {e}", p.display()))
+    crate::feed::write_line(&p, &line)
 }
 
 #[cfg(test)]

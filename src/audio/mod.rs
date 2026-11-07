@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //! System-wide audio controls and selected-input peak history. No PCM is retained.
 mod pulse;
+use crate::draw::Draw;
 use crate::lcd::{Bitmap, BYTES, W};
 use std::{
     fs,
@@ -219,10 +220,8 @@ fn render(sample: &Sample, history: &History) -> [u8; BYTES] {
             bm.set(x, 30, true);
         }
         if let Some(peak) = history.at(x) {
-            let height = (((dbfs(peak) + 60.0) / 60.0) * 16.0).round() as usize;
-            for y in (42 - height)..43 {
-                bm.set(x, y, true);
-            }
+            let height = (((dbfs(peak) + 60.0) / 60.0) * 16.0).round() as i32;
+            bm.fill(x as i32, 42 - height, 1, height + 1, true);
             if peak >= 0.999 {
                 bm.set(x, 24, true);
             }

@@ -21,7 +21,42 @@ pub(crate) trait Draw {
     fn sprite(&mut self, x: i32, y: i32, rows: &[&str]);
     /// The sprite mirrored left to right.
     fn sprite_flipped(&mut self, x: i32, y: i32, rows: &[&str]);
+    /// Sets every pixel of the `w` by `h` rectangle at `x, y` (clipped to the panel).
+    fn fill(&mut self, x: i32, y: i32, w: i32, h: i32, on: bool) {
+        for yy in y..y + h {
+            for xx in x..x + w {
+                self.put(xx, yy, on);
+            }
+        }
+    }
+    /// Toggles every pixel of the rectangle (clipped to the panel).
+    fn invert(&mut self, x: i32, y: i32, w: i32, h: i32);
+    /// The one-pixel outline of the rectangle with corners `x0, y0` and `x1, y1`, inclusive.
+    fn frame(&mut self, x0: i32, y0: i32, x1: i32, y1: i32) {
+        self.line(x0, y0, x1, y0);
+        self.line(x0, y1, x1, y1);
+        self.line(x0, y0, x0, y1);
+        self.line(x1, y0, x1, y1);
+    }
 }
+
+/// The heart at rest (9x8) and on the beat (7x6, centred in the same box): the meter's,
+/// the agent screen's and the heartbeat scene's.
+#[rustfmt::skip]
+pub(crate) const HEART_BIG: &[&str] = &[
+    ".###.###.",
+    "#########",
+    "#########",
+    "#########",
+    ".#######.",
+    "..#####..",
+    "...###...",
+    "....#....",
+];
+#[rustfmt::skip]
+pub(crate) const HEART: &[&str] = &[
+    ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...",
+];
 
 impl Draw for Bitmap {
     fn put(&mut self, x: i32, y: i32, on: bool) {
@@ -59,9 +94,13 @@ impl Draw for Bitmap {
         }
     }
     fn halo(&mut self, x: i32, y: i32, w: i32, h: i32) {
-        for yy in y - 1..=y + h {
-            for xx in x - 1..=x + w {
-                self.put(xx, yy, false);
+        self.fill(x - 1, y - 1, w + 2, h + 2, false);
+    }
+    fn invert(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        for yy in y.max(0)..(y + h).min(H as i32) {
+            for xx in x.max(0)..(x + w).min(W as i32) {
+                let (ux, uy) = (xx as usize, yy as usize);
+                self.set(ux, uy, !self.get(ux, uy));
             }
         }
     }

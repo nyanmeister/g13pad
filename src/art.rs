@@ -583,19 +583,7 @@ fn heartbeat() -> Vec<Bitmap> {
     fn trace(u: i32) -> i32 {
         24 - ecg(u.rem_euclid(BEAT))
     }
-    const HEART: &[&str] = &[
-        ".##.##.", "#######", "#######", ".#####.", "..###..", "...#...",
-    ];
-    const BIG: &[&str] = &[
-        ".###.###.",
-        "#########",
-        "#########",
-        "#########",
-        ".#######.",
-        "..#####..",
-        "...###...",
-        "....#....",
-    ];
+    use crate::draw::{HEART, HEART_BIG as BIG};
     frames(N as usize, |t, bm| {
         for x in 0..W as i32 - 1 {
             let u = x + 2 * t;

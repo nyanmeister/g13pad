@@ -59,7 +59,7 @@ pub use feed::{parse, path, paths, prepare, read, write};
 mod render;
 
 pub(crate) mod parts;
-pub(crate) use render::{gauge, text};
+pub(crate) use render::{clock, gauge, text};
 pub use render::{Meter, POLL, TICK};
 mod runtime;
 pub use runtime::Live;

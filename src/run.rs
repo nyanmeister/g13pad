@@ -105,9 +105,14 @@ impl Run {
         })
     }
     /// The line as saved after the key: the mode word unless it is `pressed`.
+    /// The text after `# run KEY`. `pressed` is the default and usually omitted, but a
+    /// program whose own name is a when-word (`both x`) would be read as a when, so then the
+    /// default is written out (found by the round-trip generator, 2026-11-07).
     pub fn line(&self) -> String {
+        let ambiguous =
+            self.program.words.len() > 1 && When::parse(&self.program.words[0]).is_some();
         match self.when {
-            When::Pressed => self.program.line(),
+            When::Pressed if !ambiguous => self.program.line(),
             w => format!("{} {}", w.word(), self.program.line()),
         }
     }
@@ -464,6 +469,32 @@ impl Holds {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_program_named_like_a_when_word_round_trips() {
+        // Shrunk from the generated profile case of 2026-11-07: `# run G both hold` with the
+        // default when read back as When::Both running `hold`, and parse() then asked for a
+        // release bind the user never wanted.
+        for first in ["both", "hold", "released", "pressed"] {
+            let run = Run {
+                when: When::Pressed,
+                program: Program::parse(&format!("{first} x")).unwrap(),
+            };
+            assert_eq!(run.line(), format!("pressed {first} x"));
+            assert_eq!(Run::parse(&run.line()).unwrap(), run);
+            // One word alone was never ambiguous and stays bare.
+            let one = Run {
+                when: When::Pressed,
+                program: Program::parse(first).unwrap(),
+            };
+            assert_eq!(one.line(), first);
+            assert_eq!(Run::parse(first).unwrap(), one);
+        }
+        let plain = Run {
+            when: When::Pressed,
+            program: Program::parse("echo x").unwrap(),
+        };
+        assert_eq!(plain.line(), "echo x");
+    }
     use super::*;
     use crate::test_support::Sandbox;
     use std::fs;

@@ -52,11 +52,7 @@ impl Settings {
         )
     }
     pub fn save(&self) -> Result<(), String> {
-        let p = path();
-        if let Some(dir) = p.parent() {
-            fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-        }
-        fs::write(&p, self.to_text()).map_err(|e| format!("{}: {e}", p.display()))
+        crate::files::atomic_write(&path(), self.to_text())
     }
 }
 
