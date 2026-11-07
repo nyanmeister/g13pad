@@ -113,7 +113,16 @@ hook SessionEnd
 # A Codex session is keyed to the TUI in front of the user, not to the app-server's
 # inherited WINDOWID: a process named codex with its own WINDOWID and the session's cwd.
 mkdir -p "$scratch/bin" "$scratch/work"
-cp "$(command -v sleep)" "$scratch/bin/codex"
+# A script, not a copy of sleep: a multi-call coreutils (Ubuntu 25.10's) refuses to run
+# under another name ("coreutils: unknown program 'codex'"). The kernel names the
+# interpreter process after the script, so /proc/PID/comm reads `codex`.
+cat > "$scratch/bin/codex" <<'CODEX'
+#!/bin/sh
+sleep "$@" &
+trap 'kill $! 2>/dev/null' TERM EXIT
+wait
+CODEX
+chmod +x "$scratch/bin/codex"
 (cd "$scratch/work" && WINDOWID=777 exec "$scratch/bin/codex" 300) &
 tui_pid=$!
 trap 'kill "$tui_pid" 2>/dev/null || true; rm -rf -- "$scratch"' EXIT
